@@ -1,4 +1,4 @@
-# ⚡ FastAPI SaaS Boilerplate
+чч# ⚡ FastAPI SaaS Boilerplate
 
 A production-ready Python backend starter kit for building SaaS applications fast.
 Stop spending days on auth, billing, and project structure — start shipping your product.

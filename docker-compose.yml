@@ -1,27 +1,112 @@
 version: "3.9"
 
 services:
-  api:
-    build: .
+  staging-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${STAGING_POSTGRES_DB:-staging}
+      POSTGRES_USER: ${STAGING_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-postgres}
     ports:
-      - "8080:8080"
-    env_file:
-      - .env
+      - "5433:5432"
     volumes:
-      - ./app.db:/app/app.db
-    restart: unless-stopped
+      - staging-postgres-data:/var/lib/postgresql/data
+    configs:
+      - source: staging-postgres-init
+        target: /docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_POSTGRES_USER:-postgres} -d ${STAGING_POSTGRES_DB:-staging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - beeatlas-network
 
-  # Uncomment to use PostgreSQL instead of SQLite
-  # db:
-  #   image: postgres:16
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: postgres
-  #     POSTGRES_DB: saas_db
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${STAGING_RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${STAGING_RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    command: >
+      sh -c "rabbitmq-server &
+             sleep 15 &&
+             rabbitmqadmin declare queue name=staging.events durable=true &&
+             wait"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - beeatlas-network
 
-# volumes:
-#   postgres_data:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${STAGING_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${STAGING_MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - beeatlas-network
+
+  staging-backend:
+    build: .
+    depends_on:
+      staging-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "8085:8080"
+    environment:
+      SPRING_DATASOURCE_CAMUNDA_URL: jdbc:postgresql://staging-postgres:5432/${STAGING_POSTGRES_DB:-staging}
+      SPRING_DATASOURCE_CAMUNDA_USERNAME: ${STAGING_POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_CAMUNDA_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-postgres}
+      SPRING_DATASOURCE_STAGING_HIKARI_JDBC-URL: jdbc:postgresql://staging-postgres:5432/${STAGING_POSTGRES_DB:-staging}
+      SPRING_DATASOURCE_STAGING_HIKARI_USERNAME: ${STAGING_POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_STAGING_HIKARI_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-postgres}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${STAGING_RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${STAGING_RABBITMQ_PASSWORD:-guest}
+      CAMUNDA_BPM_DATABASE_SCHEMA_UPDATE: "true"
+      CAMUNDA_BPM_ADMIN_USER_ID: beeatlas
+      CAMUNDA_BPM_ADMIN_USER_PASSWORD: ${CAMUNDA_ADMIN_PASSWORD:-beeatlas}
+      STAGING_S3_ENDPOINT: http://minio:9000
+      STAGING_S3_ACCESS-KEY: ${STAGING_MINIO_ACCESS_KEY:-minioadmin}
+      STAGING_S3_SECRET-KEY: ${STAGING_MINIO_SECRET_KEY:-minioadmin}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+    networks:
+      - beeatlas-network
+
+volumes:
+  staging-postgres-data:
+  minio-data:
+
+networks:
+  beeatlas-network:
+    driver: bridge
+
+configs:
+  staging-postgres-init:
+    content: |
+      CREATE SCHEMA IF NOT EXISTS staging;

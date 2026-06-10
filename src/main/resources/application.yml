@@ -1,0 +1,73 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: staging-service
+  datasource:
+    camunda:
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://staging-postgres:5432/staging
+      username: postgres
+      password: postgres
+    staging:
+      hikari:
+        driver-class-name: org.postgresql.Driver
+        jdbc-url: jdbc:postgresql://staging-postgres:5432/staging
+        username: postgres
+        password: postgres
+        maximum-pool-size: 10
+        minimum-idle: 2
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    username: guest
+    password: guest
+
+camunda:
+  bpm:
+    admin-user:
+      id: beeatlas
+      password: beeatlas
+    data-source: camundaDataSource
+    database:
+      schema-update: true
+    job-execution:
+      enabled: true
+      lock-time-in-millis: 900000
+    history-level: full
+    history-time-to-live: P180D
+    webapp:
+      index-redirect-enabled: true
+
+staging:
+  s3:
+    endpoint: http://minio:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+    bucket: staging-raw-data
+    region: us-east-1
+  camunda:
+    timer:
+      pre-adapter-sparx-cycle: R/PT6H
+  worker:
+    poll-interval-ms: 500
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

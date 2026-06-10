@@ -1,11 +1,39 @@
-__pycache__/
-*.py[cod]
-*.egg-info/
+# Maven
+target/
+*.jar
+*.war
+*.ear
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.settings/
+.classpath
+.project
+.factorypath
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Spring Boot
+application-local.yml
+application-local.yaml
+
+# Environment
 .env
-*.db
-.pytest_cache/
-.venv/
-venv/
-dist/
-build/
-/.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Camunda
+h2/

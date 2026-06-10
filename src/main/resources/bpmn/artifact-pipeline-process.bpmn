@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_ArtifactPipeline"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.0.0">
+
+  <bpmn:message id="Message_ArtifactReady" name="artifact.ready" />
+
+  <bpmn:process id="artifact-pipeline-process"
+                name="Artifact Pipeline Process"
+                isExecutable="true"
+                camunda:historyTimeToLive="180">
+
+    <bpmn:startEvent id="StartEvent_Message" name="Artifact&#10;Ready">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_1" messageRef="Message_ArtifactReady" />
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Message" targetRef="Task_Loader" />
+
+    <bpmn:serviceTask id="Task_Loader"
+                      name="Loader"
+                      camunda:type="external"
+                      camunda:topic="loader"
+                      camunda:asyncBefore="true">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Loader" targetRef="Task_Validator" />
+
+    <bpmn:serviceTask id="Task_Validator"
+                      name="Validator"
+                      camunda:type="external"
+                      camunda:topic="validator"
+                      camunda:asyncBefore="true">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_Validator" targetRef="Task_Transformer" />
+
+    <bpmn:serviceTask id="Task_Transformer"
+                      name="Transformer"
+                      camunda:type="external"
+                      camunda:topic="transformer"
+                      camunda:asyncBefore="true">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Transformer" targetRef="Task_Saver" />
+
+    <bpmn:serviceTask id="Task_Saver"
+                      name="Saver"
+                      camunda:type="external"
+                      camunda:topic="saver"
+                      camunda:asyncBefore="true">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Saver" targetRef="EndEvent_1" />
+
+    <bpmn:endEvent id="EndEvent_1" name="Done">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="artifact-pipeline-process">
+      <bpmndi:BPMNShape id="StartEvent_Message_di" bpmnElement="StartEvent_Message">
+        <dc:Bounds x="182" y="112" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="177" y="155" width="46" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Loader_di" bpmnElement="Task_Loader">
+        <dc:Bounds x="270" y="90" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validator_di" bpmnElement="Task_Validator">
+        <dc:Bounds x="420" y="90" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Transformer_di" bpmnElement="Task_Transformer">
+        <dc:Bounds x="570" y="90" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Saver_di" bpmnElement="Task_Saver">
+        <dc:Bounds x="720" y="90" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="872" y="112" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="878" y="155" width="24" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="218" y="130" />
+        <di:waypoint x="270" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="370" y="130" />
+        <di:waypoint x="420" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="520" y="130" />
+        <di:waypoint x="570" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="670" y="130" />
+        <di:waypoint x="720" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="820" y="130" />
+        <di:waypoint x="872" y="130" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

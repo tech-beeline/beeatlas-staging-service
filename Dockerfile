@@ -1,32 +1,22 @@
-ARG RUN_IMAGE=ubuntu:24.04
-FROM ${RUN_IMAGE}
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Системные зависимости и Python
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r nonroot && useradd -r -g nonroot -s /usr/sbin/nologin nonroot
-
+FROM eclipse-temurin:17-jdk-jammy AS build
 WORKDIR /app
 
-COPY certs/ /usr/local/share/ca-certificates/
-RUN update-ca-certificates
-ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
 
-ARG PIP_INDEX_URL='https://pypi.org/simple'
-ENV PIP_INDEX_URL=$PIP_INDEX_URL
-ARG PIP_TRUSTED_HOST=''
-ENV PIP_TRUSTED_HOST=$PIP_TRUSTED_HOST
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
 
-COPY --chown=nonroot:nonroot app .
+COPY src ./src
+RUN mvn clean package -DskipTests -B
 
-USER nonroot
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
 
-EXPOSE 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /app/target/*.jar app.jar
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
