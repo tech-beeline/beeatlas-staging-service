@@ -22,11 +22,14 @@ public abstract class AbstractWorker {
 
     protected abstract void process(LockedExternalTask task);
 
+    protected List<String> variablesToFetch() { return List.of(); }
+
     @Scheduled(fixedDelayString = "${staging.worker.poll-interval-ms:500}")
     public void poll() {
         List<LockedExternalTask> tasks = externalTaskService
                 .fetchAndLock(10, workerId())
                 .topic(topic(), 30_000L)
+                .variables(variablesToFetch())
                 .execute();
 
         for (LockedExternalTask task : tasks) {

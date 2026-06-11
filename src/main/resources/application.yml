@@ -6,16 +6,16 @@ spring:
     name: staging-service
   datasource:
     camunda:
-      driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://staging-postgres:5432/staging
-      username: postgres
-      password: postgres
+      driver-class-name: ${SPRING_DATASOURCE_CAMUNDA_DRIVER_CLASS_NAME:org.postgresql.Driver}
+      url: ${SPRING_DATASOURCE_CAMUNDA_URL:jdbc:postgresql://staging-postgres:5432/staging}
+      username: ${SPRING_DATASOURCE_CAMUNDA_USERNAME:postgres}
+      password: ${SPRING_DATASOURCE_CAMUNDA_PASSWORD:postgres}
     staging:
       hikari:
         driver-class-name: org.postgresql.Driver
-        jdbc-url: jdbc:postgresql://staging-postgres:5432/staging
-        username: postgres
-        password: postgres
+        jdbc-url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://staging-postgres:5432/staging}
+        username: ${SPRING_DATASOURCE_USERNAME:postgres}
+        password: ${SPRING_DATASOURCE_PASSWORD:postgres}
         maximum-pool-size: 10
         minimum-idle: 2
   flyway:
@@ -48,11 +48,11 @@ camunda:
 
 staging:
   s3:
-    endpoint: http://minio:9000
-    access-key: minioadmin
-    secret-key: minioadmin
-    bucket: staging-raw-data
-    region: us-east-1
+    endpoint: ${AWS_S3_ENDPOINT:http://minio:9000}
+    access-key: ${AWS_S3_ACCESS_KEY:minioadmin}
+    secret-key: ${AWS_S3_SECRET_KEY:minioadmin}
+    bucket: ${AWS_S3_BUCKET_NAME:staging-raw-data}
+    region: ${AWS_S3_REGION:us-east-1}
   camunda:
     timer:
       pre-adapter-sparx-cycle: R/PT6H
