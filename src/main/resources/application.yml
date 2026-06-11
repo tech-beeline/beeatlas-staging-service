@@ -58,6 +58,13 @@ staging:
       pre-adapter-sparx-cycle: R/PT6H
   worker:
     poll-interval-ms: 500
+    lock-duration-ms: 30000
+  recovery:
+    check-interval-ms: 300000      # 5 min
+    stuck-threshold-minutes: 30
+    auto-retry-count: 3
+  scheduler:
+    scan-interval-ms: 60000        # used as reference; actual schedule driven by BPMN timer
 
 management:
   endpoints:

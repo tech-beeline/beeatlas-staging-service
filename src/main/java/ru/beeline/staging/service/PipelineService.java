@@ -20,17 +20,24 @@ public class PipelineService {
     private final ConfigurationRepository configurationRepository;
     private final RabbitTemplate rabbitTemplate;
 
+    /** Manual trigger: POST /configurations/{id}/run */
     public void run(Long configurationId) {
         Configuration config = configurationRepository.findById(configurationId)
                 .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + configurationId));
 
+        publishEvent(config, UUID.randomUUID().toString());
+    }
+
+    public void publishEvent(Configuration config, String batchId) {
         StagingEvent event = new StagingEvent();
         event.setArtifactType(config.getArtifactType());
         event.setArtifactUid(UUID.randomUUID().toString());
-        event.setSourceId(config.getSource());
+        event.setSourceId(String.valueOf(config.getSourceSystemId()));
+        event.setConfigurationId(config.getId());
+        event.setBatchId(batchId);
 
         rabbitTemplate.convertAndSend(RabbitConfig.STAGING_EVENTS_QUEUE, event);
         log.info("Published staging event: configId={}, type={}, uid={}",
-                configurationId, event.getArtifactType(), event.getArtifactUid());
+                config.getId(), event.getArtifactType(), event.getArtifactUid());
     }
 }

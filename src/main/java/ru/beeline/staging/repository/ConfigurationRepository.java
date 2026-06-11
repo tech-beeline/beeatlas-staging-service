@@ -6,5 +6,9 @@ import ru.beeline.staging.domain.Configuration;
 import java.util.List;
 
 public interface ConfigurationRepository extends JpaRepository<Configuration, Long> {
-    List<Configuration> findByArtifactTypeAndEnabledTrue(String artifactType);
+
+    /** Used by Scheduler: only active configs with a defined repeat interval. */
+    List<Configuration> findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
+
+    List<Configuration> findByArtifactTypeAndIsActiveTrue(String artifactType);
 }

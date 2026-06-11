@@ -20,13 +20,16 @@ public class EventDispatcher {
 
     @RabbitListener(queues = RabbitConfig.STAGING_EVENTS_QUEUE)
     public void handleEvent(StagingEvent event) {
-        log.info("Received staging event: type={}, uid={}, source={}",
-                event.getArtifactType(), event.getArtifactUid(), event.getSourceId());
+        log.info("Received staging event: type={}, uid={}, configId={}, batchId={}",
+                event.getArtifactType(), event.getArtifactUid(),
+                event.getConfigurationId(), event.getBatchId());
 
         Map<String, Object> variables = new HashMap<>();
-        variables.put("artifactType", event.getArtifactType());
-        variables.put("artifactUid", event.getArtifactUid());
-        variables.put("sourceId", event.getSourceId());
+        variables.put("artifactType",    event.getArtifactType());
+        variables.put("artifactUid",     event.getArtifactUid());
+        variables.put("sourceId",        event.getSourceId());
+        variables.put("configurationId", event.getConfigurationId());
+        variables.put("batchId",         event.getBatchId());
 
         runtimeService.startProcessInstanceByMessage(
                 "artifact.ready",
