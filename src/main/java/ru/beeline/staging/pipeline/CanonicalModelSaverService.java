@@ -5,8 +5,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.canonical.*;
 import ru.beeline.staging.repository.canonical.*;
+import ru.beeline.staging.service.PipelineRunService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -20,9 +22,13 @@ import java.util.Map;
  * Entity tables are find-or-create by natural key (uid / ext_uid); version tables are
  * append-only — every load inserts a new version row, traceable back to its raw_data_ref.
  *
+ * Each successful save creates one {@link ArtifactBatch} that groups all version rows
+ * from this run. The batch is marked is_current=TRUE; the previous batch for the same
+ * artifact is marked FALSE. This is how "последний загруженный является эталонным" works.
+ *
  * This is "наше представление" — our own copy of the canonical model. Pushing the result
- * out to other microservices (e.g. cx-backend's BI library) is a separate, not-yet-wired
- * concern — see {@link CanonicalModelPublisher}.
+ * out to other microservices (e.g. cx-backend's BI library) is a separate concern —
+ * see {@link CanonicalModelPublisher}.
  */
 @Slf4j
 @Service
@@ -37,10 +43,20 @@ public class CanonicalModelSaverService {
     private final OperationVersionRepository           operationVersionRepository;
     private final BiStepRelationVersionRepository      biStepRelationVersionRepository;
     private final OperationRelationVersionRepository   operationRelationVersionRepository;
+    private final PipelineRunService                   pipelineRunService;
 
     @Transactional
-    public SaveResult save(CanonicalSnapshot snapshot, Long rawDataRefId) {
+    public SaveResult save(CanonicalSnapshot snapshot, Long rawDataRefId,
+                           Long runId, String artifactUid, String artifactType) {
         LocalDateTime now = LocalDateTime.now();
+
+        // Create the batch first — its id is foreign-keyed on all version rows below
+        ArtifactBatch batch = pipelineRunService.createBatch(
+                artifactUid, artifactType, runId, rawDataRefId,
+                snapshot.getBiSteps().size(),
+                snapshot.getInterfaces().size(),
+                snapshot.getOperations().size());
+        Long batchId = batch.getId();
 
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (CanonicalSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
@@ -56,6 +72,7 @@ public class CanonicalModelSaverService {
             version.setExtUid(draft.getUid());
             version.setProtocol(draft.getProtocol());
             version.setRawDataRefId(rawDataRefId);
+            version.setBatchId(batchId);
             version.setCreatedAt(now);
             interfaceVersionsByUid.put(draft.getUid(), interfaceVersionRepository.save(version));
         }
@@ -74,7 +91,6 @@ public class CanonicalModelSaverService {
                     : null;
             if (entity.getInterfaceId() == null && ifaceVersion != null) {
                 entity.setInterfaceId(ifaceVersion.getInterfaceId());
-                operationRepository.save(entity);
             }
             entity.setName(draft.getName());
             entity.setType(draft.getType());
@@ -89,6 +105,7 @@ public class CanonicalModelSaverService {
             version.setLatency(toDecimal(draft.getLatency()));
             version.setErrorRate(toDecimal(draft.getErrorRate()));
             version.setRawDataRefId(rawDataRefId);
+            version.setBatchId(batchId);
             version.setCreatedAt(now);
             operationVersionsByExtUid.put(draft.getExtUid(), operationVersionRepository.save(version));
         }
@@ -110,6 +127,7 @@ public class CanonicalModelSaverService {
             version.setErrorRate(toDecimal(draft.getErrorRate()));
             version.setContext(draft.getContext());
             version.setRawDataRefId(rawDataRefId);
+            version.setBatchId(batchId);
             version.setCreatedAt(now);
             biStepVersionsByUid.put(draft.getUid(), biStepVersionRepository.save(version));
         }
@@ -128,6 +146,7 @@ public class CanonicalModelSaverService {
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
             relation.setRawDataRefId(rawDataRefId);
+            relation.setBatchId(batchId);
             relation.setCreatedAt(now);
             biStepRelationVersionRepository.save(relation);
             relationsSaved++;
@@ -147,12 +166,14 @@ public class CanonicalModelSaverService {
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
             relation.setRawDataRefId(rawDataRefId);
+            relation.setBatchId(batchId);
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
             operationRelationsSaved++;
         }
 
         SaveResult result = new SaveResult();
+        result.setBatchId(batchId);
         result.setInterfacesSaved(interfaceVersionsByUid.size());
         result.setOperationsSaved(operationVersionsByExtUid.size());
         result.setBiStepsSaved(biStepVersionsByUid.size());
@@ -167,10 +188,18 @@ public class CanonicalModelSaverService {
 
     @Data
     public static class SaveResult {
-        private int interfacesSaved;
-        private int operationsSaved;
-        private int biStepsSaved;
-        private int biStepRelationsSaved;
-        private int operationRelationsSaved;
+        private Long batchId;
+        private int  interfacesSaved;
+        private int  operationsSaved;
+        private int  biStepsSaved;
+        private int  biStepRelationsSaved;
+        private int  operationRelationsSaved;
+
+        @Override
+        public String toString() {
+            return "batchId=" + batchId + " biSteps=" + biStepsSaved
+                    + " ifaces=" + interfacesSaved + " ops=" + operationsSaved
+                    + " biRelations=" + biStepRelationsSaved + " opRelations=" + operationRelationsSaved;
+        }
     }
 }

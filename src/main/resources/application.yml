@@ -63,25 +63,15 @@ staging:
   dashboard:
     base-url: ${DASHBOARD_BASE_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
   cx-backend:
-    # When true (default), CanonicalModelPublisher pushes saved canonical e2e data to
-    # cx-backend's CJ/BI library for real (see CxBackendCanonicalModelPublisher). Set to
-    # false to fall back to the no-op publisher (e.g. local runs without cx-backend up).
     enabled: ${CX_BACKEND_ENABLED:true}
     base-url: ${CX_BACKEND_BASE_URL:http://cx-backend:8080}
-    # user-id used for the user-id header on every cx-backend write — needs to be a real,
-    # valid cx-backend user id with CREATE_ARTIFACT permission for an unattended pipeline caller.
     system-user-id: ${CX_BACKEND_SYSTEM_USER_ID:1}
-    # cx-backend product id every published CJ/BI is attached to. Configuration currently has
-    # no per-source productId of its own, so all e2e-sequence artifacts map to one product —
-    # revisit (e.g. via Configuration.config jsonb) if scenarios need to land in different products.
     default-product-id: ${CX_BACKEND_DEFAULT_PRODUCT_ID:1}
   sparx:
-    # Sparx EA database (PostgreSQL). Bean is created only when SPARX_DB_URL is non-empty.
-    # When not configured, Sparx pre-adapter queries are silently skipped (logged as warning).
     datasource:
-      url: ${SPARX_DB_URL:}
-      username: ${SPARX_DB_USERNAME:}
-      password: ${SPARX_DB_PASSWORD:}
+      url: ${STAGING_SPARX_DATASOURCE_URL:}
+      username: ${STAGING_SPARX_DATASOURCE_USERNAME:}
+      password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
   camunda:
     timer:
       pre-adapter-sparx-cycle: R/PT6H

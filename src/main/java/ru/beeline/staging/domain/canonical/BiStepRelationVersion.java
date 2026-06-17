@@ -31,6 +31,9 @@ public class BiStepRelationVersion {
     @Column(name = "raw_data_ref_id")
     private Long rawDataRefId;
 
+    @Column(name = "batch_id")
+    private Long batchId;
+
     @Column(name = "context")
     private String context;
 

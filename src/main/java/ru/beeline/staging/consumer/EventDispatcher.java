@@ -5,10 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.camunda.bpm.engine.RuntimeService;
+import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.config.RabbitConfig;
 import ru.beeline.staging.consumer.dto.StagingEvent;
+import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.service.PipelineRunService;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,8 +21,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class EventDispatcher {
 
-    private final RuntimeService runtimeService;
-    private final ObjectMapper   objectMapper;
+    private final RuntimeService   runtimeService;
+    private final ObjectMapper     objectMapper;
+    private final PipelineRunService pipelineRunService;
 
     @RabbitListener(queues = RabbitConfig.STAGING_EVENTS_QUEUE)
     public void handleEvent(StagingEvent event) {
@@ -27,12 +31,20 @@ public class EventDispatcher {
                 event.getArtifactType(), event.getArtifactUid(),
                 event.getConfigurationId(), event.getBatchId());
 
+        // Create our own tracking record before handing off to Camunda
+        PipelineRun run = pipelineRunService.createRun(
+                event.getArtifactUid(),
+                event.getArtifactType(),
+                event.getConfigurationId()
+        );
+
         Map<String, Object> variables = new HashMap<>();
         variables.put("artifactType",    event.getArtifactType());
         variables.put("artifactUid",     event.getArtifactUid());
         variables.put("sourceId",        event.getSourceId());
         variables.put("configurationId", event.getConfigurationId());
         variables.put("batchId",         event.getBatchId());
+        variables.put("pipelineRunId",   run.getId());   // propagated through all stages
 
         if (event.getMetadata() != null) {
             try {
@@ -42,12 +54,14 @@ public class EventDispatcher {
             }
         }
 
-        runtimeService.startProcessInstanceByMessage(
+        ProcessInstance pi = runtimeService.startProcessInstanceByMessage(
                 "artifact.ready",
                 event.getArtifactUid(),
                 variables
         );
 
-        log.info("Started artifact-pipeline-process for uid={}", event.getArtifactUid());
+        pipelineRunService.bindCamundaPid(run.getId(), pi.getId());
+        log.info("Started artifact-pipeline-process for uid={}, pipelineRunId={}, camundaPid={}",
+                event.getArtifactUid(), run.getId(), pi.getId());
     }
 }
