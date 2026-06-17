@@ -116,6 +116,13 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- JWT parsing for ambassador RabbitMQ token -->
+        <dependency>
+            <groupId>net.minidev</groupId>
+            <artifactId>json-smart</artifactId>
+            <version>2.4.9</version>
+        </dependency>
+
         <!-- Utilities -->
         <dependency>
             <groupId>org.projectlombok</groupId>

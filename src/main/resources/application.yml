@@ -1,6 +1,12 @@
 server:
   port: 8080
 
+app:
+  ambassador-auth: true
+
+integration:
+  authsso-server-url: ${INTEGRATION_AUTHSSO_SERVER_URL:http://eafdmmart-develop-ambassador/rabbit-token}
+
 spring:
   application:
     name: staging-service
@@ -25,10 +31,11 @@ spring:
       ddl-auto: none
     open-in-view: false
   rabbitmq:
-    host: rabbitmq
-    port: 5672
-    username: guest
-    password: guest
+    host: ${RABBIT_HOST:rabbitmq}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:guest}
+    password: ${RABBIT_PASSWORD:guest}
+    virtual-host: ${RABBIT_VIRTUAL_HOST:/}
 
 camunda:
   bpm:
