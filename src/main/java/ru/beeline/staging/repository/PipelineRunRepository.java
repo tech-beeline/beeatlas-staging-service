@@ -16,10 +16,10 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     Optional<PipelineRun> findByCamundaPid(String camundaPid);
 
     @Modifying
-    @Query("UPDATE PipelineRun r SET r.status = :status, r.completedAt = NOW() WHERE r.id = :id")
+    @Query("UPDATE PipelineRun r SET r.status = :status, r.completedAt = CURRENT_TIMESTAMP WHERE r.id = :id")
     void markCompleted(@Param("id") Long id, @Param("status") String status);
 
     @Modifying
-    @Query("UPDATE PipelineRun r SET r.status = 'failed', r.completedAt = NOW(), r.failureReason = :reason, r.failedStage = :stage WHERE r.id = :id")
+    @Query("UPDATE PipelineRun r SET r.status = 'failed', r.completedAt = CURRENT_TIMESTAMP, r.failureReason = :reason, r.failedStage = :stage WHERE r.id = :id")
     void markFailed(@Param("id") Long id, @Param("reason") String reason, @Param("stage") String stage);
 }

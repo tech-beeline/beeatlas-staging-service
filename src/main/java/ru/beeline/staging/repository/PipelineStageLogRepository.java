@@ -13,10 +13,10 @@ public interface PipelineStageLogRepository extends JpaRepository<PipelineStageL
     List<PipelineStageLog> findByRunIdOrderByStartedAt(Long runId);
 
     @Modifying
-    @Query("UPDATE PipelineStageLog l SET l.status = 'completed', l.completedAt = NOW() WHERE l.id = :id")
+    @Query("UPDATE PipelineStageLog l SET l.status = 'completed', l.completedAt = CURRENT_TIMESTAMP WHERE l.id = :id")
     void markCompleted(@Param("id") Long id);
 
     @Modifying
-    @Query("UPDATE PipelineStageLog l SET l.status = 'failed', l.completedAt = NOW(), l.failureReason = :reason WHERE l.id = :id")
+    @Query("UPDATE PipelineStageLog l SET l.status = 'failed', l.completedAt = CURRENT_TIMESTAMP, l.failureReason = :reason WHERE l.id = :id")
     void markFailed(@Param("id") Long id, @Param("reason") String reason);
 }
