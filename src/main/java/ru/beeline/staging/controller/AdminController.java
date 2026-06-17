@@ -7,6 +7,7 @@ import org.camunda.bpm.engine.HistoryService;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.beeline.staging.service.SparxScanService;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,19 @@ public class AdminController {
 
     private final ExternalTaskService externalTaskService;
     private final HistoryService      historyService;
+    private final SparxScanService    sparxScanService;
+
+    /**
+     * Manually triggers a Sparx e2e-sequence scan for all active e2e-sequence configurations,
+     * without waiting for the pre-adapter-process timer (R/PT6H by default). Bypasses the
+     * Camunda already-running/interval-elapsed throttling — intended for dev/testing.
+     */
+    @PostMapping("/scan/e2e")
+    public ResponseEntity<Map<String, Object>> scanE2E() {
+        int published = sparxScanService.scanAllActiveE2EConfigurations();
+        log.info("Manual e2e scan published {} artifact(s)", published);
+        return ResponseEntity.accepted().body(Map.of("publishedCount", published));
+    }
 
     /** Reset retries on a stuck external task so it re-enters the worker poll cycle. */
     @PostMapping("/external-tasks/{taskId}/retry")

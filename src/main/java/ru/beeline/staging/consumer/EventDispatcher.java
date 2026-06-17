@@ -1,5 +1,7 @@
 package ru.beeline.staging.consumer;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.camunda.bpm.engine.RuntimeService;
@@ -17,6 +19,7 @@ import java.util.Map;
 public class EventDispatcher {
 
     private final RuntimeService runtimeService;
+    private final ObjectMapper   objectMapper;
 
     @RabbitListener(queues = RabbitConfig.STAGING_EVENTS_QUEUE)
     public void handleEvent(StagingEvent event) {
@@ -30,6 +33,14 @@ public class EventDispatcher {
         variables.put("sourceId",        event.getSourceId());
         variables.put("configurationId", event.getConfigurationId());
         variables.put("batchId",         event.getBatchId());
+
+        if (event.getMetadata() != null) {
+            try {
+                variables.put("metadataJson", objectMapper.writeValueAsString(event.getMetadata()));
+            } catch (JsonProcessingException e) {
+                log.warn("Failed to serialize metadata for uid={}", event.getArtifactUid(), e);
+            }
+        }
 
         runtimeService.startProcessInstanceByMessage(
                 "artifact.ready",
