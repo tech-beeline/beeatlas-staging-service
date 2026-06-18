@@ -2,6 +2,8 @@ package ru.beeline.staging.domain;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -28,6 +30,7 @@ public class Configuration {
     @Column(name = "source_system_id")
     private Long sourceSystemId;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "config", columnDefinition = "jsonb")
     private String config;
 
