@@ -92,7 +92,9 @@ public class CxBackendCanonicalModelPublisher implements CanonicalModelPublisher
                     CxBiStepDto stepDto = new CxBiStepDto();
                     stepDto.setType("serviceTask");
                     stepDto.setId("BISTEP_" + step.getUid());
-                    stepDto.setName(step.getName());
+                    // cx-backend's BiStep.name is NOT NULL; dashboard's message.name is sometimes absent.
+                    String name = step.getName();
+                    stepDto.setName(name != null && !name.isBlank() ? name : step.getUid());
                     return stepDto;
                 })
                 .collect(Collectors.toList()));
