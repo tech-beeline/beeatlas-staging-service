@@ -36,6 +36,9 @@ public class RawDataRef {
     @Column(name = "raw_content", columnDefinition = "TEXT")
     private String rawContent;
 
+    @Column(name = "canonical_snapshot_json", columnDefinition = "TEXT")
+    private String canonicalSnapshotJson;
+
     @Column(name = "content_hash")
     private String contentHash;
 

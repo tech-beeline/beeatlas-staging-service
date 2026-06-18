@@ -61,6 +61,11 @@ public class TransformerWorker extends AbstractWorker {
         CanonicalSnapshot snapshot = transformer.transform(uid, ref.getRawContent());
         String snapshotJson = objectMapper.writeValueAsString(snapshot);
 
-        return Map.of("canonicalSnapshotJson", snapshotJson);
+        // Stored in Postgres, not as a Camunda process variable: TEXT_ there is
+        // character varying(4000) and a canonical snapshot routinely exceeds that.
+        ref.setCanonicalSnapshotJson(snapshotJson);
+        rawDataRefRepository.save(ref);
+
+        return null;
     }
 }

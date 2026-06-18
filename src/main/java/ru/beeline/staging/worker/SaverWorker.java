@@ -4,13 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
+import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.CanonicalModelPublisher;
 import ru.beeline.staging.pipeline.CanonicalModelSaverService;
 import ru.beeline.staging.pipeline.CanonicalSnapshot;
+import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.PipelineRunService;
 
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * Final pipeline stage: persists the CanonicalSnapshot produced by the Transformer stage
@@ -25,6 +28,7 @@ public class SaverWorker extends AbstractWorker {
     private final CanonicalModelSaverService canonicalModelSaverService;
     private final CanonicalModelPublisher    canonicalModelPublisher;
     private final PipelineRunService         pipelineRunService;
+    private final RawDataRefRepository       rawDataRefRepository;
     private final ObjectMapper               objectMapper;
 
     @Override
@@ -35,7 +39,7 @@ public class SaverWorker extends AbstractWorker {
 
     @Override
     protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId", "canonicalSnapshotJson");
+        return List.of("artifactType", "artifactUid", "rawDataRefId");
     }
 
     @Override
@@ -43,10 +47,13 @@ public class SaverWorker extends AbstractWorker {
         String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        String snapshotJson = (String) task.getVariables().get("canonicalSnapshotJson");
         Long runId = task.getVariables().get("pipelineRunId") instanceof Number n ? n.longValue() : null;
 
         log.info("stage=saver, type={}, uid={}", type, uid);
+
+        RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
+                .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
+        String snapshotJson = ref.getCanonicalSnapshotJson();
 
         if (snapshotJson == null || snapshotJson.isBlank()) {
             log.warn("No canonicalSnapshotJson present for uid={} — nothing to save", uid);
