@@ -44,9 +44,10 @@ public class CxBackendClient {
                 .path("/api/cx/v1/product/{productId}/cj")
                 .buildAndExpand(productId)
                 .toUri();
-        HttpEntity<CjTagsDto> entity = new HttpEntity<>(dto, userIdHeader(userId));
+        HttpHeaders headers = userIdHeader(userId);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
         log.debug("POST {} (createCj)", uri);
-        return restTemplate.postForObject(uri, entity, CjResponseDto.class);
+        return restTemplate.postForObject(uri, new HttpEntity<>(dto, headers), CjResponseDto.class);
     }
 
     /** POST /api/cx/v1/product/cj/{id}/import-from-model */
