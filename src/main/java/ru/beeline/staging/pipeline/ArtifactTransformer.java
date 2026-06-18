@@ -10,5 +10,5 @@ public interface ArtifactTransformer {
 
     String supportedType();
 
-    CanonicalSnapshot transform(String artifactUid, byte[] rawBytes) throws Exception;
+    CanonicalSnapshot transform(String artifactUid, String rawContent) throws Exception;
 }

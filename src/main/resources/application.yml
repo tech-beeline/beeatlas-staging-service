@@ -54,17 +54,11 @@ camunda:
       index-redirect-enabled: true
 
 staging:
-  s3:
-    endpoint: ${AWS_S3_ENDPOINT:http://minio:9000}
-    access-key: ${AWS_S3_ACCESS_KEY:minioadmin}
-    secret-key: ${AWS_S3_SECRET_KEY:minioadmin}
-    bucket: ${AWS_S3_BUCKET_NAME:staging-raw-data}
-    region: ${AWS_S3_REGION:us-east-1}
   dashboard:
-    base-url: ${DASHBOARD_BASE_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
+    base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
   cx-backend:
     enabled: ${CX_BACKEND_ENABLED:true}
-    base-url: ${CX_BACKEND_BASE_URL:http://cx-backend:8080}
+    base-url: ${INTEGRATION_CX_SERVER_URL:http://cx-backend:8080}
     system-user-id: ${CX_BACKEND_SYSTEM_USER_ID:1}
     default-product-id: ${CX_BACKEND_DEFAULT_PRODUCT_ID:1}
   sparx:

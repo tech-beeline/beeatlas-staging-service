@@ -36,8 +36,8 @@ public class E2ESequenceValidator implements ArtifactValidator {
     public String supportedType() { return DashboardE2ELoader.TYPE; }
 
     @Override
-    public Map<String, Object> validate(String artifactUid, byte[] rawBytes) throws Exception {
-        JsonNode root = objectMapper.readTree(rawBytes);
+    public Map<String, Object> validate(String artifactUid, String rawContent) throws Exception {
+        JsonNode root = objectMapper.readTree(rawContent);
 
         List<String> warnings = new ArrayList<>();
         collectValidationErrors(root.path("sequence"), warnings);

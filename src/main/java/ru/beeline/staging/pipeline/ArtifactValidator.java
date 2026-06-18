@@ -19,5 +19,5 @@ public interface ArtifactValidator {
      * reported as warnings, mirroring dashboard-main's own behaviour (it never fails the
      * request on validationError, only logs/collects them).
      */
-    Map<String, Object> validate(String artifactUid, byte[] rawBytes) throws Exception;
+    Map<String, Object> validate(String artifactUid, String rawContent) throws Exception;
 }

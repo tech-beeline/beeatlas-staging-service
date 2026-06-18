@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.ArtifactValidator;
 import ru.beeline.staging.repository.RawDataRefRepository;
-import ru.beeline.staging.storage.S3StorageService;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +19,6 @@ public class ValidatorWorker extends AbstractWorker {
 
     private final List<ArtifactValidator> validators;
     private final RawDataRefRepository    rawDataRefRepository;
-    private final S3StorageService        s3StorageService;
 
     private Map<String, ArtifactValidator> registry;
 
@@ -57,8 +55,7 @@ public class ValidatorWorker extends AbstractWorker {
 
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
-        byte[] rawBytes = s3StorageService.getGunzip(ref.getS3Key());
 
-        return validator.validate(uid, rawBytes);
+        return validator.validate(uid, ref.getRawContent());
     }
 }

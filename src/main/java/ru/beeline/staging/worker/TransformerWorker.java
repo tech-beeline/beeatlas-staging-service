@@ -9,7 +9,6 @@ import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.ArtifactTransformer;
 import ru.beeline.staging.pipeline.CanonicalSnapshot;
 import ru.beeline.staging.repository.RawDataRefRepository;
-import ru.beeline.staging.storage.S3StorageService;
 
 import java.util.List;
 import java.util.Map;
@@ -22,7 +21,6 @@ public class TransformerWorker extends AbstractWorker {
 
     private final List<ArtifactTransformer> transformers;
     private final RawDataRefRepository      rawDataRefRepository;
-    private final S3StorageService          s3StorageService;
     private final ObjectMapper              objectMapper;
 
     private Map<String, ArtifactTransformer> registry;
@@ -59,9 +57,8 @@ public class TransformerWorker extends AbstractWorker {
 
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
-        byte[] rawBytes = s3StorageService.getGunzip(ref.getS3Key());
 
-        CanonicalSnapshot snapshot = transformer.transform(uid, rawBytes);
+        CanonicalSnapshot snapshot = transformer.transform(uid, ref.getRawContent());
         String snapshotJson = objectMapper.writeValueAsString(snapshot);
 
         return Map.of("canonicalSnapshotJson", snapshotJson);

@@ -7,18 +7,13 @@ import ru.beeline.staging.dashboard.DashboardClient;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.ArtifactLoader;
 import ru.beeline.staging.repository.RawDataRefRepository;
-import ru.beeline.staging.storage.S3StorageService;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Loader for artifactType=e2e-sequence. Uses dashboard-main's existing
- * /api/v4/e2e/scenarios/{uid}/sequence endpoint as a proxy in front of Sparx EA,
- * instead of re-implementing the call-tree extraction ourselves (see ADR-001).
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -27,7 +22,6 @@ public class DashboardE2ELoader implements ArtifactLoader {
     public static final String TYPE = "e2e-sequence";
 
     private final DashboardClient      dashboardClient;
-    private final S3StorageService     s3StorageService;
     private final RawDataRefRepository rawDataRefRepository;
 
     @Override
@@ -39,8 +33,8 @@ public class DashboardE2ELoader implements ArtifactLoader {
         if (rawJson == null || rawJson.isBlank()) {
             throw new IllegalStateException("Dashboard returned empty response for uid=" + artifactUid);
         }
-        byte[] rawBytes = rawJson.getBytes(StandardCharsets.UTF_8);
-        String contentHash = S3StorageService.sha256(rawBytes);
+
+        String contentHash = sha256(rawJson.getBytes(StandardCharsets.UTF_8));
 
         Optional<RawDataRef> existing = rawDataRefRepository
                 .findTopByArtifactUidOrderByLoadedAtDesc(artifactUid);
@@ -52,23 +46,30 @@ public class DashboardE2ELoader implements ArtifactLoader {
             refId = rawDataRefRepository.save(ref).getId();
             log.info("Content unchanged for uid={}, reusing rawDataRefId={}", artifactUid, refId);
         } else {
-            String s3Key = String.format("raw/%s/%s/%s.gz", TYPE, artifactUid, contentHash);
-            s3StorageService.putGzip(rawBytes, s3Key);
-
             RawDataRef ref = new RawDataRef();
             ref.setArtifactUid(artifactUid);
             ref.setArtifactType(TYPE);
             ref.setSourceId(sourceId);
-            ref.setS3Bucket(s3StorageService.getBucket());
-            ref.setS3Key(s3Key);
+            ref.setRawContent(rawJson);
             ref.setContentHash(contentHash);
-            ref.setSizeBytes((long) rawBytes.length);
+            ref.setSizeBytes((long) rawJson.getBytes(StandardCharsets.UTF_8).length);
             ref.setLoadedAt(LocalDateTime.now());
             ref.setUpdatedAt(LocalDateTime.now());
             refId = rawDataRefRepository.save(ref).getId();
-            log.info("Stored raw data uid={}, rawDataRefId={}, s3Key={}", artifactUid, refId, s3Key);
+            log.info("Stored raw data uid={}, rawDataRefId={}", artifactUid, refId);
         }
 
         return Map.of("rawDataRefId", refId, "contentHash", contentHash);
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(bytes);
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 }

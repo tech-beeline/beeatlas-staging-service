@@ -38,8 +38,8 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
     public String supportedType() { return DashboardE2ELoader.TYPE; }
 
     @Override
-    public CanonicalSnapshot transform(String artifactUid, byte[] rawBytes) throws Exception {
-        JsonNode root = objectMapper.readTree(rawBytes);
+    public CanonicalSnapshot transform(String artifactUid, String rawContent) throws Exception {
+        JsonNode root = objectMapper.readTree(rawContent);
         CanonicalSnapshot snapshot = new CanonicalSnapshot();
 
         Map<String, OperationDraft> operationsByExtUid = new LinkedHashMap<>();
