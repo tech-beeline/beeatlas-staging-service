@@ -85,7 +85,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
                     OperationDraft op = new OperationDraft();
                     op.setExtUid(methodUid);
                     op.setInterfaceUid(ifaceUid);
-                    op.setName(textOrNull(method, "name"));
+                    op.setName(nameOrFallback(textOrNull(method, "name"), methodUid));
                     op.setRps(doubleOrNull(method, "rps"));
                     op.setLatency(doubleOrNull(method, "latency"));
                     op.setErrorRate(doubleOrNull(method, "error_rate"));
@@ -173,13 +173,18 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
 
         OperationDraft op = new OperationDraft();
         op.setExtUid(operationGuid);
-        op.setName(textOrNull(node, "name"));
+        op.setName(nameOrFallback(textOrNull(node, "name"), operationGuid));
         op.setRps(doubleOrNull(node, "rps"));
         op.setLatency(doubleOrNull(node, "latency"));
         op.setErrorRate(doubleOrNull(node, "error_rate"));
         op.setContext(pointer);
         operationsByExtUid.put(operationGuid, op);
         snapshot.getOperations().add(op);
+    }
+
+    /** operation_versions.name is NOT NULL; Dashboard occasionally omits a call's name. */
+    private static String nameOrFallback(String name, String fallback) {
+        return name != null && !name.isBlank() ? name : fallback;
     }
 
     private static String textOrNull(JsonNode node, String field) {
