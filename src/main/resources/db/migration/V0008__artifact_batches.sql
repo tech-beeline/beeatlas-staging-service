@@ -1,6 +1,6 @@
 -- Artifact batch: one row per successful saver completion.
 -- A batch groups all *_versions rows created in one pipeline run under a single id.
--- is_current = TRUE means this batch is the latest canonical snapshot for the artifact.
+-- is_current = TRUE means this batch is the latest (sent to cx-backend as the canonical snapshot).
 -- All historical batches are kept — the full loading history is preserved.
 --
 -- Query: "все варианты CJ artifact_uid=E2E-005, последний — эталон"
