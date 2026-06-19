@@ -105,6 +105,7 @@ public class CanonicalModelSaverService {
             version.setErrorRate(toDecimal(draft.getErrorRate()));
             version.setRawDataRefId(rawDataRefId);
             version.setBatchId(batchId);
+            version.setContext(draft.getContext());
             version.setCreatedAt(now);
             operationVersionsByExtUid.put(draft.getExtUid(), operationVersionRepository.save(version));
         }
@@ -125,6 +126,8 @@ public class CanonicalModelSaverService {
             version.setLatency(toDecimal(draft.getLatency()));
             version.setErrorRate(toDecimal(draft.getErrorRate()));
             version.setContext(draft.getContext());
+            version.setExternalGuid(draft.getExternalGuid());
+            version.setSourceId(draft.getSourceId());
             version.setRawDataRefId(rawDataRefId);
             version.setBatchId(batchId);
             version.setCreatedAt(now);
@@ -144,6 +147,7 @@ public class CanonicalModelSaverService {
             relation.setOperationVersionId(op.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
+            relation.setContext(draft.getContext());
             relation.setRawDataRefId(rawDataRefId);
             relation.setBatchId(batchId);
             relation.setCreatedAt(now);
@@ -164,6 +168,7 @@ public class CanonicalModelSaverService {
             relation.setCalleeOperationVersionId(callee.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
+            relation.setContext(draft.getContext());
             relation.setRawDataRefId(rawDataRefId);
             relation.setBatchId(batchId);
             relation.setCreatedAt(now);

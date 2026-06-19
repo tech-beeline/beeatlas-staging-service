@@ -63,6 +63,12 @@ public class SaverWorker extends AbstractWorker {
 
         log.info("Saved canonical model for uid={}: {}", uid, result);
 
+        // canonical_snapshot_json only existed to ferry Transformer's output to this stage
+        // (instead of an oversized Camunda process variable) — now that it's persisted into
+        // the canonical tables, drop it so raw_data_refs doesn't keep growing indefinitely.
+        ref.setCanonicalSnapshotJson(null);
+        rawDataRefRepository.save(ref);
+
         if (runId != null) {
             pipelineRunService.completeRun(runId);
         }

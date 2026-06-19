@@ -9,6 +9,7 @@ import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.ArtifactTransformer;
 import ru.beeline.staging.pipeline.CanonicalSnapshot;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.utils.GzipUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -58,11 +59,9 @@ public class TransformerWorker extends AbstractWorker {
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        CanonicalSnapshot snapshot = transformer.transform(uid, ref.getRawContent());
+        CanonicalSnapshot snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
         String snapshotJson = objectMapper.writeValueAsString(snapshot);
 
-        // Stored in Postgres, not as a Camunda process variable: TEXT_ there is
-        // character varying(4000) and a canonical snapshot routinely exceeds that.
         ref.setCanonicalSnapshotJson(snapshotJson);
         rawDataRefRepository.save(ref);
 

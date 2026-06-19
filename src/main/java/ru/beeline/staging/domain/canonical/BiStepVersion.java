@@ -41,6 +41,12 @@ public class BiStepVersion {
     @Column(name = "context")
     private String context;
 
+    @Column(name = "external_guid")
+    private String externalGuid;
+
+    @Column(name = "source_id")
+    private String sourceId;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 }

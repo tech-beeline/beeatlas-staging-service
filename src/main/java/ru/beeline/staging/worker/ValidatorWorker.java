@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.ArtifactValidator;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.utils.GzipUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -56,6 +57,6 @@ public class ValidatorWorker extends AbstractWorker {
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        return validator.validate(uid, ref.getRawContent());
+        return validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
     }
 }

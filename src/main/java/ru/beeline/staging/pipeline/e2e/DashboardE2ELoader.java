@@ -7,6 +7,7 @@ import ru.beeline.staging.dashboard.DashboardClient;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.ArtifactLoader;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.utils.GzipUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -46,17 +47,19 @@ public class DashboardE2ELoader implements ArtifactLoader {
             refId = rawDataRefRepository.save(ref).getId();
             log.info("Content unchanged for uid={}, reusing rawDataRefId={}", artifactUid, refId);
         } else {
+            byte[] gzipped = GzipUtils.gzip(rawJson.getBytes(StandardCharsets.UTF_8));
+
             RawDataRef ref = new RawDataRef();
             ref.setArtifactUid(artifactUid);
             ref.setArtifactType(TYPE);
             ref.setSourceId(sourceId);
-            ref.setRawContent(rawJson);
+            ref.setRawContent(gzipped);
             ref.setContentHash(contentHash);
-            ref.setSizeBytes((long) rawJson.getBytes(StandardCharsets.UTF_8).length);
+            ref.setSizeBytes((long) gzipped.length);
             ref.setLoadedAt(LocalDateTime.now());
             ref.setUpdatedAt(LocalDateTime.now());
             refId = rawDataRefRepository.save(ref).getId();
-            log.info("Stored raw data uid={}, rawDataRefId={}", artifactUid, refId);
+            log.info("Stored raw data uid={}, rawDataRefId={}, gzipBytes={}", artifactUid, refId, gzipped.length);
         }
 
         return Map.of("rawDataRefId", refId, "contentHash", contentHash);

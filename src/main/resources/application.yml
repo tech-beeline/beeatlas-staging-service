@@ -63,7 +63,7 @@ staging:
       password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
   camunda:
     timer:
-      pre-adapter-sparx-cycle: R/PT6H
+      pre-adapter-sparx-cycle: R/PT5M
   worker:
     poll-interval-ms: 500
     lock-duration-ms: 30000
@@ -75,7 +75,7 @@ staging:
     scan-interval-ms: 60000        # used as reference; actual schedule driven by BPMN timer
     e2e-scan:
       enabled: false                # opt-in plain Spring scheduler, alternative to the BPMN timer (avoid enabling both)
-      interval-ms: 21600000         # 6h, mirrors staging.camunda.timer.pre-adapter-sparx-cycle
+      interval-ms: 300000           # 5 min, mirrors staging.camunda.timer.pre-adapter-sparx-cycle
 
 management:
   endpoints:

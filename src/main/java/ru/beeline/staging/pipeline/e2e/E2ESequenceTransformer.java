@@ -18,14 +18,24 @@ import java.util.Map;
 
 /**
  * Transformer for artifactType=e2e-sequence. Maps the dashboard-main "Scenario" JSON
- * (the same shape served by GET /api/v4/e2e/scenarios/{uid}/sequence, see
- * dashboard-main/src/api/model/scenario/index.mjs Scenario#toJSON) into the canonical model:
+ * (GET /api/v4/e2e/scenarios/{uid}/sequence) into the canonical model.
  *
- *   interfaces[]                  -> staging.interfaces / interface_versions
- *   interfaces[*].methods[]       -> staging.operations / operation_versions
- *   sequence (recursive messages) -> staging.bi_steps / bi_step_versions
- *   message.method                -> staging.bi_step_relation_versions  (step calls operation)
- *   parent.method -> child.method -> staging.operation_relation_versions (call chain)
+ * Real response shape (see a sample export, not dashboard-main's source — the two disagree):
+ *   root: { name, uid, note, sequence: [...], interfaces: [...] }
+ *   sequence node: { name, uid, stereotype, rps, latency, error_rate, operation_guid,
+ *                     diagram_uid, seqno, client_name, client_code, server_name, server_code,
+ *                     is_ret, linked_diagram_uid, sequence: [...] (optional, nested) }
+ *   interfaces[]: { id, name, app_code, code, uid, source?, methods: [...] }
+ *   interfaces[].methods[]: { name, uid, api_id, rps, latency, error_rate }
+ *
+ * There is no "message.method" sub-object — each sequence node IS the call, identified by
+ * its own operation_guid (matches interfaces[].methods[].uid when declared there).
+ *
+ * Layering: only the FIRST layer of root.sequence[] becomes a BI step (one per root-level
+ * call) — these represent the BI-level steps of the scenario. A BI step's own operation_guid
+ * is recorded as a bi_step_relation_versions row (call_order=0). Everything nested beneath a
+ * root item (sequence-sequence-sequence...) is an operation-to-operation call chain, recorded
+ * in operation_relation_versions with the immediate parent's operation_guid as caller.
  */
 @Slf4j
 @Component
@@ -41,10 +51,11 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
     public CanonicalSnapshot transform(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         CanonicalSnapshot snapshot = new CanonicalSnapshot();
+        String scenarioName = textOrNull(root, "name");
 
         Map<String, OperationDraft> operationsByExtUid = new LinkedHashMap<>();
         mapInterfacesAndOperations(root.path("interfaces"), snapshot, operationsByExtUid);
-        mapSequence(root.path("sequence"), null, 0, snapshot, operationsByExtUid);
+        mapRootSequence(root.path("sequence"), scenarioName, artifactUid, snapshot, operationsByExtUid);
 
         log.info("Transformed e2e-sequence uid={}: interfaces={}, operations={}, biSteps={}, biStepRelations={}, operationRelations={}",
                 artifactUid, snapshot.getInterfaces().size(), snapshot.getOperations().size(),
@@ -57,85 +68,118 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
                                               Map<String, OperationDraft> operationsByExtUid) {
         if (!interfaces.isArray()) return;
 
+        int ifaceIdx = 0;
         for (JsonNode iface : interfaces) {
             String ifaceUid = textOrNull(iface, "uid");
-            if (ifaceUid == null) continue;
+            if (ifaceUid == null) { ifaceIdx++; continue; }
 
             InterfaceDraft ifaceDraft = new InterfaceDraft();
             ifaceDraft.setUid(ifaceUid);
             ifaceDraft.setProtocol(textOrNull(iface, "source"));
             snapshot.getInterfaces().add(ifaceDraft);
 
+            int methodIdx = 0;
             for (JsonNode method : iface.path("methods")) {
                 String methodUid = textOrNull(method, "uid");
-                if (methodUid == null || operationsByExtUid.containsKey(methodUid)) continue;
-
-                OperationDraft op = new OperationDraft();
-                op.setExtUid(methodUid);
-                op.setInterfaceUid(ifaceUid);
-                op.setName(textOrNull(method, "name"));
-                op.setRps(doubleOrNull(method, "rps"));
-                op.setLatency(doubleOrNull(method, "latency"));
-                op.setErrorRate(doubleOrNull(method, "error_rate"));
-                operationsByExtUid.put(methodUid, op);
-                snapshot.getOperations().add(op);
+                if (methodUid != null && !operationsByExtUid.containsKey(methodUid)) {
+                    OperationDraft op = new OperationDraft();
+                    op.setExtUid(methodUid);
+                    op.setInterfaceUid(ifaceUid);
+                    op.setName(textOrNull(method, "name"));
+                    op.setRps(doubleOrNull(method, "rps"));
+                    op.setLatency(doubleOrNull(method, "latency"));
+                    op.setErrorRate(doubleOrNull(method, "error_rate"));
+                    op.setContext("/interfaces/" + ifaceIdx + "/methods/" + methodIdx);
+                    operationsByExtUid.put(methodUid, op);
+                    snapshot.getOperations().add(op);
+                }
+                methodIdx++;
             }
+            ifaceIdx++;
         }
     }
 
-    private void mapSequence(JsonNode messages, JsonNode parentMessage, int depth,
-                              CanonicalSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
-        if (!messages.isArray()) return;
+    /** First layer of root.sequence[] — each item becomes a BI step. */
+    private void mapRootSequence(JsonNode rootSequence, String scenarioName, String artifactUid,
+                                   CanonicalSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
+        if (!rootSequence.isArray()) return;
 
-        int callOrder = 0;
-        for (JsonNode message : messages) {
-            String msgUid = textOrNull(message, "uid");
-            if (msgUid != null) {
+        int rootIdx = 0;
+        for (JsonNode rootItem : rootSequence) {
+            String pointer = "/sequence/" + rootIdx;
+            String stepUid = textOrNull(rootItem, "uid");
+            String operationGuid = textOrNull(rootItem, "operation_guid");
+
+            if (stepUid != null) {
                 BiStepDraft step = new BiStepDraft();
-                step.setUid(msgUid);
-                step.setName(textOrNull(message, "name"));
-                JsonNode method = message.path("method");
-                step.setRps(doubleOrNull(method, "rps"));
-                step.setLatency(doubleOrNull(method, "latency"));
-                step.setErrorRate(doubleOrNull(method, "error_rate"));
-                step.setContext(textOrNull(message, "client_name") + " -> " + textOrNull(message, "server_name"));
+                step.setUid(stepUid);
+                step.setName(scenarioName);
+                step.setRps(doubleOrNull(rootItem, "rps"));
+                step.setLatency(doubleOrNull(rootItem, "latency"));
+                step.setErrorRate(doubleOrNull(rootItem, "error_rate"));
+                step.setContext(pointer);
+                step.setExternalGuid(artifactUid);
+                step.setSourceId(textOrNull(rootItem, "diagram_uid"));
                 snapshot.getBiSteps().add(step);
 
-                String methodUid = textOrNull(method, "uid");
-                if (methodUid != null) {
-                    if (!operationsByExtUid.containsKey(methodUid)) {
-                        log.warn("e2e-sequence: message uid={} references operation uid={} not declared in interfaces[] — adding without interface link",
-                                msgUid, methodUid);
-                        OperationDraft fallback = new OperationDraft();
-                        fallback.setExtUid(methodUid);
-                        fallback.setName(textOrNull(method, "name"));
-                        fallback.setRps(doubleOrNull(method, "rps"));
-                        fallback.setLatency(doubleOrNull(method, "latency"));
-                        fallback.setErrorRate(doubleOrNull(method, "error_rate"));
-                        operationsByExtUid.put(methodUid, fallback);
-                        snapshot.getOperations().add(fallback);
-                    }
+                if (operationGuid != null) {
+                    ensureOperation(operationGuid, rootItem, pointer, operationsByExtUid, snapshot);
 
                     BiStepRelationDraft relation = new BiStepRelationDraft();
-                    relation.setBiStepUid(msgUid);
-                    relation.setOperationExtUid(methodUid);
-                    relation.setCallOrder(callOrder);
+                    relation.setBiStepUid(stepUid);
+                    relation.setOperationExtUid(operationGuid);
+                    relation.setCallOrder(0);
+                    relation.setStereotype(textOrNull(rootItem, "stereotype"));
+                    relation.setContext(pointer);
                     snapshot.getBiStepRelations().add(relation);
 
-                    String parentMethodUid = parentMessage != null ? textOrNull(parentMessage.path("method"), "uid") : null;
-                    if (parentMethodUid != null) {
-                        OperationRelationDraft opRelation = new OperationRelationDraft();
-                        opRelation.setCallerOperationExtUid(parentMethodUid);
-                        opRelation.setCalleeOperationExtUid(methodUid);
-                        opRelation.setCallOrder(callOrder);
-                        snapshot.getOperationRelations().add(opRelation);
-                    }
+                    mapOperationSequence(rootItem.path("sequence"), operationGuid, pointer, snapshot, operationsByExtUid);
                 }
             }
+            rootIdx++;
+        }
+    }
 
-            mapSequence(message.path("sequence"), message, depth + 1, snapshot, operationsByExtUid);
+    /** Everything nested below the first layer — operation-to-operation call chain. */
+    private void mapOperationSequence(JsonNode nodes, String parentOperationGuid, String parentPointer,
+                                        CanonicalSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
+        if (!nodes.isArray()) return;
+
+        int callOrder = 0;
+        for (JsonNode node : nodes) {
+            String pointer = parentPointer + "/sequence/" + callOrder;
+            String operationGuid = textOrNull(node, "operation_guid");
+
+            if (operationGuid != null) {
+                ensureOperation(operationGuid, node, pointer, operationsByExtUid, snapshot);
+
+                OperationRelationDraft relation = new OperationRelationDraft();
+                relation.setCallerOperationExtUid(parentOperationGuid);
+                relation.setCalleeOperationExtUid(operationGuid);
+                relation.setCallOrder(callOrder);
+                relation.setStereotype(textOrNull(node, "stereotype"));
+                relation.setContext(pointer);
+                snapshot.getOperationRelations().add(relation);
+
+                mapOperationSequence(node.path("sequence"), operationGuid, pointer, snapshot, operationsByExtUid);
+            }
             callOrder++;
         }
+    }
+
+    private void ensureOperation(String operationGuid, JsonNode node, String pointer,
+                                   Map<String, OperationDraft> operationsByExtUid, CanonicalSnapshot snapshot) {
+        if (operationsByExtUid.containsKey(operationGuid)) return;
+
+        OperationDraft op = new OperationDraft();
+        op.setExtUid(operationGuid);
+        op.setName(textOrNull(node, "name"));
+        op.setRps(doubleOrNull(node, "rps"));
+        op.setLatency(doubleOrNull(node, "latency"));
+        op.setErrorRate(doubleOrNull(node, "error_rate"));
+        op.setContext(pointer);
+        operationsByExtUid.put(operationGuid, op);
+        snapshot.getOperations().add(op);
     }
 
     private static String textOrNull(JsonNode node, String field) {

@@ -33,8 +33,8 @@ public class RawDataRef {
     @Column(name = "s3_key")
     private String s3Key;
 
-    @Column(name = "raw_content", columnDefinition = "TEXT")
-    private String rawContent;
+    @Column(name = "raw_content", columnDefinition = "bytea")
+    private byte[] rawContent;
 
     @Column(name = "canonical_snapshot_json", columnDefinition = "TEXT")
     private String canonicalSnapshotJson;
