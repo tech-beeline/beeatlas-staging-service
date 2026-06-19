@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
-import ru.beeline.staging.pipeline.CanonicalModelPublisher;
 import ru.beeline.staging.pipeline.CanonicalModelSaverService;
 import ru.beeline.staging.pipeline.CanonicalSnapshot;
 import ru.beeline.staging.repository.RawDataRefRepository;
@@ -17,16 +16,14 @@ import java.util.NoSuchElementException;
 
 /**
  * Final pipeline stage: persists the CanonicalSnapshot produced by the Transformer stage
- * into the canonical model (our own representation), then notifies the CanonicalModelPublisher.
- * Creates an ArtifactBatch grouping all version rows from this run — the batch with
- * is_current=TRUE is the "эталон" that was last sent to cx-backend.
+ * into the canonical model (our own representation). Creates an ArtifactBatch grouping all
+ * version rows from this run — the batch with is_current=TRUE is the эталон ("наше представление").
  */
 @Component
 @RequiredArgsConstructor
 public class SaverWorker extends AbstractWorker {
 
     private final CanonicalModelSaverService canonicalModelSaverService;
-    private final CanonicalModelPublisher    canonicalModelPublisher;
     private final PipelineRunService         pipelineRunService;
     private final RawDataRefRepository       rawDataRefRepository;
     private final ObjectMapper               objectMapper;
@@ -65,7 +62,6 @@ public class SaverWorker extends AbstractWorker {
                 canonicalModelSaverService.save(snapshot, rawDataRefId, runId, uid, type);
 
         log.info("Saved canonical model for uid={}: {}", uid, result);
-        canonicalModelPublisher.publish(type, uid, snapshot, result);
 
         if (runId != null) {
             pipelineRunService.completeRun(runId);

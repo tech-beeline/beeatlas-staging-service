@@ -26,9 +26,8 @@ import java.util.Map;
  * from this run. The batch is marked is_current=TRUE; the previous batch for the same
  * artifact is marked FALSE. This is how "последний загруженный является эталонным" works.
  *
- * This is "наше представление" — our own copy of the canonical model. Pushing the result
- * out to other microservices (e.g. cx-backend's BI library) is a separate concern —
- * see {@link CanonicalModelPublisher}.
+ * This is "наше представление" — the canonical model lives entirely in staging's own
+ * schema; it is not pushed out to any other microservice.
  */
 @Slf4j
 @Service

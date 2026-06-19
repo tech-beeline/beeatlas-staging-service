@@ -56,11 +56,6 @@ camunda:
 staging:
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
-  cx-backend:
-    enabled: ${CX_BACKEND_ENABLED:true}
-    base-url: ${INTEGRATION_CX_SERVER_URL:http://cx-backend:8080}
-    system-user-id: ${CX_BACKEND_SYSTEM_USER_ID:1}
-    default-product-id: ${CX_BACKEND_DEFAULT_PRODUCT_ID:1}
   sparx:
     datasource:
       url: ${STAGING_SPARX_DATASOURCE_URL:}
