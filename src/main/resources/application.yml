@@ -33,7 +33,6 @@ camunda:
     data-source: camundaDataSource
     database:
       schema-update: true
-      table-prefix: STAGING_SERVICE_
     job-execution:
       enabled: true
       lock-time-in-millis: 900000
@@ -57,6 +56,8 @@ staging:
     check-interval-ms: 300000      # 5 min
     stuck-threshold-minutes: 30
     auto-retry-count: 3
+  camunda:
+    schema: ${STAGING_CAMUNDA_SCHEMA:staging_camunda}
   scheduler:
     tick-interval-ms: 60000        # PipelineTickScheduler: how often pre-adapter-process is started
 

@@ -84,3 +84,4 @@ configs:
   staging-postgres-init:
     content: |
       CREATE SCHEMA IF NOT EXISTS staging;
+      CREATE SCHEMA IF NOT EXISTS staging_camunda;
