@@ -6,10 +6,10 @@ spring:
     name: staging-service
   datasource:
     camunda:
-      driver-class-name: ${SPRING_DATASOURCE_USERNAME:org.postgresql.Driver}
-      url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://staging-postgres:5432/staging}
-      username: ${SPRING_DATASOURCE_USERNAME:postgres}
-      password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+      driver-class-name: ${SPRING_DATASOURCE_CAMUNDA_DRIVER_CLASS_NAME:org.postgresql.Driver}
+      url: ${SPRING_DATASOURCE_CAMUNDA_URL:jdbc:postgresql://staging-postgres:5432/staging}
+      username: ${SPRING_DATASOURCE_CAMUNDA_USERNAME:postgres}
+      password: ${SPRING_DATASOURCE_CAMUNDA_PASSWORD:postgres}
     staging:
       hikari:
         driver-class-name: org.postgresql.Driver
