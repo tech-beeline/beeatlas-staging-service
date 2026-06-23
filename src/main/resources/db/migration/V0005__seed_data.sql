@@ -3,8 +3,7 @@
 -- see ru.beeline.staging.service.ModuleResolver.
 
 INSERT INTO staging.data_types (code, description)
-VALUES ('e2e-sequence', 'E2E sequences from Sparx'),
-       ('business-capability', 'Business capabilities from Sparx');
+VALUES ('e2e-sequence', 'E2E sequences from Sparx');
 
 INSERT INTO staging.source_systems (code, name)
 VALUES ('sparx', 'Sparx Enterprise Architect'),
@@ -17,12 +16,5 @@ VALUES ('e2e-sequence-sparx',
         (SELECT id FROM staging.data_types WHERE code = 'e2e-sequence'),
         (SELECT id FROM staging.source_systems WHERE code = 'sparx'),
         '{"pre-adapter":"sparx-e2e-preadapter","adapter":"dashboard-e2e-adapter","validator":"e2e-sequence-validator","transformer":"e2e-sequence-transformer","saver":"e2e-canonical-saver"}'::jsonb,
-        21600,
-        TRUE),
-       ('business-capability-sparx',
-        'business-capability',
-        (SELECT id FROM staging.data_types WHERE code = 'business-capability'),
-        (SELECT id FROM staging.source_systems WHERE code = 'sparx'),
-        '{}'::jsonb,
         21600,
         TRUE);

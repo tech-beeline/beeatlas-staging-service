@@ -69,7 +69,7 @@ public class PreAdapterWorker extends AbstractWorker {
         log.info("Found {} active scheduled configurations", candidates.size());
 
         for (Configuration config : candidates) {
-            if (isAlreadyRunning(config)) {
+            if (isAlreadyRunning(config, batchId)) {
                 log.info("Skip configId={} — process already running", config.getId());
                 continue;
             }
@@ -102,13 +102,16 @@ public class PreAdapterWorker extends AbstractWorker {
 
     // -------------------------------------------------------------------------
 
-    private boolean isAlreadyRunning(Configuration config) {
-        long count = runtimeService.createProcessInstanceQuery()
+    /** batchId is the processInstanceId of the pre-adapter task driving this tick — it must
+     *  not count itself as an "already running" process for its own configuration. */
+    private boolean isAlreadyRunning(Configuration config, String batchId) {
+        return runtimeService.createProcessInstanceQuery()
                 .processDefinitionKey("artifact-pipeline-process")
                 .variableValueEquals("configurationId", config.getId())
                 .active()
-                .count();
-        return count > 0;
+                .list()
+                .stream()
+                .anyMatch(p -> !p.getId().equals(batchId));
     }
 
     private boolean intervalElapsed(Configuration config) {
