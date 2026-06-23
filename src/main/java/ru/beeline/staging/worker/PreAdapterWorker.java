@@ -1,35 +1,56 @@
 package ru.beeline.staging.worker;
 
+import jakarta.annotation.PostConstruct;
 import org.camunda.bpm.engine.HistoryService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.Configuration;
+import ru.beeline.staging.pipeline.preadapter.ArtifactPreAdapter;
 import ru.beeline.staging.repository.ConfigurationRepository;
-import ru.beeline.staging.service.SparxScanService;
+import ru.beeline.staging.service.ModuleResolver;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+/**
+ * Universal task executor for the "pre-adapter" stage: on every tick (started by
+ * PipelineTickScheduler, not a Camunda BPMN timer), scans all active scheduled
+ * configurations and, for each one that's due, resolves its configured ArtifactPreAdapter
+ * by moduleCode and delegates to it. Adding support for a new entity type is a matter of
+ * adding a new ArtifactPreAdapter bean and a configurations row — this class never changes.
+ */
 @Component
 public class PreAdapterWorker extends AbstractWorker {
 
     private final ConfigurationRepository configurationRepository;
     private final RuntimeService          runtimeService;
     private final HistoryService          historyService;
-    private final SparxScanService        sparxScanService;
+    private final ModuleResolver          moduleResolver;
+    private final List<ArtifactPreAdapter> preAdapters;
+
+    private Map<String, ArtifactPreAdapter> registry;
 
     public PreAdapterWorker(ConfigurationRepository configurationRepository,
-                            RuntimeService runtimeService,
-                            HistoryService historyService,
-                            SparxScanService sparxScanService) {
+                             RuntimeService runtimeService,
+                             HistoryService historyService,
+                             ModuleResolver moduleResolver,
+                             List<ArtifactPreAdapter> preAdapters) {
         this.configurationRepository = configurationRepository;
         this.runtimeService          = runtimeService;
         this.historyService          = historyService;
-        this.sparxScanService        = sparxScanService;
+        this.moduleResolver          = moduleResolver;
+        this.preAdapters             = preAdapters;
+    }
+
+    @PostConstruct
+    void init() {
+        registry = preAdapters.stream().collect(Collectors.toMap(ArtifactPreAdapter::moduleCode, p -> p));
+        log.info("PreAdapterWorker registry initialized for modules: {}", registry.keySet());
     }
 
     @Override
@@ -40,7 +61,7 @@ public class PreAdapterWorker extends AbstractWorker {
     @Override
     protected Map<String, Object> process(LockedExternalTask task) {
         String batchId = task.getProcessInstanceId();
-        log.info("Scheduler tick: batchId={}", batchId);
+        log.info("Pre-adapter tick: batchId={}", batchId);
 
         List<Configuration> candidates =
                 configurationRepository.findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
@@ -56,23 +77,27 @@ public class PreAdapterWorker extends AbstractWorker {
                 log.info("Skip configId={} — interval not yet elapsed", config.getId());
                 continue;
             }
-            publishEventsForConfig(config, batchId);
+            runForConfig(config, batchId);
         }
         return null;
     }
 
-    // -------------------------------------------------------------------------
-
-    private void publishEventsForConfig(Configuration config, String batchId) {
-        switch (config.getArtifactType()) {
-            case "e2e-sequence"        -> publishE2ESequences(config, batchId);
-            case "business-capability" -> log.warn("Pre-adapter for business-capability not implemented yet, configId={}", config.getId());
-            default                    -> log.warn("Unknown artifact_type='{}' for configId={} — skipping", config.getArtifactType(), config.getId());
+    /** Shared by the scheduled tick above and any manual admin trigger for a single config. */
+    public int runForConfig(Configuration config, String batchId) {
+        String moduleCode;
+        try {
+            moduleCode = moduleResolver.resolve(config.getId(), topic());
+        } catch (IllegalStateException e) {
+            log.warn("Skip configId={}: {}", config.getId(), e.getMessage());
+            return 0;
         }
-    }
 
-    private void publishE2ESequences(Configuration config, String batchId) {
-        sparxScanService.scanAndPublishForConfig(config, batchId);
+        ArtifactPreAdapter adapter = registry.get(moduleCode);
+        if (adapter == null) {
+            log.warn("No ArtifactPreAdapter registered for moduleCode='{}', configId={}", moduleCode, config.getId());
+            return 0;
+        }
+        return adapter.scanAndPublish(config, batchId);
     }
 
     // -------------------------------------------------------------------------

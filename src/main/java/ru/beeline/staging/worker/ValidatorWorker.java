@@ -5,8 +5,9 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
-import ru.beeline.staging.pipeline.ArtifactValidator;
+import ru.beeline.staging.pipeline.validator.ArtifactValidator;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.utils.GzipUtils;
 
 import java.util.List;
@@ -20,13 +21,14 @@ public class ValidatorWorker extends AbstractWorker {
 
     private final List<ArtifactValidator> validators;
     private final RawDataRefRepository    rawDataRefRepository;
+    private final ModuleResolver          moduleResolver;
 
     private Map<String, ArtifactValidator> registry;
 
     @PostConstruct
     void init() {
-        registry = validators.stream().collect(Collectors.toMap(ArtifactValidator::supportedType, v -> v));
-        log.info("ValidatorWorker registry initialized for types: {}", registry.keySet());
+        registry = validators.stream().collect(Collectors.toMap(ArtifactValidator::moduleCode, v -> v));
+        log.info("ValidatorWorker registry initialized for modules: {}", registry.keySet());
     }
 
     @Override
@@ -37,22 +39,23 @@ public class ValidatorWorker extends AbstractWorker {
 
     @Override
     protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId");
+        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId");
     }
 
     @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
-        String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
+        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
 
-        log.info("stage=validator, type={}, uid={}", type, uid);
-
-        ArtifactValidator validator = registry.get(type);
+        String moduleCode = moduleResolver.resolve(configurationId, topic());
+        ArtifactValidator validator = registry.get(moduleCode);
         if (validator == null) {
-            log.warn("No ArtifactValidator registered for artifactType={} — skipping validation", type);
+            log.warn("No ArtifactValidator registered for moduleCode={} — skipping validation", moduleCode);
             return null;
         }
+
+        log.info("stage=validator, module={}, uid={}", moduleCode, uid);
 
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));

@@ -40,4 +40,12 @@ public class PipelineStageLog {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "summary_json", columnDefinition = "jsonb")
     private Map<String, Object> summaryJson;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "input_data", columnDefinition = "jsonb")
+    private Map<String, Object> inputData;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "output_data", columnDefinition = "jsonb")
+    private Map<String, Object> outputData;
 }

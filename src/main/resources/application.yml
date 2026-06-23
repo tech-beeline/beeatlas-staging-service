@@ -1,12 +1,6 @@
 server:
   port: 8080
 
-app:
-  ambassador-auth: true
-
-integration:
-  authsso-server-url: ${INTEGRATION_AUTHSSO_SERVER_URL:http://eafdmmart-develop-ambassador/rabbit-token}
-
 spring:
   application:
     name: staging-service
@@ -30,12 +24,6 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
-  rabbitmq:
-    host: ${RABBIT_HOST:rabbitmq}
-    port: ${RABBIT_PORT:5672}
-    username: ${RABBIT_USERNAME:guest}
-    password: ${RABBIT_PASSWORD:guest}
-    virtual-host: ${RABBIT_VIRTUAL_HOST:/}
 
 camunda:
   bpm:
@@ -61,9 +49,6 @@ staging:
       url: ${STAGING_SPARX_DATASOURCE_URL:}
       username: ${STAGING_SPARX_DATASOURCE_USERNAME:}
       password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
-  camunda:
-    timer:
-      pre-adapter-sparx-cycle: R/PT5M
   worker:
     poll-interval-ms: 500
     lock-duration-ms: 30000
@@ -72,10 +57,7 @@ staging:
     stuck-threshold-minutes: 30
     auto-retry-count: 3
   scheduler:
-    scan-interval-ms: 60000        # used as reference; actual schedule driven by BPMN timer
-    e2e-scan:
-      enabled: false                # opt-in plain Spring scheduler, alternative to the BPMN timer (avoid enabling both)
-      interval-ms: 300000           # 5 min, mirrors staging.camunda.timer.pre-adapter-sparx-cycle
+    tick-interval-ms: 60000        # PipelineTickScheduler: how often pre-adapter-process is started
 
 management:
   endpoints:

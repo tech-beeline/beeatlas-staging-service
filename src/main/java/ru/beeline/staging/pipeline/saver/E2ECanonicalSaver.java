@@ -1,26 +1,27 @@
-package ru.beeline.staging.pipeline;
+package ru.beeline.staging.pipeline.saver;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.canonical.*;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
 import ru.beeline.staging.repository.canonical.*;
 import ru.beeline.staging.service.PipelineRunService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Persists a source-agnostic {@link CanonicalSnapshot} into Beeatlas's own canonical
- * representation (staging.bi_steps / interfaces / operations + their *_versions tables).
- * Entity tables are find-or-create by natural key (uid / ext_uid); version tables are
- * append-only — every load inserts a new version row, traceable back to its raw_data_ref.
+ * Persists an {@link E2ESequenceSnapshot} into Beeatlas's own canonical representation
+ * (staging.bi_steps / interfaces / operations + their *_versions tables). Entity tables
+ * are find-or-create by natural key (uid / ext_uid); version tables are append-only —
+ * every load inserts a new version row, traceable back to its raw_data_ref.
  *
  * Each successful save creates one {@link ArtifactBatch} that groups all version rows
  * from this run. The batch is marked is_current=TRUE; the previous batch for the same
@@ -30,9 +31,11 @@ import java.util.Map;
  * schema; it is not pushed out to any other microservice.
  */
 @Slf4j
-@Service
+@Component
 @RequiredArgsConstructor
-public class CanonicalModelSaverService {
+public class E2ECanonicalSaver implements ArtifactSaver {
+
+    public static final String MODULE_CODE = "e2e-canonical-saver";
 
     private final BiStepRepository                    biStepRepository;
     private final InterfaceRepository                  interfaceRepository;
@@ -43,10 +46,29 @@ public class CanonicalModelSaverService {
     private final BiStepRelationVersionRepository      biStepRelationVersionRepository;
     private final OperationRelationVersionRepository   operationRelationVersionRepository;
     private final PipelineRunService                   pipelineRunService;
+    private final ObjectMapper                          objectMapper;
 
+    @Override
+    public String moduleCode() { return MODULE_CODE; }
+
+    @Override
     @Transactional
-    public SaveResult save(CanonicalSnapshot snapshot, Long rawDataRefId,
-                           Long runId, String artifactUid, String artifactType) {
+    public Map<String, Object> save(String artifactUid, String artifactType, long rawDataRefId,
+                                     Long runId, String canonicalSnapshotJson) throws Exception {
+        if (canonicalSnapshotJson == null || canonicalSnapshotJson.isBlank()) {
+            log.warn("No canonicalSnapshotJson present for uid={} — nothing to save", artifactUid);
+            return null;
+        }
+
+        E2ESequenceSnapshot snapshot = objectMapper.readValue(canonicalSnapshotJson, E2ESequenceSnapshot.class);
+        SaveResult result = save(snapshot, rawDataRefId, runId, artifactUid, artifactType);
+        log.info("Saved canonical model for uid={}: {}", artifactUid, result);
+
+        return Map.of("batchId", result.getBatchId() != null ? result.getBatchId() : -1L);
+    }
+
+    private SaveResult save(E2ESequenceSnapshot snapshot, Long rawDataRefId,
+                             Long runId, String artifactUid, String artifactType) {
         LocalDateTime now = LocalDateTime.now();
 
         // Create the batch first — its id is foreign-keyed on all version rows below
@@ -58,7 +80,7 @@ public class CanonicalModelSaverService {
         Long batchId = batch.getId();
 
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
-        for (CanonicalSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
+        for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
             InterfaceEntity entity = interfaceRepository.findByUid(draft.getUid()).orElseGet(() -> {
                 InterfaceEntity e = new InterfaceEntity();
                 e.setUid(draft.getUid());
@@ -77,7 +99,7 @@ public class CanonicalModelSaverService {
         }
 
         Map<String, OperationVersion> operationVersionsByExtUid = new HashMap<>();
-        for (CanonicalSnapshot.OperationDraft draft : snapshot.getOperations()) {
+        for (E2ESequenceSnapshot.OperationDraft draft : snapshot.getOperations()) {
             OperationEntity entity = operationRepository.findByExtUid(draft.getExtUid()).orElseGet(() -> {
                 OperationEntity e = new OperationEntity();
                 e.setExtUid(draft.getExtUid());
@@ -111,7 +133,7 @@ public class CanonicalModelSaverService {
         }
 
         Map<String, BiStepVersion> biStepVersionsByUid = new HashMap<>();
-        for (CanonicalSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
+        for (E2ESequenceSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
             BiStep entity = biStepRepository.findByUid(draft.getUid()).orElseGet(() -> {
                 BiStep e = new BiStep();
                 e.setUid(draft.getUid());
@@ -135,7 +157,7 @@ public class CanonicalModelSaverService {
         }
 
         int relationsSaved = 0;
-        for (CanonicalSnapshot.BiStepRelationDraft draft : snapshot.getBiStepRelations()) {
+        for (E2ESequenceSnapshot.BiStepRelationDraft draft : snapshot.getBiStepRelations()) {
             BiStepVersion step = biStepVersionsByUid.get(draft.getBiStepUid());
             OperationVersion op = operationVersionsByExtUid.get(draft.getOperationExtUid());
             if (step == null || op == null) {
@@ -156,7 +178,7 @@ public class CanonicalModelSaverService {
         }
 
         int operationRelationsSaved = 0;
-        for (CanonicalSnapshot.OperationRelationDraft draft : snapshot.getOperationRelations()) {
+        for (E2ESequenceSnapshot.OperationRelationDraft draft : snapshot.getOperationRelations()) {
             OperationVersion caller = operationVersionsByExtUid.get(draft.getCallerOperationExtUid());
             OperationVersion callee = operationVersionsByExtUid.get(draft.getCalleeOperationExtUid());
             if (caller == null || callee == null) {
@@ -191,7 +213,7 @@ public class CanonicalModelSaverService {
     }
 
     @Data
-    public static class SaveResult {
+    private static class SaveResult {
         private Long batchId;
         private int  interfacesSaved;
         private int  operationsSaved;

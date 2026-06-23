@@ -28,6 +28,9 @@ public class PipelineRun {
     @Column(name = "raw_data_ref_id")
     private Long rawDataRefId;
 
+    @Column(name = "batch_id")
+    private String batchId;
+
     @Column(name = "status", nullable = false)
     private String status = "pending";
 

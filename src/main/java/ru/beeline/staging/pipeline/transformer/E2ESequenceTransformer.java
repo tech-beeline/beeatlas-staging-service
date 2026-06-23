@@ -1,24 +1,23 @@
-package ru.beeline.staging.pipeline.e2e;
+package ru.beeline.staging.pipeline.transformer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.beeline.staging.pipeline.ArtifactTransformer;
-import ru.beeline.staging.pipeline.CanonicalSnapshot;
-import ru.beeline.staging.pipeline.CanonicalSnapshot.BiStepDraft;
-import ru.beeline.staging.pipeline.CanonicalSnapshot.BiStepRelationDraft;
-import ru.beeline.staging.pipeline.CanonicalSnapshot.InterfaceDraft;
-import ru.beeline.staging.pipeline.CanonicalSnapshot.OperationDraft;
-import ru.beeline.staging.pipeline.CanonicalSnapshot.OperationRelationDraft;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.BiStepDraft;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.BiStepRelationDraft;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.InterfaceDraft;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.OperationDraft;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.OperationRelationDraft;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * Transformer for artifactType=e2e-sequence. Maps the dashboard-main "Scenario" JSON
- * (GET /api/v4/e2e/scenarios/{uid}/sequence) into the canonical model.
+ * (GET /api/v4/e2e/scenarios/{uid}/sequence) into E2ESequenceSnapshot, the private
+ * entity-graph shape this module's saver (E2ECanonicalSaver) understands.
  *
  * Real response shape (see a sample export, not dashboard-main's source — the two disagree):
  *   root: { name, uid, note, sequence: [...], interfaces: [...] }
@@ -42,15 +41,17 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class E2ESequenceTransformer implements ArtifactTransformer {
 
+    public static final String MODULE_CODE = "e2e-sequence-transformer";
+
     private final ObjectMapper objectMapper;
 
     @Override
-    public String supportedType() { return DashboardE2ELoader.TYPE; }
+    public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public CanonicalSnapshot transform(String artifactUid, String rawContent) throws Exception {
+    public E2ESequenceSnapshot transform(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
-        CanonicalSnapshot snapshot = new CanonicalSnapshot();
+        E2ESequenceSnapshot snapshot = new E2ESequenceSnapshot();
         String scenarioName = textOrNull(root, "name");
 
         Map<String, OperationDraft> operationsByExtUid = new LinkedHashMap<>();
@@ -64,7 +65,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
         return snapshot;
     }
 
-    private void mapInterfacesAndOperations(JsonNode interfaces, CanonicalSnapshot snapshot,
+    private void mapInterfacesAndOperations(JsonNode interfaces, E2ESequenceSnapshot snapshot,
                                               Map<String, OperationDraft> operationsByExtUid) {
         if (!interfaces.isArray()) return;
 
@@ -101,7 +102,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
 
     /** First layer of root.sequence[] — each item becomes a BI step. */
     private void mapRootSequence(JsonNode rootSequence, String scenarioName, String artifactUid,
-                                   CanonicalSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
+                                   E2ESequenceSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
         if (!rootSequence.isArray()) return;
 
         int rootIdx = 0;
@@ -142,7 +143,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
 
     /** Everything nested below the first layer — operation-to-operation call chain. */
     private void mapOperationSequence(JsonNode nodes, String parentOperationGuid, String parentPointer,
-                                        CanonicalSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
+                                        E2ESequenceSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
         if (!nodes.isArray()) return;
 
         int callOrder = 0;
@@ -168,7 +169,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
     }
 
     private void ensureOperation(String operationGuid, JsonNode node, String pointer,
-                                   Map<String, OperationDraft> operationsByExtUid, CanonicalSnapshot snapshot) {
+                                   Map<String, OperationDraft> operationsByExtUid, E2ESequenceSnapshot snapshot) {
         if (operationsByExtUid.containsKey(operationGuid)) return;
 
         OperationDraft op = new OperationDraft();

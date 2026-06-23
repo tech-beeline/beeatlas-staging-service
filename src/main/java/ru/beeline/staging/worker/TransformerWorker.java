@@ -6,9 +6,9 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
-import ru.beeline.staging.pipeline.ArtifactTransformer;
-import ru.beeline.staging.pipeline.CanonicalSnapshot;
+import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.utils.GzipUtils;
 
 import java.util.List;
@@ -23,13 +23,14 @@ public class TransformerWorker extends AbstractWorker {
     private final List<ArtifactTransformer> transformers;
     private final RawDataRefRepository      rawDataRefRepository;
     private final ObjectMapper              objectMapper;
+    private final ModuleResolver            moduleResolver;
 
     private Map<String, ArtifactTransformer> registry;
 
     @PostConstruct
     void init() {
-        registry = transformers.stream().collect(Collectors.toMap(ArtifactTransformer::supportedType, t -> t));
-        log.info("TransformerWorker registry initialized for types: {}", registry.keySet());
+        registry = transformers.stream().collect(Collectors.toMap(ArtifactTransformer::moduleCode, t -> t));
+        log.info("TransformerWorker registry initialized for modules: {}", registry.keySet());
     }
 
     @Override
@@ -40,28 +41,33 @@ public class TransformerWorker extends AbstractWorker {
 
     @Override
     protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId");
+        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId");
     }
 
     @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
-        String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
+        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
 
-        log.info("stage=transformer, type={}, uid={}", type, uid);
-
-        ArtifactTransformer transformer = registry.get(type);
+        String moduleCode = moduleResolver.resolve(configurationId, topic());
+        ArtifactTransformer transformer = registry.get(moduleCode);
         if (transformer == null) {
-            throw new IllegalStateException("No ArtifactTransformer registered for artifactType=" + type);
+            throw new IllegalStateException("No ArtifactTransformer registered for moduleCode=" + moduleCode);
         }
+
+        log.info("stage=transformer, module={}, uid={}", moduleCode, uid);
 
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        CanonicalSnapshot snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+        // Snapshot shape is private to this transformer/saver pair — TransformerWorker only
+        // serializes whatever object comes back, it never inspects its structure.
+        Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
         String snapshotJson = objectMapper.writeValueAsString(snapshot);
 
+        // Never travels through Camunda process variables (varchar(4000) limit) — only
+        // rawDataRefId does; the Saver stage reads this column back by id.
         ref.setCanonicalSnapshotJson(snapshotJson);
         rawDataRefRepository.save(ref);
 

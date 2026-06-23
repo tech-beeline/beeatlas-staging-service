@@ -27,12 +27,6 @@ public class RawDataRef {
     @Column(name = "source_id")
     private String sourceId;
 
-    @Column(name = "s3_bucket")
-    private String s3Bucket;
-
-    @Column(name = "s3_key")
-    private String s3Key;
-
     @Column(name = "raw_content", columnDefinition = "bytea")
     private byte[] rawContent;
 

@@ -1,11 +1,10 @@
-package ru.beeline.staging.pipeline.e2e;
+package ru.beeline.staging.pipeline.adapter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.dashboard.DashboardClient;
 import ru.beeline.staging.domain.RawDataRef;
-import ru.beeline.staging.pipeline.ArtifactLoader;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.utils.GzipUtils;
 
@@ -15,18 +14,20 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
+/** Adapter for artifactType=e2e-sequence: downloads the raw scenario JSON from Dashboard. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DashboardE2ELoader implements ArtifactLoader {
+public class DashboardE2EAdapter implements ArtifactAdapter {
 
-    public static final String TYPE = "e2e-sequence";
+    public static final String MODULE_CODE = "dashboard-e2e-adapter";
+    public static final String TYPE        = "e2e-sequence";
 
     private final DashboardClient      dashboardClient;
     private final RawDataRefRepository rawDataRefRepository;
 
     @Override
-    public String supportedType() { return TYPE; }
+    public String moduleCode() { return MODULE_CODE; }
 
     @Override
     public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {

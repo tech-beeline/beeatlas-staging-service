@@ -1,4 +1,4 @@
-package ru.beeline.staging.pipeline;
+package ru.beeline.staging.pipeline.transformer;
 
 import lombok.Data;
 
@@ -6,18 +6,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Source-agnostic intermediate representation produced by an {@link ArtifactTransformer}.
- * The Saver stage persists this into the canonical model (staging.bi_steps, interfaces,
- * operations and their *_versions tables) without needing to know which source the data
- * came from.
+ * Entity-graph shape produced by {@link E2ESequenceTransformer}, consumed by
+ * ru.beeline.staging.pipeline.saver.E2ECanonicalSaver. This is a private agreement
+ * between this transformer/saver pair only — ArtifactTransformer/ArtifactSaver carry it
+ * as plain JSON text, with no shared type at the interface level. A different entity type
+ * defines its own snapshot shape next to its own transformer/saver, however it likes.
  */
 @Data
-public class CanonicalSnapshot {
+public class E2ESequenceSnapshot {
 
-    private List<InterfaceDraft>        interfaces = new ArrayList<>();
-    private List<OperationDraft>        operations = new ArrayList<>();
-    private List<BiStepDraft>           biSteps    = new ArrayList<>();
-    private List<BiStepRelationDraft>   biStepRelations = new ArrayList<>();
+    private List<InterfaceDraft>         interfaces         = new ArrayList<>();
+    private List<OperationDraft>         operations         = new ArrayList<>();
+    private List<BiStepDraft>            biSteps            = new ArrayList<>();
+    private List<BiStepRelationDraft>    biStepRelations    = new ArrayList<>();
     private List<OperationRelationDraft> operationRelations = new ArrayList<>();
 
     @Data

@@ -1,11 +1,10 @@
-package ru.beeline.staging.pipeline.e2e;
+package ru.beeline.staging.pipeline.validator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.beeline.staging.pipeline.ArtifactValidator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +18,7 @@ import java.util.Map;
  * onto each ScenarioMessage node while resolving the sequence (duplicate messages with
  * conflicting SLA, unresolved operation_guid, missing/ambiguous child diagrams, etc.),
  * and ScenarioMessage.toJSON() serializes that field as-is. So the raw JSON we already
- * downloaded in the Loader stage carries dashboard's own validation findings — we just
+ * downloaded in the adapter stage carries dashboard's own validation findings — we just
  * have to walk the tree and collect them, instead of re-implementing the call-tree logic.
  *
  * Mirrors dashboard's own behaviour: issues are collected and logged as warnings, never
@@ -30,10 +29,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class E2ESequenceValidator implements ArtifactValidator {
 
+    public static final String MODULE_CODE = "e2e-sequence-validator";
+
     private final ObjectMapper objectMapper;
 
     @Override
-    public String supportedType() { return DashboardE2ELoader.TYPE; }
+    public String moduleCode() { return MODULE_CODE; }
 
     @Override
     public Map<String, Object> validate(String artifactUid, String rawContent) throws Exception {

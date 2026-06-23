@@ -1,15 +1,15 @@
-package ru.beeline.staging.pipeline;
+package ru.beeline.staging.pipeline.adapter;
 
 import java.util.Map;
 
 /**
- * Strategy for downloading raw artifact data from its source system and storing it
- * (e.g. into S3 + raw_data_refs). One implementation per artifactType; LoaderWorker
- * dispatches to the matching bean by {@link #supportedType()}.
+ * Downloads raw ("грязные") artifact data from its source system and persists it
+ * (raw_data_refs). Selected per configuration by moduleCode, not tied to artifactType —
+ * any number of adapters can target the same artifactType.
  */
-public interface ArtifactLoader {
+public interface ArtifactAdapter {
 
-    String supportedType();
+    String moduleCode();
 
     /**
      * Loads the artifact identified by artifactUid, persists the raw snapshot and

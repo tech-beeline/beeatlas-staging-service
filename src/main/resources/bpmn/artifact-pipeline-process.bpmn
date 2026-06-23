@@ -21,18 +21,18 @@
       <bpmn:messageEventDefinition id="MessageEventDefinition_1" messageRef="Message_ArtifactReady" />
     </bpmn:startEvent>
 
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Message" targetRef="Task_Loader" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Message" targetRef="Task_Adapter" />
 
-    <bpmn:serviceTask id="Task_Loader"
-                      name="Loader"
+    <bpmn:serviceTask id="Task_Adapter"
+                      name="Adapter"
                       camunda:type="external"
-                      camunda:topic="loader"
+                      camunda:topic="adapter"
                       camunda:asyncBefore="true">
       <bpmn:incoming>Flow_1</bpmn:incoming>
       <bpmn:outgoing>Flow_2</bpmn:outgoing>
     </bpmn:serviceTask>
 
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Loader" targetRef="Task_Validator" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Adapter" targetRef="Task_Validator" />
 
     <bpmn:serviceTask id="Task_Validator"
                       name="Validator"
@@ -79,7 +79,7 @@
         <dc:Bounds x="182" y="112" width="36" height="36" />
         <bpmndi:BPMNLabel><dc:Bounds x="177" y="155" width="46" height="27" /></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_Loader_di" bpmnElement="Task_Loader">
+      <bpmndi:BPMNShape id="Task_Adapter_di" bpmnElement="Task_Adapter">
         <dc:Bounds x="270" y="90" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_Validator_di" bpmnElement="Task_Validator">

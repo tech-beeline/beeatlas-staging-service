@@ -49,12 +49,12 @@ public abstract class AbstractWorker {
 
         for (LockedExternalTask task : tasks) {
             Long runId = extractRunId(task);
-            Long stageLogId = runId != null ? pipelineRunService.startStage(runId, topic()) : null;
+            Long stageLogId = runId != null ? pipelineRunService.startStage(runId, topic(), task.getVariables()) : null;
 
             try {
                 Map<String, Object> outputVars = process(task);
                 if (stageLogId != null) {
-                    pipelineRunService.completeStage(stageLogId, buildSummary(outputVars));
+                    pipelineRunService.completeStage(stageLogId, outputVars, buildSummary(outputVars));
                 }
                 if (outputVars != null && !outputVars.isEmpty()) {
                     externalTaskService.complete(task.getId(), workerId(), outputVars);
@@ -68,8 +68,8 @@ public abstract class AbstractWorker {
                     if (retries <= 0) {
                         pipelineRunService.failStage(stageLogId, runId, topic(), e.getMessage());
                     } else {
-                        pipelineRunService.completeStage(stageLogId,
-                                Map.of("retrying", true, "error", String.valueOf(e.getMessage())));
+                        Map<String, Object> retryInfo = Map.of("retrying", true, "error", String.valueOf(e.getMessage()));
+                        pipelineRunService.completeStage(stageLogId, retryInfo, retryInfo);
                     }
                 }
                 int retries = task.getRetries() != null ? Math.max(0, task.getRetries() - 1) : 2;
