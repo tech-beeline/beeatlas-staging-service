@@ -33,6 +33,7 @@ camunda:
     data-source: camundaDataSource
     database:
       schema-update: true
+      table-prefix: STAGING_SERVICE_
     job-execution:
       enabled: true
       lock-time-in-millis: 900000
