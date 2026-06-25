@@ -49,6 +49,9 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
+    public String description() { return "Maps dashboard's e2e scenario JSON into the BI step / interface / operation snapshot"; }
+
+    @Override
     public E2ESequenceSnapshot transform(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         E2ESequenceSnapshot snapshot = new E2ESequenceSnapshot();

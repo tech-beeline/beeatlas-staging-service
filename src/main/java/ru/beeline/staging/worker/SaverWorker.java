@@ -53,7 +53,6 @@ public class SaverWorker extends AbstractWorker {
         String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
         Long runId = task.getVariables().get("pipelineRunId") instanceof Number n ? n.longValue() : null;
 
         // Idempotency guard: if a crash happened after this run already completed but before
@@ -63,7 +62,7 @@ public class SaverWorker extends AbstractWorker {
             return null;
         }
 
-        String moduleCode = moduleResolver.resolve(configurationId, topic());
+        String moduleCode = moduleResolver.resolve(type, topic());
         ArtifactSaver saver = registry.get(moduleCode);
         if (saver == null) {
             throw new IllegalStateException("No ArtifactSaver registered for moduleCode=" + moduleCode);

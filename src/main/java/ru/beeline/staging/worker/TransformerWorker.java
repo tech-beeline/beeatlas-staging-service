@@ -47,10 +47,10 @@ public class TransformerWorker extends AbstractWorker {
     @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
         String uid  = (String) task.getVariables().get("artifactUid");
+        String artifactType = (String) task.getVariables().get("artifactType");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
 
-        String moduleCode = moduleResolver.resolve(configurationId, topic());
+        String moduleCode = moduleResolver.resolve(artifactType, topic());
         ArtifactTransformer transformer = registry.get(moduleCode);
         if (transformer == null) {
             throw new IllegalStateException("No ArtifactTransformer registered for moduleCode=" + moduleCode);

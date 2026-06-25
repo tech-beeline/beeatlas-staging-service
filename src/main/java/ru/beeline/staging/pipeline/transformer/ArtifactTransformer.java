@@ -12,5 +12,8 @@ public interface ArtifactTransformer {
 
     String moduleCode();
 
+    /** Human-readable description for the module catalog (staging.module_catalog). */
+    String description();
+
     Object transform(String artifactUid, String rawContent) throws Exception;
 }

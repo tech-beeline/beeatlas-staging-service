@@ -11,6 +11,9 @@ public interface ArtifactPreAdapter {
 
     String moduleCode();
 
+    /** Human-readable description for the module catalog (staging.module_catalog). */
+    String description();
+
     /** Returns the number of items found/started. */
     int scanAndPublish(Configuration config, String batchId);
 }

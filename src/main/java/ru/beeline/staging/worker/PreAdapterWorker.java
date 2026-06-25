@@ -7,9 +7,11 @@ import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.Configuration;
+import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.pipeline.preadapter.ArtifactPreAdapter;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.service.ModuleResolver;
+import ru.beeline.staging.service.PipelineRunService;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -22,7 +24,7 @@ import java.util.stream.Collectors;
  * PipelineTickScheduler, not a Camunda BPMN timer), scans all active scheduled
  * configurations and, for each one that's due, resolves its configured ArtifactPreAdapter
  * by moduleCode and delegates to it. Adding support for a new entity type is a matter of
- * adding a new ArtifactPreAdapter bean and a configurations row — this class never changes.
+ * adding a new ArtifactPreAdapter bean and a PipelineDefinition — this class never changes.
  */
 @Component
 public class PreAdapterWorker extends AbstractWorker {
@@ -31,6 +33,7 @@ public class PreAdapterWorker extends AbstractWorker {
     private final RuntimeService          runtimeService;
     private final HistoryService          historyService;
     private final ModuleResolver          moduleResolver;
+    private final PipelineRunService      pipelineRunService;
     private final List<ArtifactPreAdapter> preAdapters;
 
     private Map<String, ArtifactPreAdapter> registry;
@@ -39,11 +42,13 @@ public class PreAdapterWorker extends AbstractWorker {
                              RuntimeService runtimeService,
                              HistoryService historyService,
                              ModuleResolver moduleResolver,
+                             PipelineRunService pipelineRunService,
                              List<ArtifactPreAdapter> preAdapters) {
         this.configurationRepository = configurationRepository;
         this.runtimeService          = runtimeService;
         this.historyService          = historyService;
         this.moduleResolver          = moduleResolver;
+        this.pipelineRunService      = pipelineRunService;
         this.preAdapters             = preAdapters;
     }
 
@@ -82,22 +87,34 @@ public class PreAdapterWorker extends AbstractWorker {
         return null;
     }
 
-    /** Shared by the scheduled tick above and any manual admin trigger for a single config. */
+    /**
+     * Shared by the scheduled tick above and any manual admin trigger for a single config.
+     * Tracked through the same pipeline_runs/pipeline_stage_logs tables as the rest of the
+     * pipeline — previously a pre-adapter failure (e.g. source unreachable) was only visible
+     * in application logs/Camunda incidents, invisible in the general monitoring tables.
+     */
     public int runForConfig(Configuration config, String batchId) {
-        String moduleCode;
-        try {
-            moduleCode = moduleResolver.resolve(config.getId(), topic());
-        } catch (IllegalStateException e) {
-            log.warn("Skip configId={}: {}", config.getId(), e.getMessage());
-            return 0;
-        }
+        List<String> modulesSequence = moduleResolver.resolveSequence(config.getArtifactType(), List.of(topic()));
+        PipelineRun run = pipelineRunService.createRun(
+                "pre-adapter-scan", config.getArtifactType(), config.getId(), batchId, modulesSequence);
+        Long stageLogId = pipelineRunService.startStage(run.getId(), topic(), Map.of("configurationId", config.getId()));
 
-        ArtifactPreAdapter adapter = registry.get(moduleCode);
-        if (adapter == null) {
-            log.warn("No ArtifactPreAdapter registered for moduleCode='{}', configId={}", moduleCode, config.getId());
+        try {
+            String moduleCode = moduleResolver.resolve(config.getArtifactType(), topic());
+            ArtifactPreAdapter adapter = registry.get(moduleCode);
+            if (adapter == null) {
+                throw new IllegalStateException("No ArtifactPreAdapter registered for moduleCode=" + moduleCode);
+            }
+
+            int found = adapter.scanAndPublish(config, batchId);
+            pipelineRunService.completeStage(stageLogId, Map.of("found", found), Map.of("found", found));
+            pipelineRunService.completeRun(run.getId());
+            return found;
+        } catch (Exception e) {
+            log.warn("Pre-adapter failed for configId={}: {}", config.getId(), e.getMessage());
+            pipelineRunService.failStage(stageLogId, run.getId(), topic(), e.getMessage());
             return 0;
         }
-        return adapter.scanAndPublish(config, batchId);
     }
 
     // -------------------------------------------------------------------------

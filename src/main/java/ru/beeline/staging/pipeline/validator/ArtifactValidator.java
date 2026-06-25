@@ -11,6 +11,9 @@ public interface ArtifactValidator {
 
     String moduleCode();
 
+    /** Human-readable description for the module catalog (staging.module_catalog). */
+    String description();
+
     /**
      * Validates rawContent (the decompressed raw payload). Returns process variables to
      * forward (e.g. validationWarnings count), or null/empty if there is nothing to add.

@@ -42,6 +42,9 @@ public class SparxE2EPreAdapter implements ArtifactPreAdapter {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
+    public String description() { return "Scans Sparx EA for e2e diagrams and starts one pipeline run per scenario"; }
+
+    @Override
     public int scanAndPublish(Configuration config, String batchId) {
         List<E2EScenarioMeta> scenarios = sparxE2ERepository.findAllScenarios();
         log.info("Sparx scan e2e-sequence: found {} scenarios for configId={}", scenarios.size(), config.getId());

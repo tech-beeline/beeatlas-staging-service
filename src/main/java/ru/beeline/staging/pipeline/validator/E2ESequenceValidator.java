@@ -37,6 +37,9 @@ public class E2ESequenceValidator implements ArtifactValidator {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
+    public String description() { return "Collects dashboard's own embedded validation warnings from the e2e sequence JSON"; }
+
+    @Override
     public Map<String, Object> validate(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
 

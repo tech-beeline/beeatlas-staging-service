@@ -11,6 +11,9 @@ public interface ArtifactAdapter {
 
     String moduleCode();
 
+    /** Human-readable description for the module catalog (staging.module_catalog). */
+    String description();
+
     /**
      * Loads the artifact identified by artifactUid, persists the raw snapshot and
      * returns process variables to forward to the next pipeline stage (must include

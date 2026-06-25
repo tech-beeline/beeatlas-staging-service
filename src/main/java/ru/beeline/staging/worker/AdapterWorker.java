@@ -48,10 +48,11 @@ public class AdapterWorker extends AbstractWorker {
     @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
         String uid  = (String) task.getVariables().get("artifactUid");
+        String artifactType = (String) task.getVariables().get("artifactType");
         Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
         String sourceId = String.valueOf(configurationId);
 
-        String moduleCode = moduleResolver.resolve(configurationId, topic());
+        String moduleCode = moduleResolver.resolve(artifactType, topic());
         ArtifactAdapter adapter = registry.get(moduleCode);
         if (adapter == null) {
             throw new IllegalStateException("No ArtifactAdapter registered for moduleCode=" + moduleCode);

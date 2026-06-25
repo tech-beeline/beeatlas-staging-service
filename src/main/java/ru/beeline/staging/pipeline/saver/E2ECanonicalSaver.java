@@ -52,6 +52,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
+    public String description() { return "Persists the e2e sequence snapshot into the canonical BI/interface/operation model"; }
+
+    @Override
     @Transactional
     public Map<String, Object> save(String artifactUid, String artifactType, long rawDataRefId,
                                      Long runId, String canonicalSnapshotJson) throws Exception {

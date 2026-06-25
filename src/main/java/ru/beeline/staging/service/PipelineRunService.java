@@ -16,6 +16,7 @@ import ru.beeline.staging.repository.PipelineStageLogRepository;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -38,6 +39,7 @@ public class PipelineRunService {
     private final ArtifactBatchRepository    batchRepository;
     private final RuntimeService             runtimeService;
     private final ObjectMapper               objectMapper;
+    private final ModuleResolver             moduleResolver;
 
     /**
      * Creates the PipelineRun tracking record and starts artifact-pipeline-process for it.
@@ -48,7 +50,9 @@ public class PipelineRunService {
     @Transactional
     public PipelineRun startArtifactPipeline(Long configurationId, String artifactType, String artifactUid,
                                               String batchId, Map<String, Object> metadata) {
-        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId);
+        List<String> modulesSequence = moduleResolver.resolveSequence(
+                artifactType, List.of("adapter", "validator", "transformer", "saver"));
+        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId, modulesSequence);
 
         Map<String, Object> variables = new HashMap<>();
         variables.put("artifactType",    artifactType);
@@ -72,7 +76,8 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId) {
+    public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
+                                  List<String> modulesSequence) {
         PipelineRun run = new PipelineRun();
         run.setArtifactUid(artifactUid);
         run.setArtifactType(artifactType);
@@ -80,6 +85,7 @@ public class PipelineRunService {
         run.setBatchId(batchId);
         run.setStatus("pending");
         run.setStartedAt(LocalDateTime.now());
+        run.setModulesSequence(modulesSequence);
         return runRepository.save(run);
     }
 

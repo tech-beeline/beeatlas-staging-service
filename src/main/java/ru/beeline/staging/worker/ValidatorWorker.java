@@ -45,10 +45,10 @@ public class ValidatorWorker extends AbstractWorker {
     @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
         String uid  = (String) task.getVariables().get("artifactUid");
+        String artifactType = (String) task.getVariables().get("artifactType");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
 
-        String moduleCode = moduleResolver.resolve(configurationId, topic());
+        String moduleCode = moduleResolver.resolve(artifactType, topic());
         ArtifactValidator validator = registry.get(moduleCode);
         if (validator == null) {
             log.warn("No ArtifactValidator registered for moduleCode={} — skipping validation", moduleCode);

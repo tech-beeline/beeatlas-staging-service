@@ -30,6 +30,9 @@ public class DashboardE2EAdapter implements ArtifactAdapter {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
+    public String description() { return "Downloads the e2e scenario sequence JSON from Dashboard"; }
+
+    @Override
     public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {
         String rawJson = dashboardClient.getScenarioSequence(artifactUid);
         if (rawJson == null || rawJson.isBlank()) {
