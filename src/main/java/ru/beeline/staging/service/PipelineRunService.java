@@ -51,8 +51,15 @@ public class PipelineRunService {
     public PipelineRun startArtifactPipeline(Long configurationId, String artifactType, String artifactUid,
                                               String batchId, Map<String, Object> metadata) {
         List<String> modulesSequence = moduleResolver.resolveSequence(
-                artifactType, List.of("adapter", "validator", "transformer", "saver"));
+                artifactType, List.of("pre-adapter", "adapter", "validator", "transformer", "saver"));
         PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId, modulesSequence);
+
+        // pre-adapter already found this artifact by the time this run is created (that's
+        // what triggered this call) — log it as an already-completed stage 1, so the whole
+        // chain pre-adapter -> adapter -> ... -> saver lives under one run_id instead of a
+        // separate pre-adapter-only run.
+        Long preAdapterStageLogId = startStage(run.getId(), "pre-adapter", metadata != null ? metadata : Map.of());
+        completeStage(preAdapterStageLogId, metadata, null);
 
         Map<String, Object> variables = new HashMap<>();
         variables.put("artifactType",    artifactType);

@@ -89,32 +89,35 @@ public class PreAdapterWorker extends AbstractWorker {
 
     /**
      * Shared by the scheduled tick above and any manual admin trigger for a single config.
-     * Tracked through the same pipeline_runs/pipeline_stage_logs tables as the rest of the
-     * pipeline — previously a pre-adapter failure (e.g. source unreachable) was only visible
-     * in application logs/Camunda incidents, invisible in the general monitoring tables.
+     * On success, each artifact found gets its own pipeline_run starting with an already-
+     * completed "pre-adapter" stage (see PipelineRunService.startArtifactPipeline) — pre-
+     * adapter lives in the same run as adapter/validator/transformer/saver for that artifact,
+     * not a separate one. There's no artifact yet to attach a failure to, though, so on
+     * failure (source unreachable, module not configured, ...) this records a standalone
+     * pipeline_run here instead — otherwise the failure would only show up in application
+     * logs/Camunda incidents, invisible in the general monitoring tables.
      */
     public int runForConfig(Configuration config, String batchId) {
-        List<String> modulesSequence = moduleResolver.resolveSequence(config.getArtifactType(), List.of(topic()));
-        PipelineRun run = pipelineRunService.createRun(
-                "pre-adapter-scan", config.getArtifactType(), config.getId(), batchId, modulesSequence);
-        Long stageLogId = pipelineRunService.startStage(run.getId(), topic(), Map.of("configurationId", config.getId()));
-
         try {
             String moduleCode = moduleResolver.resolve(config.getArtifactType(), topic());
             ArtifactPreAdapter adapter = registry.get(moduleCode);
             if (adapter == null) {
                 throw new IllegalStateException("No ArtifactPreAdapter registered for moduleCode=" + moduleCode);
             }
-
-            int found = adapter.scanAndPublish(config, batchId);
-            pipelineRunService.completeStage(stageLogId, Map.of("found", found), Map.of("found", found));
-            pipelineRunService.completeRun(run.getId());
-            return found;
+            return adapter.scanAndPublish(config, batchId);
         } catch (Exception e) {
             log.warn("Pre-adapter failed for configId={}: {}", config.getId(), e.getMessage());
-            pipelineRunService.failStage(stageLogId, run.getId(), topic(), e.getMessage());
+            recordFailure(config, batchId, e);
             return 0;
         }
+    }
+
+    private void recordFailure(Configuration config, String batchId, Exception e) {
+        List<String> modulesSequence = moduleResolver.resolveSequence(config.getArtifactType(), List.of(topic()));
+        PipelineRun run = pipelineRunService.createRun(
+                "pre-adapter-scan", config.getArtifactType(), config.getId(), batchId, modulesSequence);
+        Long stageLogId = pipelineRunService.startStage(run.getId(), topic(), Map.of("configurationId", config.getId()));
+        pipelineRunService.failStage(stageLogId, run.getId(), topic(), e.getMessage());
     }
 
     // -------------------------------------------------------------------------
