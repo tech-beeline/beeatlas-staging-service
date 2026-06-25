@@ -10,6 +10,7 @@ import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -74,6 +75,10 @@ public class SaverWorker extends AbstractWorker {
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
         Map<String, Object> result = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
+        // Modules return null when there's nothing to save (e.g. empty canonicalSnapshotJson) —
+        // make that explicit in output_data instead of an empty row.
+        Map<String, Object> output = new HashMap<>(result != null ? result : Map.of());
+        output.put("saved", result != null);
 
         // canonical_snapshot_json only existed to ferry the transformer's output to this
         // stage (instead of an oversized Camunda process variable) — now that it's
@@ -85,6 +90,6 @@ public class SaverWorker extends AbstractWorker {
             pipelineRunService.completeRun(runId);
         }
 
-        return result;
+        return output;
     }
 }

@@ -71,6 +71,9 @@ public class TransformerWorker extends AbstractWorker {
         ref.setCanonicalSnapshotJson(snapshotJson);
         rawDataRefRepository.save(ref);
 
-        return null;
+        // Clean data itself never travels through pipeline_stage_logs.output_data either
+        // (same varchar(4000)/size concerns as process variables) — just enough here to see
+        // in monitoring that a snapshot was produced and where it lives.
+        return Map.of("rawDataRefId", rawDataRefId, "canonicalSnapshotBytes", snapshotJson.length());
     }
 }

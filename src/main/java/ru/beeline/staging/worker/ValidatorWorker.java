@@ -60,6 +60,10 @@ public class ValidatorWorker extends AbstractWorker {
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        return validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+        Map<String, Object> result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+        // Modules return null/empty when there's nothing to add (no warnings) — make that an
+        // explicit "valid" in output_data instead of an empty row, so monitoring shows a
+        // result for every attempt, not just the ones with findings.
+        return result != null ? result : Map.of("valid", true);
     }
 }

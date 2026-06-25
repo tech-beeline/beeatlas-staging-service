@@ -57,9 +57,18 @@ public class PipelineRunService {
         // pre-adapter already found this artifact by the time this run is created (that's
         // what triggered this call) — log it as an already-completed stage 1, so the whole
         // chain pre-adapter -> adapter -> ... -> saver lives under one run_id instead of a
-        // separate pre-adapter-only run.
-        Long preAdapterStageLogId = startStage(run.getId(), "pre-adapter", metadata != null ? metadata : Map.of());
-        completeStage(preAdapterStageLogId, metadata, null);
+        // separate pre-adapter-only run. input = the entity/config that was scanned, output =
+        // the identifiers found that need updating — not the same thing, so don't just echo
+        // metadata back as both.
+        Long preAdapterStageLogId = startStage(run.getId(), "pre-adapter",
+                Map.of("configurationId", configurationId, "artifactType", artifactType));
+
+        Map<String, Object> found = new HashMap<>();
+        found.put("artifactUid", artifactUid);
+        if (metadata != null) {
+            found.putAll(metadata);
+        }
+        completeStage(preAdapterStageLogId, found, null);
 
         Map<String, Object> variables = new HashMap<>();
         variables.put("artifactType",    artifactType);
