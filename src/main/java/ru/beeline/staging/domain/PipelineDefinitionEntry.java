@@ -3,14 +3,19 @@ package ru.beeline.staging.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 /**
- * One row per (artifactType, stage) pair, rebuilt from scratch on every startup by
- * ModuleCatalogPublisher from the code-defined PipelineDefinition beans — lets you see
- * which modules will run for an entity before any pipeline run ever starts. Never edited
- * directly; the code (PipelineDefinition) is the source of truth.
+ * One immutable version of an artifactType's module sequence. A new row is appended only
+ * when the sequence actually changes (see ModuleCatalogPublisher) — old rows are kept
+ * forever and never edited, so historical pipeline_runs.pipeline_definition_id keeps
+ * pointing at whatever sequence was actually current when that run started, even after a
+ * later deploy changes the wiring. isCurrent=true marks the one version new runs resolve to.
  */
 @Getter
 @Setter
@@ -25,15 +30,14 @@ public class PipelineDefinitionEntry {
     @Column(name = "artifact_type", nullable = false)
     private String artifactType;
 
-    @Column(name = "stage", nullable = false)
-    private String stage;
+    /** Ordered list of {"stage": "...", "moduleCode": "..."}, in PipelineDefinitions.STAGE_ORDER order. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "modules_sequence", columnDefinition = "jsonb", nullable = false)
+    private List<Map<String, String>> modulesSequence;
 
-    @Column(name = "stage_order", nullable = false)
-    private int stageOrder;
+    @Column(name = "is_current", nullable = false)
+    private boolean current = true;
 
-    @Column(name = "module_code", nullable = false)
-    private String moduleCode;
-
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

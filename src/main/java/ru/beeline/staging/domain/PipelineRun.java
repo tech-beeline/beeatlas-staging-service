@@ -3,11 +3,8 @@ package ru.beeline.staging.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Getter
 @Setter
@@ -52,9 +49,8 @@ public class PipelineRun {
     @Column(name = "failed_stage")
     private String failedStage;
 
-    /** Planned moduleCode sequence for this run, snapshotted from PipelineDefinition at creation —
-     *  visible before/while the run executes, independent of how many stages actually completed. */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "modules_sequence", columnDefinition = "jsonb")
-    private List<String> modulesSequence;
+    /** FK to staging.pipeline_definitions — points at this artifactType's module sequence
+     *  instead of duplicating it into every run row. See PipelineDefinitionEntry. */
+    @Column(name = "pipeline_definition_id")
+    private Long pipelineDefinitionId;
 }

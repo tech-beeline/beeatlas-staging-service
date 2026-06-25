@@ -113,9 +113,8 @@ public class PreAdapterWorker extends AbstractWorker {
     }
 
     private void recordFailure(Configuration config, String batchId, Exception e) {
-        List<String> modulesSequence = moduleResolver.resolveSequence(config.getArtifactType(), List.of(topic()));
         PipelineRun run = pipelineRunService.createRun(
-                "pre-adapter-scan", config.getArtifactType(), config.getId(), batchId, modulesSequence);
+                "pre-adapter-scan", config.getArtifactType(), config.getId(), batchId);
         Long stageLogId = pipelineRunService.startStage(run.getId(), topic(), Map.of("configurationId", config.getId()));
         pipelineRunService.failStage(stageLogId, run.getId(), topic(), e.getMessage());
     }

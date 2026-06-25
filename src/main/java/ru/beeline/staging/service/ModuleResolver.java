@@ -4,9 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.pipeline.PipelineDefinitions;
 
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Resolves which concrete module code should run a given pipeline stage for a given
@@ -31,20 +29,5 @@ public class ModuleResolver {
                     "No module configured for stage='" + stageKey + "' in artifactType=" + artifactType);
         }
         return code;
-    }
-
-    /** moduleCodes for the given stages, in PipelineDefinitions.STAGE_ORDER order, skipping any
-     *  stage not configured for this artifactType — used to snapshot the planned sequence onto
-     *  a pipeline_run. */
-    public List<String> resolveSequence(String artifactType, List<String> stages) {
-        Map<String, String> moduleMap = pipelineDefinitions.moduleMapFor(artifactType);
-        if (moduleMap == null) {
-            return List.of();
-        }
-        return PipelineDefinitions.STAGE_ORDER.stream()
-                .filter(stages::contains)
-                .map(moduleMap::get)
-                .filter(Objects::nonNull)
-                .toList();
     }
 }

@@ -8,9 +8,11 @@ import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
+import ru.beeline.staging.domain.PipelineDefinitionEntry;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.PipelineStageLog;
 import ru.beeline.staging.repository.ArtifactBatchRepository;
+import ru.beeline.staging.repository.PipelineDefinitionEntryRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.PipelineStageLogRepository;
 
@@ -39,7 +41,7 @@ public class PipelineRunService {
     private final ArtifactBatchRepository    batchRepository;
     private final RuntimeService             runtimeService;
     private final ObjectMapper               objectMapper;
-    private final ModuleResolver             moduleResolver;
+    private final PipelineDefinitionEntryRepository pipelineDefinitionRepository;
 
     /**
      * Creates the PipelineRun tracking record and starts artifact-pipeline-process for it.
@@ -50,9 +52,7 @@ public class PipelineRunService {
     @Transactional
     public PipelineRun startArtifactPipeline(Long configurationId, String artifactType, String artifactUid,
                                               String batchId, Map<String, Object> metadata) {
-        List<String> modulesSequence = moduleResolver.resolveSequence(
-                artifactType, List.of("pre-adapter", "adapter", "validator", "transformer", "saver"));
-        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId, modulesSequence);
+        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId);
 
         // pre-adapter already found this artifact by the time this run is created (that's
         // what triggered this call) — log it as an already-completed stage 1, so the whole
@@ -83,8 +83,7 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
-                                  List<String> modulesSequence) {
+    public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId) {
         PipelineRun run = new PipelineRun();
         run.setArtifactUid(artifactUid);
         run.setArtifactType(artifactType);
@@ -92,7 +91,9 @@ public class PipelineRunService {
         run.setBatchId(batchId);
         run.setStatus("pending");
         run.setStartedAt(LocalDateTime.now());
-        run.setModulesSequence(modulesSequence);
+        run.setPipelineDefinitionId(pipelineDefinitionRepository.findByArtifactTypeAndCurrentTrue(artifactType)
+                .map(PipelineDefinitionEntry::getId)
+                .orElse(null));
         return runRepository.save(run);
     }
 

@@ -44,12 +44,12 @@ preAdapter → adapter → validator → transformer → saver
 
 ## Справочники (генерируются автоматически)
 
-На каждом старте `ModuleCatalogPublisher` пересобирает с нуля два справочника из текущего кода — их никогда не редактируют руками, это просто отражение деплоя:
+На каждом старте `ModuleCatalogPublisher` синхронизирует два справочника с текущим кодом — их никогда не редактируют руками, это просто отражение деплоя:
 
 | Таблица | Что показывает |
 |---|---|
-| `staging.module_catalog` | Все зарегистрированные модули: `module_code`, `module_type`, `description()` |
-| `staging.pipeline_definitions` | Какие модули запустятся для каждого `artifact_type` — снэпшот `PipelineDefinitions`, виден до первого запуска пайпа |
+| `staging.module_catalog` | Все зарегистрированные модули: `module_code`, `module_type`, `description()`. Пересобирается с нуля (delete+insert) — на эту таблицу никто не ссылается по FK. |
+| `staging.pipeline_definitions` | Версионированный список модулей на `artifact_type` (`modules_sequence`, упорядоченный JSON `[{stage, moduleCode}, ...]`). Новая строка (`is_current=true`, старая — `false`) появляется только когда набор модулей реально поменялся; старые версии не трогаются — на них могут ссылаться исторические `pipeline_runs.pipeline_definition_id`. |
 
 ## Где смотреть, как идут процессы
 
@@ -57,7 +57,7 @@ preAdapter → adapter → validator → transformer → saver
 |---|---|
 | Что и откуда скачали, по какому идентификатору | `staging.raw_data_refs` |
 | Статус каждого запуска целиком (pending/loading/.../completed/failed) | `staging.pipeline_runs` |
-| Какие модули планировались для конкретного запуска | `staging.pipeline_runs.modules_sequence` (jsonb-массив moduleCode, снэпшот на момент создания запуска) |
+| Какие модули планировались для конкретного запуска | `staging.pipeline_runs.pipeline_definition_id` → `staging.pipeline_definitions.modules_sequence` (FK, не дублируется в каждой строке `pipeline_runs`) |
 | Что произошло на каждом этапе конкретного запуска — вход и выход | `staging.pipeline_stage_logs` (`input_data`/`output_data`) |
 
 Pre-adapter (сканирование источника) тоже создаёт свой `pipeline_run`/`pipeline_stage_logs` — ошибка скачивания списка артефактов из источника видна там же, а не только в логах/Camunda Incident.

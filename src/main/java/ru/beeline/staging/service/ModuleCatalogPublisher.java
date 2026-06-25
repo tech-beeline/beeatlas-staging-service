@@ -20,12 +20,16 @@ import ru.beeline.staging.repository.PipelineDefinitionEntryRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * On every startup, rebuilds staging.module_catalog and staging.pipeline_definitions from
- * what's actually registered in code (module beans + PipelineDefinition beans) — both
- * tables are a generated reflection for visibility, never a source of truth, so a clean
- * delete-then-reinsert keeps them exactly in sync with the current deployment.
+ * On every startup, syncs staging.module_catalog and staging.pipeline_definitions with
+ * what's actually registered in code — both are a generated reflection for visibility, never
+ * a source of truth. module_catalog has no incoming FKs, so it's safely delete+reinsert.
+ * pipeline_definitions IS referenced by pipeline_runs.pipeline_definition_id, so old versions
+ * are kept forever and never edited — a new row (with isCurrent=true) is only appended when
+ * an artifactType's module sequence actually changed since the last startup, so historical
+ * runs keep pointing at the sequence that was truly in effect when they started.
  */
 @Slf4j
 @Service
@@ -72,28 +76,32 @@ public class ModuleCatalogPublisher {
     }
 
     private void publishPipelineDefinitions() {
-        pipelineDefinitionRepository.deleteAll();
-
         for (Map.Entry<String, Map<String, String>> e : pipelineDefinitions.all().entrySet()) {
             String artifactType = e.getKey();
             Map<String, String> moduleMap = e.getValue();
 
-            int order = 0;
-            for (String stage : PipelineDefinitions.STAGE_ORDER) {
-                String moduleCode = moduleMap.get(stage);
-                if (moduleCode == null) {
-                    continue;
-                }
-                PipelineDefinitionEntry entry = new PipelineDefinitionEntry();
-                entry.setArtifactType(artifactType);
-                entry.setStage(stage);
-                entry.setModuleCode(moduleCode);
-                entry.setStageOrder(order++);
-                entry.setUpdatedAt(LocalDateTime.now());
-                pipelineDefinitionRepository.save(entry);
-            }
-        }
+            List<Map<String, String>> sequence = PipelineDefinitions.STAGE_ORDER.stream()
+                    .filter(moduleMap::containsKey)
+                    .map(stage -> Map.of("stage", stage, "moduleCode", moduleMap.get(stage)))
+                    .toList();
 
-        log.info("Pipeline definitions published for artifactTypes: {}", pipelineDefinitions.all().keySet());
+            Optional<PipelineDefinitionEntry> current =
+                    pipelineDefinitionRepository.findByArtifactTypeAndCurrentTrue(artifactType);
+
+            if (current.isPresent() && current.get().getModulesSequence().equals(sequence)) {
+                continue; // unchanged since last startup — no new version needed
+            }
+
+            pipelineDefinitionRepository.clearCurrentFlag(artifactType);
+
+            PipelineDefinitionEntry entry = new PipelineDefinitionEntry();
+            entry.setArtifactType(artifactType);
+            entry.setModulesSequence(sequence);
+            entry.setCurrent(true);
+            entry.setCreatedAt(LocalDateTime.now());
+            pipelineDefinitionRepository.save(entry);
+
+            log.info("Pipeline definition for artifactType={} changed — new version published", artifactType);
+        }
     }
 }

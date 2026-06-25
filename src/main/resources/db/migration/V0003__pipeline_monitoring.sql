@@ -15,15 +15,15 @@ CREATE TABLE staging.pipeline_runs (
     completed_at     TIMESTAMP,
     failure_reason   TEXT,
     failed_stage     VARCHAR(50),
-    modules_sequence JSONB,
+    pipeline_definition_id BIGINT REFERENCES staging.pipeline_definitions (id),
     CONSTRAINT pipeline_runs_status_check
         CHECK (status IN ('pending', 'loading', 'validating', 'transforming', 'saving', 'publishing', 'completed', 'failed'))
 );
 
 COMMENT ON COLUMN staging.pipeline_runs.batch_id IS
     'Groups all pipeline_runs spawned by one preAdapter scan (the pre-adapter-process instance id that found this item).';
-COMMENT ON COLUMN staging.pipeline_runs.modules_sequence IS
-    'JSON array of moduleCodes planned for this run, in execution order, snapshotted from PipelineDefinition at creation time.';
+COMMENT ON COLUMN staging.pipeline_runs.pipeline_definition_id IS
+    'FK to staging.pipeline_definitions for this run''s artifactType — avoids duplicating the module sequence into every run row.';
 
 CREATE INDEX idx_pipeline_runs_artifact ON staging.pipeline_runs (artifact_uid, artifact_type);
 CREATE INDEX idx_pipeline_runs_status   ON staging.pipeline_runs (status);
