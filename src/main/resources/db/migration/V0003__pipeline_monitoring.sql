@@ -44,10 +44,11 @@ CREATE INDEX idx_pipeline_runs_parent_run_id ON staging.pipeline_runs (parent_ru
 CREATE TABLE staging.pipeline_stage_logs (
     id             BIGSERIAL   PRIMARY KEY,
     run_id         BIGINT      NOT NULL REFERENCES staging.pipeline_runs (id),
+    scan_run_id    BIGINT      NOT NULL REFERENCES staging.pipeline_runs (id),
     stage_name     VARCHAR(50) NOT NULL,
     status         VARCHAR(20) NOT NULL DEFAULT 'running',
-    input_data     JSONB,
-    output_data    JSONB,
+    input_data     TEXT,
+    output_data    TEXT,
     summary_json   JSONB,
     started_at     TIMESTAMP   NOT NULL DEFAULT NOW(),
     completed_at   TIMESTAMP,
@@ -56,8 +57,11 @@ CREATE TABLE staging.pipeline_stage_logs (
         CHECK (status IN ('running', 'completed', 'failed', 'skipped'))
 );
 
-COMMENT ON COLUMN staging.pipeline_stage_logs.input_data  IS 'Full task input variables captured at stage start.';
-COMMENT ON COLUMN staging.pipeline_stage_logs.output_data IS 'Full map returned by the stage module at stage completion. For a scan-attempt''s "pre-adapter" stage: {"foundArtifactUids": [...], "foundCount": N}.';
+COMMENT ON COLUMN staging.pipeline_stage_logs.input_data  IS 'Just the identifier this stage worked on (e.g. rawDataRefId, artifactUid) — plain text, not JSON. The rest is already on pipeline_runs.';
+COMMENT ON COLUMN staging.pipeline_stage_logs.output_data IS 'Just the identifier/result this stage produced — plain text, not JSON. For a scan-attempt''s "pre-adapter" stage: comma-separated foundArtifactUids.';
 COMMENT ON COLUMN staging.pipeline_stage_logs.summary_json IS 'Lightweight scalar metrics only (subset of output_data) — kept for quick dashboards.';
+COMMENT ON COLUMN staging.pipeline_stage_logs.scan_run_id IS
+    'Denormalized: the pre-adapter scan (pipeline_runs row with artifact_uid IS NULL) this stage ultimately belongs to — equal to run_id for the scan''s own "pre-adapter" stage, or to that run''s parent_run_id for an artifact''s stages. Lets you filter every stage of every artifact one scan produced without joining pipeline_runs twice; combine with run_id (or pipeline_runs.artifact_uid) to narrow to one specific artifact within that scan.';
 
-CREATE INDEX idx_pipeline_stage_logs_run_id ON staging.pipeline_stage_logs (run_id);
+CREATE INDEX idx_pipeline_stage_logs_run_id      ON staging.pipeline_stage_logs (run_id);
+CREATE INDEX idx_pipeline_stage_logs_scan_run_id ON staging.pipeline_stage_logs (scan_run_id);

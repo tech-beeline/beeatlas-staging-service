@@ -68,8 +68,7 @@ public class PreAdapterWorker extends AbstractWorker {
                 .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + configurationId));
 
         PipelineRun scan = pipelineRunService.startScanRun(configurationId, artifactType, task.getProcessInstanceId());
-        Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter",
-                Map.of("configurationId", configurationId, "artifactType", artifactType));
+        Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter", String.valueOf(configurationId));
 
         List<ArtifactPreAdapter.FoundArtifact> found;
         try {
@@ -88,9 +87,7 @@ public class PreAdapterWorker extends AbstractWorker {
         String foundArtifactUids = found.stream()
                 .map(ArtifactPreAdapter.FoundArtifact::uid)
                 .collect(Collectors.joining(","));
-        pipelineRunService.completeStage(stageLogId,
-                Map.of("foundCount", found.size(), "foundArtifactUids", foundArtifactUids),
-                Map.of("foundCount", found.size()));
+        pipelineRunService.completeStage(stageLogId, foundArtifactUids, Map.of("foundCount", found.size()));
         pipelineRunService.completeRun(scan.getId());
 
         List<String> artifactRefs = new ArrayList<>();

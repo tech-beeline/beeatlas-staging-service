@@ -43,6 +43,18 @@ public class ValidatorWorker extends AbstractWorker {
     }
 
     @Override
+    protected String inputDataFor(LockedExternalTask task) {
+        return String.valueOf(task.getVariables().get("rawDataRefId"));
+    }
+
+    @Override
+    protected String outputSummaryFor(Map<String, Object> outputVars) {
+        if (outputVars == null) return null;
+        Object warnings = outputVars.get("validationWarningsCount");
+        return warnings != null ? "warnings=" + warnings : "valid";
+    }
+
+    @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
         String uid  = (String) task.getVariables().get("artifactUid");
         String artifactType = (String) task.getVariables().get("artifactType");

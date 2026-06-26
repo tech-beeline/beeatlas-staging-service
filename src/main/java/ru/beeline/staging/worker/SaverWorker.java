@@ -45,6 +45,18 @@ public class SaverWorker extends AbstractWorker {
     }
 
     @Override
+    protected String inputDataFor(LockedExternalTask task) {
+        return String.valueOf(task.getVariables().get("rawDataRefId"));
+    }
+
+    @Override
+    protected String outputSummaryFor(Map<String, Object> outputVars) {
+        if (outputVars == null) return "saved=false";
+        Object batchId = outputVars.get("batchId");
+        return batchId != null ? "batchId=" + batchId : "saved=" + outputVars.get("saved");
+    }
+
+    @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
         String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");

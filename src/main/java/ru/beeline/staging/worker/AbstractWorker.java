@@ -29,7 +29,13 @@ public abstract class AbstractWorker {
     
     protected String stageName() { return topic(); }
 
-    
+    protected String inputDataFor(LockedExternalTask task) { return task.getVariables().toString(); }
+
+    protected String outputSummaryFor(Map<String, Object> outputVars) {
+        return outputVars == null ? null : outputVars.toString();
+    }
+
+
     protected abstract Map<String, Object> process(LockedExternalTask task) throws Exception;
 
     protected List<String> variablesToFetch() { return List.of(); }
@@ -49,12 +55,12 @@ public abstract class AbstractWorker {
 
         for (LockedExternalTask task : tasks) {
             Long runId = extractRunId(task);
-            Long stageLogId = runId != null ? pipelineRunService.startStage(runId, stageName(), task.getVariables()) : null;
+            Long stageLogId = runId != null ? pipelineRunService.startStage(runId, stageName(), inputDataFor(task)) : null;
 
             try {
                 Map<String, Object> outputVars = process(task);
                 if (stageLogId != null) {
-                    pipelineRunService.completeStage(stageLogId, outputVars, buildSummary(outputVars));
+                    pipelineRunService.completeStage(stageLogId, outputSummaryFor(outputVars), buildSummary(outputVars));
                 }
                 if (outputVars != null && !outputVars.isEmpty()) {
                     externalTaskService.complete(task.getId(), workerId(), outputVars);
@@ -69,7 +75,7 @@ public abstract class AbstractWorker {
                         pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
                     } else {
                         Map<String, Object> retryInfo = Map.of("retrying", true, "error", String.valueOf(e.getMessage()));
-                        pipelineRunService.completeStage(stageLogId, retryInfo, retryInfo);
+                        pipelineRunService.completeStage(stageLogId, "retrying: " + e.getMessage(), retryInfo);
                     }
                 }
                 int retries = task.getRetries() != null ? Math.max(0, task.getRetries() - 1) : 2;

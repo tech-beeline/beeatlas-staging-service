@@ -64,7 +64,7 @@ public class AdapterWorker extends AbstractWorker {
         String sourceId = String.valueOf(configurationId);
 
         pipelineRunService.bindExecution(runId, task.getProcessInstanceId(), task.getExecutionId());
-        Long stageLogId = pipelineRunService.startStage(runId, "adapter", Map.of("artifactUid", uid));
+        Long stageLogId = pipelineRunService.startStage(runId, "adapter", uid);
         try {
             String moduleCode = moduleResolver.resolve(artifactType, topic());
             ArtifactAdapter adapter = registry.get(moduleCode);
@@ -75,7 +75,8 @@ public class AdapterWorker extends AbstractWorker {
             log.info("stage=adapter, module={}, uid={}", moduleCode, uid);
             Map<String, Object> result = adapter.load(uid, sourceId, null);
 
-            pipelineRunService.completeStage(stageLogId, result, summaryOf(result));
+            String rawDataRefId = result != null ? String.valueOf(result.get("rawDataRefId")) : null;
+            pipelineRunService.completeStage(stageLogId, rawDataRefId, summaryOf(result));
 
             Map<String, Object> output = result != null ? new HashMap<>(result) : new HashMap<>();
             output.put("pipelineRunId", runId);

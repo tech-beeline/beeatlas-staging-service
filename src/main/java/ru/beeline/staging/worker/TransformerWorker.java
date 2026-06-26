@@ -45,6 +45,16 @@ public class TransformerWorker extends AbstractWorker {
     }
 
     @Override
+    protected String inputDataFor(LockedExternalTask task) {
+        return String.valueOf(task.getVariables().get("rawDataRefId"));
+    }
+
+    @Override
+    protected String outputSummaryFor(Map<String, Object> outputVars) {
+        return outputVars == null ? null : String.valueOf(outputVars.get("rawDataRefId"));
+    }
+
+    @Override
     protected Map<String, Object> process(LockedExternalTask task) throws Exception {
         String uid  = (String) task.getVariables().get("artifactUid");
         String artifactType = (String) task.getVariables().get("artifactType");

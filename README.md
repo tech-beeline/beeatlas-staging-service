@@ -56,11 +56,15 @@ preAdapter → adapter → validator → transformer → saver
 | Вопрос | Таблица |
 |---|---|
 | Что и откуда скачали, по какому идентификатору | `staging.raw_data_refs` |
-| Как и когда запускался pre-adapter, что нашёл/с какой ошибкой упал | `staging.pipeline_runs WHERE artifact_uid IS NULL` — это и есть строка скана (конфигурация × тик); найденные id — в `pipeline_stage_logs.output_data.foundArtifactUids` её единственной стадии `pre-adapter` |
+| Как и когда запускался pre-adapter, что нашёл/с какой ошибкой упал | `staging.pipeline_runs WHERE artifact_uid IS NULL` — это и есть строка скана (конфигурация × тик); найденные id — в `pipeline_stage_logs.output_data` её единственной стадии `pre-adapter` (просто строка `uid1,uid2,uid3`, не JSON) |
 | Какие артефакты (и их стадии) породил конкретный запуск pre-adapter'а | `staging.pipeline_runs WHERE parent_run_id = <id строки-скана>` → join `pipeline_stage_logs` |
+| Все стейджи всех артефактов одной выгрузки (без join'а на `pipeline_runs`) | `staging.pipeline_stage_logs WHERE scan_run_id = <id строки-скана>` |
+| Стейджи конкретного артефакта в рамках конкретной выгрузки | `pipeline_stage_logs psl JOIN pipeline_runs pr ON pr.id = psl.run_id WHERE psl.scan_run_id = <id скана> AND pr.artifact_uid = '<guid>'` |
 | Статус каждого запуска целиком (pending/loading/.../completed/failed) | `staging.pipeline_runs` |
 | Какие модули планировались для конкретного запуска | `staging.pipeline_runs.pipeline_definition_id` → `staging.pipeline_definitions.modules_sequence` (FK, не дублируется в каждой строке `pipeline_runs`) |
 | Что произошло на каждом этапе конкретного запуска — вход и выход | `staging.pipeline_stage_logs` (`input_data`/`output_data`) |
+
+`pipeline_stage_logs.input_data`/`output_data` — обычный `TEXT`, не `jsonb`. Каждый воркер логирует туда **только идентификатор**, который реально обработал (`rawDataRefId` у Validator/Transformer/Saver, `artifactUid` у Adapter, список `uid1,uid2,...` у Pre-Adapter) — не весь дамп переменных Camunda и не JSON-обёртку. Остальной контекст (artifactType, configurationId, pipelineRunId) уже есть на родительской строке `pipeline_runs` через `run_id`, дублировать его в каждой стадии незачем.
 
 ### Один Camunda-процесс, один реальный Pre-Adapter
 

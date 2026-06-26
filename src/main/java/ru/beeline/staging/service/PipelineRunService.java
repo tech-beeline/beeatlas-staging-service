@@ -69,13 +69,15 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public Long startStage(Long runId, String stageName, Map<String, Object> inputData) {
-        runRepository.findById(runId).ifPresent(run -> {
-            run.setStatus(stageToStatus(stageName));
-            runRepository.save(run);
-        });
+    public Long startStage(Long runId, String stageName, String inputData) {
+        PipelineRun run = runRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
+        run.setStatus(stageToStatus(stageName));
+        runRepository.save(run);
+
         PipelineStageLog log = new PipelineStageLog();
         log.setRunId(runId);
+        log.setScanRunId(run.getParentRunId() != null ? run.getParentRunId() : run.getId());
         log.setStageName(stageName);
         log.setStatus("running");
         log.setInputData(inputData);
@@ -84,7 +86,7 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public void completeStage(Long stageLogId, Map<String, Object> outputData, Map<String, Object> summary) {
+    public void completeStage(Long stageLogId, String outputData, Map<String, Object> summary) {
         stageLogRepository.findById(stageLogId).ifPresent(entry -> {
             entry.setStatus("completed");
             entry.setCompletedAt(LocalDateTime.now());
