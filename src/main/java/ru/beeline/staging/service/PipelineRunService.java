@@ -3,7 +3,9 @@ package ru.beeline.staging.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.camunda.bpm.engine.ExternalTaskService;
 import org.camunda.bpm.engine.RuntimeService;
+import org.camunda.bpm.engine.externaltask.ExternalTask;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,17 +22,8 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
-/**
- * Manages observability records for each pipeline run, and is the single entry point
- * for starting an artifact-pipeline-process instance (used by both the preAdapter fan-out
- * and the manual /configurations/{id}/run trigger) — no RabbitMQ/EventDispatcher hop
- * needed, runtimeService.startProcessInstanceByMessage(...) is itself a durable, committed
- * action in Camunda's own Postgres tables.
- *
- * All monitoring writes are in separate short transactions so that a monitoring write
- * failure never rolls back the pipeline logic it's observing.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -40,35 +33,14 @@ public class PipelineRunService {
     private final PipelineStageLogRepository stageLogRepository;
     private final ArtifactBatchRepository    batchRepository;
     private final RuntimeService             runtimeService;
+    private final ExternalTaskService        externalTaskService;
     private final ObjectMapper               objectMapper;
     private final PipelineDefinitionEntryRepository pipelineDefinitionRepository;
 
-    /**
-     * Creates the PipelineRun tracking record and starts artifact-pipeline-process for it.
-     * Each call is independent and idempotent-safe: if the caller crashes before this
-     * call, nothing was started yet (no data loss, simply not-yet-attempted); if it
-     * crashes right after, the process instance is already durably recorded by Camunda.
-     */
     @Transactional
     public PipelineRun startArtifactPipeline(Long configurationId, String artifactType, String artifactUid,
-                                              String batchId, Map<String, Object> metadata) {
-        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId);
-
-        // pre-adapter already found this artifact by the time this run is created (that's
-        // what triggered this call) — log it as an already-completed stage 1, so the whole
-        // chain pre-adapter -> adapter -> ... -> saver lives under one run_id instead of a
-        // separate pre-adapter-only run. input = the entity/config that was scanned, output =
-        // the identifiers found that need updating — not the same thing, so don't just echo
-        // metadata back as both.
-        Long preAdapterStageLogId = startStage(run.getId(), "pre-adapter",
-                Map.of("configurationId", configurationId, "artifactType", artifactType));
-
-        Map<String, Object> found = new HashMap<>();
-        found.put("artifactUid", artifactUid);
-        if (metadata != null) {
-            found.putAll(metadata);
-        }
-        completeStage(preAdapterStageLogId, found, null);
+                                              String batchId, Long scanRunId, Map<String, Object> metadata) {
+        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId, scanRunId);
 
         Map<String, Object> variables = new HashMap<>();
         variables.put("artifactType",    artifactType);
@@ -92,7 +64,8 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId) {
+    public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
+                                  Long scanRunId) {
         PipelineRun run = new PipelineRun();
         run.setArtifactUid(artifactUid);
         run.setArtifactType(artifactType);
@@ -100,10 +73,16 @@ public class PipelineRunService {
         run.setBatchId(batchId);
         run.setStatus("pending");
         run.setStartedAt(LocalDateTime.now());
+        run.setParentRunId(scanRunId);
         run.setPipelineDefinitionId(pipelineDefinitionRepository.findByArtifactTypeAndCurrentTrue(artifactType)
                 .map(PipelineDefinitionEntry::getId)
                 .orElse(null));
         return runRepository.save(run);
+    }
+
+    @Transactional
+    public PipelineRun startScanRun(Long configurationId, String artifactType, String batchId) {
+        return createRun(null, artifactType, configurationId, batchId, null);
     }
 
     @Transactional
@@ -115,18 +94,12 @@ public class PipelineRunService {
         });
     }
 
-    /** Idempotency guard for SaverWorker: true if this run already reached a terminal save. */
     public boolean isAlreadyCompleted(Long runId) {
         return runRepository.findById(runId)
                 .map(run -> "completed".equals(run.getStatus()))
                 .orElse(false);
     }
 
-    /**
-     * Called by AbstractWorker at the beginning of each stage execution, with the task's
-     * full input variables. Returns the stage log id — workers pass it to completeStage /
-     * failStage.
-     */
     @Transactional
     public Long startStage(Long runId, String stageName, Map<String, Object> inputData) {
         runRepository.findById(runId).ifPresent(run -> {
@@ -142,10 +115,6 @@ public class PipelineRunService {
         return stageLogRepository.save(log).getId();
     }
 
-    /**
-     * outputData is the full map returned by the stage module; summary is the lightweight
-     * scalar-only subset (kept for quick dashboards, see AbstractWorker.buildSummary).
-     */
     @Transactional
     public void completeStage(Long stageLogId, Map<String, Object> outputData, Map<String, Object> summary) {
         stageLogRepository.findById(stageLogId).ifPresent(entry -> {
@@ -173,10 +142,30 @@ public class PipelineRunService {
         runRepository.markCompleted(runId, "completed");
     }
 
-    /**
-     * Called by an ArtifactSaver (e.g. E2ECanonicalSaver) after successfully persisting a snapshot.
-     * Creates the ArtifactBatch record and marks previous batches as non-current.
-     */
+    @Transactional
+    public int retryFailedRun(Long runId, int retries) {
+        PipelineRun run = runRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
+        if (!"failed".equals(run.getStatus())) {
+            throw new IllegalStateException("PipelineRun " + runId + " is not failed (status=" + run.getStatus() + ")");
+        }
+        if (run.getCamundaPid() == null) {
+            throw new IllegalStateException("PipelineRun " + runId + " has no camundaPid to retry");
+        }
+
+        List<ExternalTask> tasks = externalTaskService.createExternalTaskQuery()
+                .processInstanceId(run.getCamundaPid())
+                .list();
+        tasks.forEach(t -> externalTaskService.setRetries(t.getId(), retries));
+
+        if (!tasks.isEmpty()) {
+            runRepository.markRetrying(runId);
+        }
+        log.info("Retry requested for pipelineRunId={}, camundaPid={}: {} external task(s) reset",
+                runId, run.getCamundaPid(), tasks.size());
+        return tasks.size();
+    }
+
     @Transactional
     public ArtifactBatch createBatch(String artifactUid, String artifactType,
                                      Long runId, Long rawDataRefId,

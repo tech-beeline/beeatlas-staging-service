@@ -16,11 +16,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
-/**
- * Final pipeline stage: resolves the ArtifactSaver named in the configuration's config
- * JSON and delegates persistence of the canonical model to it. Adding a new entity type's
- * persistence is a matter of adding a new ArtifactSaver bean — this class never changes.
- */
 @Component
 @RequiredArgsConstructor
 public class SaverWorker extends AbstractWorker {
@@ -56,8 +51,6 @@ public class SaverWorker extends AbstractWorker {
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
         Long runId = task.getVariables().get("pipelineRunId") instanceof Number n ? n.longValue() : null;
 
-        // Idempotency guard: if a crash happened after this run already completed but before
-        // Camunda recorded the task as done, a retry would otherwise duplicate the save.
         if (runId != null && pipelineRunService.isAlreadyCompleted(runId)) {
             log.info("Run {} already completed — skipping duplicate save for uid={}", runId, uid);
             return null;
@@ -75,14 +68,10 @@ public class SaverWorker extends AbstractWorker {
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
         Map<String, Object> result = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
-        // Modules return null when there's nothing to save (e.g. empty canonicalSnapshotJson) —
-        // make that explicit in output_data instead of an empty row.
+
         Map<String, Object> output = new HashMap<>(result != null ? result : Map.of());
         output.put("saved", result != null);
 
-        // canonical_snapshot_json only existed to ferry the transformer's output to this
-        // stage (instead of an oversized Camunda process variable) — now that it's
-        // persisted, drop it so raw_data_refs doesn't keep growing indefinitely.
         ref.setCanonicalSnapshotJson(null);
         rawDataRefRepository.save(ref);
 

@@ -17,19 +17,6 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Persists an {@link E2ESequenceSnapshot} into Beeatlas's own canonical representation
- * (staging.bi_steps / interfaces / operations + their *_versions tables). Entity tables
- * are find-or-create by natural key (uid / ext_uid); version tables are append-only —
- * every load inserts a new version row, traceable back to its raw_data_ref.
- *
- * Each successful save creates one {@link ArtifactBatch} that groups all version rows
- * from this run. The batch is marked is_current=TRUE; the previous batch for the same
- * artifact is marked FALSE. This is how "последний загруженный является эталонным" works.
- *
- * This is "наше представление" — the canonical model lives entirely in staging's own
- * schema; it is not pushed out to any other microservice.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -74,7 +61,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                              Long runId, String artifactUid, String artifactType) {
         LocalDateTime now = LocalDateTime.now();
 
-        // Create the batch first — its id is foreign-keyed on all version rows below
         ArtifactBatch batch = pipelineRunService.createBatch(
                 artifactUid, artifactType, runId, rawDataRefId,
                 snapshot.getBiSteps().size(),

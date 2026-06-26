@@ -21,11 +21,6 @@ public class DashboardClient {
         this.baseUrl = baseUrl;
     }
 
-    /**
-     * GET /api/v4/e2e/scenarios/{uid}/sequence
-     * Returns raw JSON of the E2E sequence (Scenario model from dashboard-main).
-     * The uid is a Sparx EA GUID in form {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}.
-     */
     public String getScenarioSequence(String uid) {
         URI uri = UriComponentsBuilder.fromHttpUrl(baseUrl)
                 .path("/api/v4/e2e/scenarios/{uid}/sequence")

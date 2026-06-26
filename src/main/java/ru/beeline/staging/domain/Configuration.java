@@ -28,7 +28,7 @@ public class Configuration {
     @Column(name = "source_system_id")
     private Long sourceSystemId;
 
-    /** NULL means this configuration is triggered only by external events, not by Scheduler. */
+    
     @Column(name = "schedule_interval_seconds")
     private Long scheduleIntervalSeconds;
 

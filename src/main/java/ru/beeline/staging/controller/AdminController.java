@@ -8,11 +8,15 @@ import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.beeline.staging.domain.Configuration;
+import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.repository.ConfigurationRepository;
+import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.worker.PreAdapterWorker;
 
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -26,12 +30,9 @@ public class AdminController {
     private final HistoryService          historyService;
     private final ConfigurationRepository configurationRepository;
     private final PreAdapterWorker        preAdapterWorker;
+    private final PipelineRunService      pipelineRunService;
+    private final PipelineRunRepository   pipelineRunRepository;
 
-    /**
-     * Manually triggers a Sparx e2e-sequence scan for all active e2e-sequence configurations,
-     * without waiting for the next PipelineTickScheduler minute tick. Bypasses the
-     * already-running/interval-elapsed throttling — intended for dev/testing.
-     */
     @PostMapping("/scan/e2e")
     public ResponseEntity<Map<String, Object>> scanE2E() {
         List<Configuration> configs = configurationRepository.findByArtifactTypeAndIsActiveTrue("e2e-sequence");
@@ -44,7 +45,6 @@ public class AdminController {
         return ResponseEntity.accepted().body(Map.of("publishedCount", published));
     }
 
-    /** Reset retries on a stuck external task so it re-enters the worker poll cycle. */
     @PostMapping("/external-tasks/{taskId}/retry")
     public ResponseEntity<Void> retryExternalTask(
             @PathVariable String taskId,
@@ -54,7 +54,30 @@ public class AdminController {
         return ResponseEntity.accepted().build();
     }
 
-    /** Last N completed pipeline runs for a given configuration (from Camunda History). */
+    @PostMapping("/pipeline-runs/{runId}/retry")
+    public ResponseEntity<Map<String, Object>> retryPipelineRun(
+            @PathVariable Long runId,
+            @RequestParam(defaultValue = "3") int retries) {
+        PipelineRun run = pipelineRunRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
+
+        if (run.getArtifactUid() == null) {
+            if (!"failed".equals(run.getStatus())) {
+                throw new IllegalStateException("PipelineRun " + runId + " is not failed (status=" + run.getStatus() + ")");
+            }
+            Configuration config = configurationRepository.findById(run.getConfigurationId())
+                    .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + run.getConfigurationId()));
+            String batchId = UUID.randomUUID().toString();
+            int found = preAdapterWorker.runForConfig(config, batchId);
+            log.info("Re-ran scan for pipelineRunId={}: found={}, new batchId={}", runId, found, batchId);
+            return ResponseEntity.accepted().body(Map.of("found", found, "batchId", batchId));
+        }
+
+        int tasksReset = pipelineRunService.retryFailedRun(runId, retries);
+        log.info("Retry requested for pipelineRunId={}: {} task(s) reset", runId, tasksReset);
+        return ResponseEntity.accepted().body(Map.of("tasksReset", tasksReset));
+    }
+
     @GetMapping("/configurations/{configurationId}/history")
     public ResponseEntity<List<Map<String, Object>>> history(
             @PathVariable Long configurationId,

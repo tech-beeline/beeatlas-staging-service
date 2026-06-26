@@ -33,7 +33,6 @@ public class StuckProcessMonitor {
     @Value("${staging.recovery.auto-retry-count:3}")
     private int autoRetryCount;
 
-    /** On startup log how many process instances are already active (Camunda resumes them automatically). */
     @EventListener(ApplicationStartedEvent.class)
     public void logResumedOnStartup() {
         long active = runtimeService.createProcessInstanceQuery()
@@ -53,7 +52,7 @@ public class StuckProcessMonitor {
         checkLongRunningProcessInstances(threshold);
     }
 
-    // -------------------------------------------------------------------------
+
 
     private void checkStuckExternalTasks(Date threshold) {
         List<ExternalTask> stuck = externalTaskService.createExternalTaskQuery()

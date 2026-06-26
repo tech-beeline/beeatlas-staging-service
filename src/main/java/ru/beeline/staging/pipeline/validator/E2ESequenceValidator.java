@@ -10,20 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Validator for artifactType=e2e-sequence.
- *
- * dashboard-main does not run a separate validation pass — its call-tree builder
- * (scenarios-service/build-call-tree.mjs) attaches a "validationError" array directly
- * onto each ScenarioMessage node while resolving the sequence (duplicate messages with
- * conflicting SLA, unresolved operation_guid, missing/ambiguous child diagrams, etc.),
- * and ScenarioMessage.toJSON() serializes that field as-is. So the raw JSON we already
- * downloaded in the adapter stage carries dashboard's own validation findings — we just
- * have to walk the tree and collect them, instead of re-implementing the call-tree logic.
- *
- * Mirrors dashboard's own behaviour: issues are collected and logged as warnings, never
- * treated as fatal (dashboard's UI shows them as embedded warnings, not request failures).
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

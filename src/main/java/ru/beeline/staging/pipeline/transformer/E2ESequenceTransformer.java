@@ -14,28 +14,6 @@ import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.OperationRela
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Transformer for artifactType=e2e-sequence. Maps the dashboard-main "Scenario" JSON
- * (GET /api/v4/e2e/scenarios/{uid}/sequence) into E2ESequenceSnapshot, the private
- * entity-graph shape this module's saver (E2ECanonicalSaver) understands.
- *
- * Real response shape (see a sample export, not dashboard-main's source — the two disagree):
- *   root: { name, uid, note, sequence: [...], interfaces: [...] }
- *   sequence node: { name, uid, stereotype, rps, latency, error_rate, operation_guid,
- *                     diagram_uid, seqno, client_name, client_code, server_name, server_code,
- *                     is_ret, linked_diagram_uid, sequence: [...] (optional, nested) }
- *   interfaces[]: { id, name, app_code, code, uid, source?, methods: [...] }
- *   interfaces[].methods[]: { name, uid, api_id, rps, latency, error_rate }
- *
- * There is no "message.method" sub-object — each sequence node IS the call, identified by
- * its own operation_guid (matches interfaces[].methods[].uid when declared there).
- *
- * Layering: only the FIRST layer of root.sequence[] becomes a BI step (one per root-level
- * call) — these represent the BI-level steps of the scenario. A BI step's own operation_guid
- * is recorded as a bi_step_relation_versions row (call_order=0). Everything nested beneath a
- * root item (sequence-sequence-sequence...) is an operation-to-operation call chain, recorded
- * in operation_relation_versions with the immediate parent's operation_guid as caller.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -103,7 +81,6 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
         }
     }
 
-    /** First layer of root.sequence[] — each item becomes a BI step. */
     private void mapRootSequence(JsonNode rootSequence, String scenarioName, String artifactUid,
                                    E2ESequenceSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
         if (!rootSequence.isArray()) return;
@@ -144,7 +121,6 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
         }
     }
 
-    /** Everything nested below the first layer — operation-to-operation call chain. */
     private void mapOperationSequence(JsonNode nodes, String parentOperationGuid, String parentPointer,
                                         E2ESequenceSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
         if (!nodes.isArray()) return;
@@ -186,7 +162,6 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
         snapshot.getOperations().add(op);
     }
 
-    /** operation_versions.name is NOT NULL; Dashboard occasionally omits a call's name. */
     private static String nameOrFallback(String name, String fallback) {
         return name != null && !name.isBlank() ? name : fallback;
     }

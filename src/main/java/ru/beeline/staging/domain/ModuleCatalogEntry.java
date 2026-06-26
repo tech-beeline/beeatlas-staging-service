@@ -6,11 +6,6 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-/**
- * One row per registered module bean (ArtifactPreAdapter/Adapter/Validator/Transformer/Saver),
- * rebuilt from scratch on every startup by ModuleCatalogPublisher — this table is a generated
- * reflection of what's actually deployed in code, never edited directly.
- */
 @Getter
 @Setter
 @Entity

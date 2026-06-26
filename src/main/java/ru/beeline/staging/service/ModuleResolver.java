@@ -6,12 +6,6 @@ import ru.beeline.staging.pipeline.PipelineDefinitions;
 
 import java.util.Map;
 
-/**
- * Resolves which concrete module code should run a given pipeline stage for a given
- * artifactType, by reading PipelineDefinitions.moduleMapFor(artifactType) — this is the
- * only place that interprets that map; every worker calls here instead of dispatching by
- * artifactType itself.
- */
 @Component
 @RequiredArgsConstructor
 public class ModuleResolver {

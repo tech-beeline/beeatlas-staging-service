@@ -16,7 +16,7 @@ public class PipelineRun {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "artifact_uid", nullable = false)
+    @Column(name = "artifact_uid")
     private String artifactUid;
 
     @Column(name = "artifact_type", nullable = false)
@@ -49,8 +49,9 @@ public class PipelineRun {
     @Column(name = "failed_stage")
     private String failedStage;
 
-    /** FK to staging.pipeline_definitions — points at this artifactType's module sequence
-     *  instead of duplicating it into every run row. See PipelineDefinitionEntry. */
     @Column(name = "pipeline_definition_id")
     private Long pipelineDefinitionId;
+
+    @Column(name = "parent_run_id")
+    private Long parentRunId;
 }

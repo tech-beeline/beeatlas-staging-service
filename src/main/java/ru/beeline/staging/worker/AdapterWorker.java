@@ -10,12 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Universal task executor for the "adapter" stage: fetches the locked External Task,
- * resolves the ArtifactAdapter named in the configuration's config JSON for this stage
- * and delegates to it. Adding support for a new source is a matter of adding a new
- * ArtifactAdapter bean and naming it in a configurations row — this class never changes.
- */
 @Component
 public class AdapterWorker extends AbstractWorker {
 

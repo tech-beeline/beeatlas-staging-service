@@ -8,7 +8,6 @@ import ru.beeline.staging.repository.ConfigurationRepository;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
-/** Manual trigger: POST /configurations/{id}/run — starts artifact-pipeline-process directly. */
 @Service
 @RequiredArgsConstructor
 public class PipelineService {
@@ -22,6 +21,6 @@ public class PipelineService {
 
         String artifactUid = UUID.randomUUID().toString();
         pipelineRunService.startArtifactPipeline(
-                config.getId(), config.getArtifactType(), artifactUid, UUID.randomUUID().toString(), null);
+                config.getId(), config.getArtifactType(), artifactUid, UUID.randomUUID().toString(), null, null);
     }
 }

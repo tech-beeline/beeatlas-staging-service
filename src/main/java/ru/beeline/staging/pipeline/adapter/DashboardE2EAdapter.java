@@ -14,7 +14,6 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
-/** Adapter for artifactType=e2e-sequence: downloads the raw scenario JSON from Dashboard. */
 @Slf4j
 @Component
 @RequiredArgsConstructor

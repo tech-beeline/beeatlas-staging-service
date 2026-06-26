@@ -19,13 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Universal task executor for the "pre-adapter" stage: on every tick (started by
- * PipelineTickScheduler, not a Camunda BPMN timer), scans all active scheduled
- * configurations and, for each one that's due, resolves its configured ArtifactPreAdapter
- * by moduleCode and delegates to it. Adding support for a new entity type is a matter of
- * adding a new ArtifactPreAdapter bean and a PipelineDefinition — this class never changes.
- */
 @Component
 public class PreAdapterWorker extends AbstractWorker {
 
@@ -87,42 +80,38 @@ public class PreAdapterWorker extends AbstractWorker {
         return null;
     }
 
-    /**
-     * Shared by the scheduled tick above and any manual admin trigger for a single config.
-     * On success, each artifact found gets its own pipeline_run starting with an already-
-     * completed "pre-adapter" stage (see PipelineRunService.startArtifactPipeline) — pre-
-     * adapter lives in the same run as adapter/validator/transformer/saver for that artifact,
-     * not a separate one. There's no artifact yet to attach a failure to, though, so on
-     * failure (source unreachable, module not configured, ...) this records a standalone
-     * pipeline_run here instead — otherwise the failure would only show up in application
-     * logs/Camunda incidents, invisible in the general monitoring tables.
-     */
     public int runForConfig(Configuration config, String batchId) {
+        PipelineRun scan = pipelineRunService.startScanRun(config.getId(), config.getArtifactType(), batchId);
+        Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter",
+                Map.of("configurationId", config.getId(), "artifactType", config.getArtifactType()));
+
+        List<ArtifactPreAdapter.FoundArtifact> found;
         try {
             String moduleCode = moduleResolver.resolve(config.getArtifactType(), topic());
             ArtifactPreAdapter adapter = registry.get(moduleCode);
             if (adapter == null) {
                 throw new IllegalStateException("No ArtifactPreAdapter registered for moduleCode=" + moduleCode);
             }
-            return adapter.scanAndPublish(config, batchId);
+            found = adapter.scan(config);
         } catch (Exception e) {
             log.warn("Pre-adapter failed for configId={}: {}", config.getId(), e.getMessage());
-            recordFailure(config, batchId, e);
+            pipelineRunService.failStage(stageLogId, scan.getId(), "pre-adapter", e.getMessage());
             return 0;
         }
+
+        List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
+        pipelineRunService.completeStage(stageLogId,
+                Map.of("foundArtifactUids", uids, "foundCount", uids.size()),
+                Map.of("foundCount", uids.size()));
+        pipelineRunService.completeRun(scan.getId());
+
+        for (ArtifactPreAdapter.FoundArtifact item : found) {
+            pipelineRunService.startArtifactPipeline(
+                    config.getId(), config.getArtifactType(), item.uid(), batchId, scan.getId(), item.metadata());
+        }
+        return uids.size();
     }
 
-    private void recordFailure(Configuration config, String batchId, Exception e) {
-        PipelineRun run = pipelineRunService.createRun(
-                "pre-adapter-scan", config.getArtifactType(), config.getId(), batchId);
-        Long stageLogId = pipelineRunService.startStage(run.getId(), topic(), Map.of("configurationId", config.getId()));
-        pipelineRunService.failStage(stageLogId, run.getId(), topic(), e.getMessage());
-    }
-
-    // -------------------------------------------------------------------------
-
-    /** batchId is the processInstanceId of the pre-adapter task driving this tick — it must
-     *  not count itself as an "already running" process for its own configuration. */
     private boolean isAlreadyRunning(Configuration config, String batchId) {
         return runtimeService.createProcessInstanceQuery()
                 .processDefinitionKey("artifact-pipeline-process")

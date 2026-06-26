@@ -56,10 +56,18 @@ preAdapter → adapter → validator → transformer → saver
 | Вопрос | Таблица |
 |---|---|
 | Что и откуда скачали, по какому идентификатору | `staging.raw_data_refs` |
+| Как и когда запускался pre-adapter, что нашёл/с какой ошибкой упал | `staging.pipeline_runs WHERE artifact_uid IS NULL` — это и есть строка скана (конфигурация × тик); найденные id — в `pipeline_stage_logs.output_data.foundArtifactUids` её единственной стадии `pre-adapter` |
+| Какие артефакты (и их стадии) породил конкретный запуск pre-adapter'а | `staging.pipeline_runs WHERE parent_run_id = <id строки-скана>` → join `pipeline_stage_logs` |
 | Статус каждого запуска целиком (pending/loading/.../completed/failed) | `staging.pipeline_runs` |
 | Какие модули планировались для конкретного запуска | `staging.pipeline_runs.pipeline_definition_id` → `staging.pipeline_definitions.modules_sequence` (FK, не дублируется в каждой строке `pipeline_runs`) |
 | Что произошло на каждом этапе конкретного запуска — вход и выход | `staging.pipeline_stage_logs` (`input_data`/`output_data`) |
 
-Pre-adapter (сканирование источника) тоже создаёт свой `pipeline_run`/`pipeline_stage_logs` — ошибка скачивания списка артефактов из источника видна там же, а не только в логах/Camunda Incident.
+`pipeline_runs` хранит два вида строк в одной таблице — отличаются только тем, заполнен ли `artifact_uid`:
+- **скан** (`artifact_uid IS NULL`) — один вызов pre-adapter'а для одной конфигурации; у него ровно одна стадия `pre-adapter`, чей `output_data` = `{"foundArtifactUids": [...], "foundCount": N}`;
+- **артефакт** (`artifact_uid` заполнен) — конкретная находка, идёт по цепочке `pre-adapter → adapter → validator → transformer → saver`; `parent_run_id` указывает на скан, который её нашёл.
 
-Визуально то же самое — в Camunda Cockpit: `http://localhost:8085/camunda` (логин `beeatlas`/`beeatlas`).
+`PreAdapterWorker.runForConfig` — строго фазами, без перекрытия: 1) `ArtifactPreAdapter.scan(config)` — чистое чтение источника, без побочных эффектов; 2) результат скана (найденные uid или ошибка) полностью записывается в `pipeline_runs`/`pipeline_stage_logs`; 3) только после этого для каждого найденного запускается `artifact-pipeline-process` (Adapter и далее). Модуль (`SparxE2EPreAdapter`) не знает о `PipelineRunService` вообще — он только сканирует и возвращает список `FoundArtifact(uid, metadata)`; вся бухгалтерия и запуск — в `PreAdapterWorker`.
+
+`pipeline_runs.batch_id` группирует все запуски одного **тика** (общий для всех конфигураций, обработанных в этом тике) — для привязки к конкретному вызову pre-adapter'а одной конфигурации используйте `parent_run_id`, не `batch_id`.
+
+Визуально то же самое — в Camunda Cockpit: `http://localhost:8085/camunda` (логин `beeatlas`/`beeatlas`). В диаграмме `artifact-pipeline-process` видно все 5 этапов как реальные Camunda-таски: **Pre-Adapter → Adapter → Validator → Transformer → Saver** — Pre-Adapter здесь не повторно сканирует источник (это уже сделано раньше, в `pre-adapter-process`, см. строки-сканы выше), а подтверждает находку как первую реальную стадию этого конкретного артефакта (`PreAdapterAckWorker`, топик `pre-adapter-ack` — отдельный от топика `pre-adapter` у скана, иначе оба воркера дрались бы за одни и те же Camunda-задачи).

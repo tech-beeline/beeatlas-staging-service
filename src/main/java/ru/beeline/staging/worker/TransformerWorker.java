@@ -61,19 +61,12 @@ public class TransformerWorker extends AbstractWorker {
         RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                 .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        // Snapshot shape is private to this transformer/saver pair — TransformerWorker only
-        // serializes whatever object comes back, it never inspects its structure.
         Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
         String snapshotJson = objectMapper.writeValueAsString(snapshot);
 
-        // Never travels through Camunda process variables (varchar(4000) limit) — only
-        // rawDataRefId does; the Saver stage reads this column back by id.
         ref.setCanonicalSnapshotJson(snapshotJson);
         rawDataRefRepository.save(ref);
 
-        // Clean data itself never travels through pipeline_stage_logs.output_data either
-        // (same varchar(4000)/size concerns as process variables) — just enough here to see
-        // in monitoring that a snapshot was produced and where it lives.
         return Map.of("rawDataRefId", rawDataRefId, "canonicalSnapshotBytes", snapshotJson.length());
     }
 }

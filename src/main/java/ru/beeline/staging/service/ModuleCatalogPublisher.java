@@ -22,15 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * On every startup, syncs staging.module_catalog and staging.pipeline_definitions with
- * what's actually registered in code — both are a generated reflection for visibility, never
- * a source of truth. module_catalog has no incoming FKs, so it's safely delete+reinsert.
- * pipeline_definitions IS referenced by pipeline_runs.pipeline_definition_id, so old versions
- * are kept forever and never edited — a new row (with isCurrent=true) is only appended when
- * an artifactType's module sequence actually changed since the last startup, so historical
- * runs keep pointing at the sequence that was truly in effect when they started.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -89,7 +80,7 @@ public class ModuleCatalogPublisher {
                     pipelineDefinitionRepository.findByArtifactTypeAndCurrentTrue(artifactType);
 
             if (current.isPresent() && current.get().getModulesSequence().equals(sequence)) {
-                continue; // unchanged since last startup — no new version needed
+                continue;
             }
 
             pipelineDefinitionRepository.clearCurrentFlag(artifactType);
