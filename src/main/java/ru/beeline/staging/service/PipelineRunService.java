@@ -1,12 +1,9 @@
 package ru.beeline.staging.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.camunda.bpm.engine.ExternalTaskService;
-import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.externaltask.ExternalTask;
-import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
@@ -19,7 +16,6 @@ import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.PipelineStageLogRepository;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -32,36 +28,8 @@ public class PipelineRunService {
     private final PipelineRunRepository      runRepository;
     private final PipelineStageLogRepository stageLogRepository;
     private final ArtifactBatchRepository    batchRepository;
-    private final RuntimeService             runtimeService;
     private final ExternalTaskService        externalTaskService;
-    private final ObjectMapper               objectMapper;
     private final PipelineDefinitionEntryRepository pipelineDefinitionRepository;
-
-    @Transactional
-    public PipelineRun startArtifactPipeline(Long configurationId, String artifactType, String artifactUid,
-                                              String batchId, Long scanRunId, Map<String, Object> metadata) {
-        PipelineRun run = createRun(artifactUid, artifactType, configurationId, batchId, scanRunId);
-
-        Map<String, Object> variables = new HashMap<>();
-        variables.put("artifactType",    artifactType);
-        variables.put("artifactUid",     artifactUid);
-        variables.put("configurationId", configurationId);
-        variables.put("batchId",         batchId);
-        variables.put("pipelineRunId",   run.getId());
-        if (metadata != null) {
-            try {
-                variables.put("metadataJson", objectMapper.writeValueAsString(metadata));
-            } catch (Exception e) {
-                log.warn("Failed to serialize metadata for uid={}", artifactUid, e);
-            }
-        }
-
-        ProcessInstance pi = runtimeService.startProcessInstanceByMessage("artifact.ready", artifactUid, variables);
-        bindCamundaPid(run.getId(), pi.getId());
-        log.info("Started artifact-pipeline-process for uid={}, pipelineRunId={}, camundaPid={}",
-                artifactUid, run.getId(), pi.getId());
-        return run;
-    }
 
     @Transactional
     public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
@@ -86,10 +54,10 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public void bindCamundaPid(Long runId, String camundaPid) {
+    public void bindExecution(Long runId, String processInstanceId, String executionId) {
         runRepository.findById(runId).ifPresent(run -> {
-            run.setCamundaPid(camundaPid);
-            run.setStatus("loading");
+            run.setCamundaPid(processInstanceId);
+            run.setExecutionId(executionId);
             runRepository.save(run);
         });
     }
@@ -149,20 +117,24 @@ public class PipelineRunService {
         if (!"failed".equals(run.getStatus())) {
             throw new IllegalStateException("PipelineRun " + runId + " is not failed (status=" + run.getStatus() + ")");
         }
-        if (run.getCamundaPid() == null) {
-            throw new IllegalStateException("PipelineRun " + runId + " has no camundaPid to retry");
+        if (run.getExecutionId() == null && run.getCamundaPid() == null) {
+            throw new IllegalStateException("PipelineRun " + runId + " has no execution to retry");
         }
 
-        List<ExternalTask> tasks = externalTaskService.createExternalTaskQuery()
-                .processInstanceId(run.getCamundaPid())
-                .list();
+        var query = externalTaskService.createExternalTaskQuery();
+        if (run.getExecutionId() != null) {
+            query.executionId(run.getExecutionId());
+        } else {
+            query.processInstanceId(run.getCamundaPid());
+        }
+        List<ExternalTask> tasks = query.list();
         tasks.forEach(t -> externalTaskService.setRetries(t.getId(), retries));
 
         if (!tasks.isEmpty()) {
             runRepository.markRetrying(runId);
         }
-        log.info("Retry requested for pipelineRunId={}, camundaPid={}: {} external task(s) reset",
-                runId, run.getCamundaPid(), tasks.size());
+        log.info("Retry requested for pipelineRunId={}, executionId={}: {} external task(s) reset",
+                runId, run.getExecutionId(), tasks.size());
         return tasks.size();
     }
 

@@ -59,7 +59,7 @@ staging:
   camunda:
     schema: ${STAGING_CAMUNDA_SCHEMA:staging_camunda}
   scheduler:
-    tick-interval-ms: 60000        # PipelineTickScheduler: how often pre-adapter-process is started
+    tick-interval-ms: 60000        # PipelineTickScheduler: how often due configurations are scanned
 
 management:
   endpoints:

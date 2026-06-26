@@ -37,6 +37,9 @@ public class PipelineRun {
     @Column(name = "camunda_pid")
     private String camundaPid;
 
+    @Column(name = "execution_id")
+    private String executionId;
+
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt = LocalDateTime.now();
 

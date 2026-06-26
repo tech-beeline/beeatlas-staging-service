@@ -4,23 +4,20 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.repository.ConfigurationRepository;
+import ru.beeline.staging.worker.PipelineTickScheduler;
 
 import java.util.NoSuchElementException;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class PipelineService {
 
     private final ConfigurationRepository configurationRepository;
-    private final PipelineRunService      pipelineRunService;
+    private final PipelineTickScheduler   pipelineTickScheduler;
 
     public void run(Long configurationId) {
         Configuration config = configurationRepository.findById(configurationId)
                 .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + configurationId));
-
-        String artifactUid = UUID.randomUUID().toString();
-        pipelineRunService.startArtifactPipeline(
-                config.getId(), config.getArtifactType(), artifactUid, UUID.randomUUID().toString(), null, null);
+        pipelineTickScheduler.startScan(config);
     }
 }

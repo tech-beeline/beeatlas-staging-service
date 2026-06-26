@@ -1,10 +1,7 @@
 package ru.beeline.staging.worker;
 
 import jakarta.annotation.PostConstruct;
-import org.camunda.bpm.engine.HistoryService;
-import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
-import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.domain.PipelineRun;
@@ -13,18 +10,16 @@ import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
-import java.time.Duration;
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
 @Component
 public class PreAdapterWorker extends AbstractWorker {
 
     private final ConfigurationRepository configurationRepository;
-    private final RuntimeService          runtimeService;
-    private final HistoryService          historyService;
     private final ModuleResolver          moduleResolver;
     private final PipelineRunService      pipelineRunService;
     private final List<ArtifactPreAdapter> preAdapters;
@@ -32,14 +27,10 @@ public class PreAdapterWorker extends AbstractWorker {
     private Map<String, ArtifactPreAdapter> registry;
 
     public PreAdapterWorker(ConfigurationRepository configurationRepository,
-                             RuntimeService runtimeService,
-                             HistoryService historyService,
                              ModuleResolver moduleResolver,
                              PipelineRunService pipelineRunService,
                              List<ArtifactPreAdapter> preAdapters) {
         this.configurationRepository = configurationRepository;
-        this.runtimeService          = runtimeService;
-        this.historyService          = historyService;
         this.moduleResolver          = moduleResolver;
         this.pipelineRunService      = pipelineRunService;
         this.preAdapters             = preAdapters;
@@ -57,87 +48,57 @@ public class PreAdapterWorker extends AbstractWorker {
     protected String workerId() { return "staging-pre-adapter-worker"; }
 
     @Override
-    protected Map<String, Object> process(LockedExternalTask task) {
-        String batchId = task.getProcessInstanceId();
-        log.info("Pre-adapter tick: batchId={}", batchId);
-
-        List<Configuration> candidates =
-                configurationRepository.findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
-
-        log.info("Found {} active scheduled configurations", candidates.size());
-
-        for (Configuration config : candidates) {
-            if (isAlreadyRunning(config, batchId)) {
-                log.info("Skip configId={} — process already running", config.getId());
-                continue;
-            }
-            if (!intervalElapsed(config)) {
-                log.info("Skip configId={} — interval not yet elapsed", config.getId());
-                continue;
-            }
-            runForConfig(config, batchId);
-        }
-        return null;
+    protected List<String> variablesToFetch() {
+        return List.of("configurationId", "artifactType");
     }
 
-    public int runForConfig(Configuration config, String batchId) {
-        PipelineRun scan = pipelineRunService.startScanRun(config.getId(), config.getArtifactType(), batchId);
+    /**
+     * The real first task of the merged artifact-pipeline-process (one process instance per
+     * config x tick, not per artifact). Has no pipelineRunId of its own (that's per-artifact),
+     * so — like the old standalone scan — it manually records its own pipeline_runs row
+     * (artifactUid == null) before creating one child pipeline_runs row per artifact found,
+     * and emits "artifactRefs" (runId|uid pairs) for the multi-instance subprocess to loop
+     * over. Adapter never starts before this result is fully on record.
+     */
+    @Override
+    protected Map<String, Object> process(LockedExternalTask task) {
+        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
+        String artifactType  = (String) task.getVariables().get("artifactType");
+        Configuration config = configurationRepository.findById(configurationId)
+                .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + configurationId));
+
+        PipelineRun scan = pipelineRunService.startScanRun(configurationId, artifactType, task.getProcessInstanceId());
         Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter",
-                Map.of("configurationId", config.getId(), "artifactType", config.getArtifactType()));
+                Map.of("configurationId", configurationId, "artifactType", artifactType));
 
         List<ArtifactPreAdapter.FoundArtifact> found;
         try {
-            String moduleCode = moduleResolver.resolve(config.getArtifactType(), topic());
+            String moduleCode = moduleResolver.resolve(artifactType, topic());
             ArtifactPreAdapter adapter = registry.get(moduleCode);
             if (adapter == null) {
                 throw new IllegalStateException("No ArtifactPreAdapter registered for moduleCode=" + moduleCode);
             }
             found = adapter.scan(config);
         } catch (Exception e) {
-            log.warn("Pre-adapter failed for configId={}: {}", config.getId(), e.getMessage());
+            log.warn("Pre-adapter failed for configId={}: {}", configurationId, e.getMessage());
             pipelineRunService.failStage(stageLogId, scan.getId(), "pre-adapter", e.getMessage());
-            return 0;
+            throw new RuntimeException(e);
         }
 
-        List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
+        String foundArtifactUids = found.stream()
+                .map(ArtifactPreAdapter.FoundArtifact::uid)
+                .collect(Collectors.joining(","));
         pipelineRunService.completeStage(stageLogId,
-                Map.of("foundArtifactUids", uids, "foundCount", uids.size()),
-                Map.of("foundCount", uids.size()));
+                Map.of("foundCount", found.size(), "foundArtifactUids", foundArtifactUids),
+                Map.of("foundCount", found.size()));
         pipelineRunService.completeRun(scan.getId());
 
+        List<String> artifactRefs = new ArrayList<>();
         for (ArtifactPreAdapter.FoundArtifact item : found) {
-            pipelineRunService.startArtifactPipeline(
-                    config.getId(), config.getArtifactType(), item.uid(), batchId, scan.getId(), item.metadata());
+            PipelineRun run = pipelineRunService.createRun(
+                    item.uid(), artifactType, configurationId, task.getProcessInstanceId(), scan.getId());
+            artifactRefs.add(run.getId() + "|" + item.uid());
         }
-        return uids.size();
-    }
-
-    private boolean isAlreadyRunning(Configuration config, String batchId) {
-        return runtimeService.createProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .active()
-                .list()
-                .stream()
-                .anyMatch(p -> !p.getId().equals(batchId));
-    }
-
-    private boolean intervalElapsed(Configuration config) {
-        Duration interval = config.getScheduleInterval().orElse(Duration.ZERO);
-
-        List<HistoricProcessInstance> lastRuns = historyService
-                .createHistoricProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .finished()
-                .orderByProcessInstanceEndTime().desc()
-                .listPage(0, 1);
-
-        if (lastRuns.isEmpty()) {
-            return true;
-        }
-
-        Instant lastEnd = lastRuns.get(0).getEndTime().toInstant();
-        return Duration.between(lastEnd, Instant.now()).compareTo(interval) >= 0;
+        return Map.of("artifactRefs", artifactRefs);
     }
 }

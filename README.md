@@ -62,12 +62,23 @@ preAdapter → adapter → validator → transformer → saver
 | Какие модули планировались для конкретного запуска | `staging.pipeline_runs.pipeline_definition_id` → `staging.pipeline_definitions.modules_sequence` (FK, не дублируется в каждой строке `pipeline_runs`) |
 | Что произошло на каждом этапе конкретного запуска — вход и выход | `staging.pipeline_stage_logs` (`input_data`/`output_data`) |
 
-`pipeline_runs` хранит два вида строк в одной таблице — отличаются только тем, заполнен ли `artifact_uid`:
-- **скан** (`artifact_uid IS NULL`) — один вызов pre-adapter'а для одной конфигурации; у него ровно одна стадия `pre-adapter`, чей `output_data` = `{"foundArtifactUids": [...], "foundCount": N}`;
-- **артефакт** (`artifact_uid` заполнен) — конкретная находка, идёт по цепочке `pre-adapter → adapter → validator → transformer → saver`; `parent_run_id` указывает на скан, который её нашёл.
+### Один Camunda-процесс, один реальный Pre-Adapter
 
-`PreAdapterWorker.runForConfig` — строго фазами, без перекрытия: 1) `ArtifactPreAdapter.scan(config)` — чистое чтение источника, без побочных эффектов; 2) результат скана (найденные uid или ошибка) полностью записывается в `pipeline_runs`/`pipeline_stage_logs`; 3) только после этого для каждого найденного запускается `artifact-pipeline-process` (Adapter и далее). Модуль (`SparxE2EPreAdapter`) не знает о `PipelineRunService` вообще — он только сканирует и возвращает список `FoundArtifact(uid, metadata)`; вся бухгалтерия и запуск — в `PreAdapterWorker`.
+`artifact-pipeline-process` — теперь **один** BPMN-процесс на конфигурацию×тик (не на артефакт): `Pre-Adapter` — настоящий первый Camunda-таск, без дублей и заглушек. Дальше идёт Multi-Instance подпроцесс `Adapter → Validator → Transformer → Saver`, по одной итерации на каждый найденный артефакт (`isSequential=true` — итерации строго друг за другом, без параллелизма):
 
-`pipeline_runs.batch_id` группирует все запуски одного **тика** (общий для всех конфигураций, обработанных в этом тике) — для привязки к конкретному вызову pre-adapter'а одной конфигурации используйте `parent_run_id`, не `batch_id`.
+```
+[Pre-Adapter] → [[ Adapter → Validator → Transformer → Saver ]] × N найденных артефактов
+```
 
-Визуально то же самое — в Camunda Cockpit: `http://localhost:8085/camunda` (логин `beeatlas`/`beeatlas`). В диаграмме `artifact-pipeline-process` видно все 5 этапов как реальные Camunda-таски: **Pre-Adapter → Adapter → Validator → Transformer → Saver** — Pre-Adapter здесь не повторно сканирует источник (это уже сделано раньше, в `pre-adapter-process`, см. строки-сканы выше), а подтверждает находку как первую реальную стадию этого конкретного артефакта (`PreAdapterAckWorker`, топик `pre-adapter-ack` — отдельный от топика `pre-adapter` у скана, иначе оба воркера дрались бы за одни и те же Camunda-задачи).
+`PreAdapterWorker` (обработчик таска `Pre-Adapter`) — строго фазами, без перекрытия:
+1. `ArtifactPreAdapter.scan(config)` — чистое чтение источника, без побочных эффектов (модуль не знает о `PipelineRunService` вообще);
+2. результат скана (найденные uid или ошибка) полностью записывается в `pipeline_runs`/`pipeline_stage_logs` (строка с `artifact_uid IS NULL`);
+3. только после этого создаётся по одной строке `pipeline_runs` (`artifact_uid` заполнен, `parent_run_id` = строка-скан) на каждый найденный артефакт, и список `"<runId>|<uid>"` отдаётся в процесс как коллекция `artifactRefs` — именно по ней Camunda гоняет Multi-Instance подпроцесс.
+
+`AdapterWorker` — единственный "особый" воркер: на момент его первого вызова в итерации `pipelineRunId` ещё не существует как переменная процесса (она появляется только после того, как pre-adapter нашёл артефакты), поэтому он сам парсит `artifactRef`, сам ведёт лог своей стадии, и сам прокидывает `pipelineRunId`/`artifactUid` дальше как выходные переменные — после него `Validator/Transformer/Saver` работают как обычно, через стандартный механизм `AbstractWorker`.
+
+Раз один процесс теперь обслуживает сразу много артефактов, для retry используется не `processInstanceId` (общий для всех итераций), а `executionId` конкретной итерации (`pipeline_runs.execution_id`, выставляется `AdapterWorker`).
+
+`pipeline_runs.batch_id` = `processInstanceId` всего процесса (общий и у строки-скана, и у всех найденных ею артефактов) — для привязки конкретного артефакта именно к своему скану используйте `parent_run_id`, не `batch_id`.
+
+Визуально то же самое — в Camunda Cockpit: `http://localhost:8085/camunda` (логин `beeatlas`/`beeatlas`).

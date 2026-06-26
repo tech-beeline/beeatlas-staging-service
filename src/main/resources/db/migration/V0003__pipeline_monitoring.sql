@@ -13,6 +13,7 @@ CREATE TABLE staging.pipeline_runs (
     batch_id         VARCHAR(100),
     status           VARCHAR(20)  NOT NULL DEFAULT 'pending',
     camunda_pid      VARCHAR(255),
+    execution_id     VARCHAR(255),
     started_at       TIMESTAMP    NOT NULL DEFAULT NOW(),
     completed_at     TIMESTAMP,
     failure_reason   TEXT,
@@ -26,11 +27,13 @@ CREATE TABLE staging.pipeline_runs (
 COMMENT ON COLUMN staging.pipeline_runs.artifact_uid IS
     'NULL means this row is a pre-adapter scan attempt, not one artifact — see parent_run_id.';
 COMMENT ON COLUMN staging.pipeline_runs.batch_id IS
-    'Groups all pipeline_runs spawned by one preAdapter tick (the pre-adapter-process instance id) — shared across every configuration scanned in that tick, not unique to one scan; use parent_run_id for that.';
+    'The artifact-pipeline-process instance id of the scan that found this row — shared by the scan row and every artifact it spawned; use parent_run_id to link an artifact back to its specific scan row.';
 COMMENT ON COLUMN staging.pipeline_runs.pipeline_definition_id IS
     'FK to staging.pipeline_definitions for this run''s artifactType — avoids duplicating the module sequence into every run row.';
 COMMENT ON COLUMN staging.pipeline_runs.parent_run_id IS
     'Self-FK to the scan-attempt row (artifact_uid IS NULL) that found this artifact — query staging.pipeline_runs WHERE parent_run_id = X to see every artifact one pre-adapter scan produced, or read its "pre-adapter" pipeline_stage_logs.output_data.foundArtifactUids for the raw list.';
+COMMENT ON COLUMN staging.pipeline_runs.execution_id IS
+    'Camunda execution id of this artifact''s own multi-instance loop iteration — camunda_pid alone is not enough to target retries since one process instance now runs many artifacts (multi-instance subprocess).';
 
 CREATE INDEX idx_pipeline_runs_artifact ON staging.pipeline_runs (artifact_uid, artifact_type);
 CREATE INDEX idx_pipeline_runs_status   ON staging.pipeline_runs (status);
