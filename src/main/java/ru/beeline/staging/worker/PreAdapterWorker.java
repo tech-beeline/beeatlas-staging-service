@@ -52,14 +52,6 @@ public class PreAdapterWorker extends AbstractWorker {
         return List.of("configurationId", "artifactType");
     }
 
-    /**
-     * The real first task of the merged artifact-pipeline-process (one process instance per
-     * config x tick, not per artifact). Has no pipelineRunId of its own (that's per-artifact),
-     * so — like the old standalone scan — it manually records its own pipeline_runs row
-     * (artifactUid == null) before creating one child pipeline_runs row per artifact found,
-     * and emits "artifactRefs" (runId|uid pairs) for the multi-instance subprocess to loop
-     * over. Adapter never starts before this result is fully on record.
-     */
     @Override
     protected Map<String, Object> process(LockedExternalTask task) {
         Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
@@ -67,8 +59,9 @@ public class PreAdapterWorker extends AbstractWorker {
         Configuration config = configurationRepository.findById(configurationId)
                 .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + configurationId));
 
-        PipelineRun scan = pipelineRunService.startScanRun(configurationId, artifactType, task.getProcessInstanceId());
-        Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter", String.valueOf(configurationId));
+        PipelineRun scan = pipelineRunService.createRun(null, artifactType, configurationId,
+                                                        task.getProcessInstanceId(), null);
+        Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter", config.getArtifactType());
 
         List<ArtifactPreAdapter.FoundArtifact> found;
         try {

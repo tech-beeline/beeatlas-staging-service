@@ -41,19 +41,7 @@ public class SaverWorker extends AbstractWorker {
 
     @Override
     protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId");
-    }
-
-    @Override
-    protected String inputDataFor(LockedExternalTask task) {
-        return String.valueOf(task.getVariables().get("rawDataRefId"));
-    }
-
-    @Override
-    protected String outputSummaryFor(Map<String, Object> outputVars) {
-        if (outputVars == null) return "saved=false";
-        Object batchId = outputVars.get("batchId");
-        return batchId != null ? "batchId=" + batchId : "saved=" + outputVars.get("saved");
+        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId", "pipelineRunId");
     }
 
     @Override
@@ -61,36 +49,44 @@ public class SaverWorker extends AbstractWorker {
         String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        Long runId = task.getVariables().get("pipelineRunId") instanceof Number n ? n.longValue() : null;
+        Long runId = ((Number) task.getVariables().get("pipelineRunId")).longValue();
 
-        if (runId != null && pipelineRunService.isAlreadyCompleted(runId)) {
-            log.info("Run {} already completed — skipping duplicate save for uid={}", runId, uid);
-            return null;
-        }
+        Long stageLogId = pipelineRunService.startStage(runId, "saver", "rawDataRefId=" + rawDataRefId);
+        try {
+            if (pipelineRunService.isAlreadyCompleted(runId)) {
+                log.info("Run {} already completed — skipping duplicate save for uid={}", runId, uid);
+                pipelineRunService.completeStage(stageLogId, "skipped: already completed", null);
+                return null;
+            }
 
-        String moduleCode = moduleResolver.resolve(type, topic());
-        ArtifactSaver saver = registry.get(moduleCode);
-        if (saver == null) {
-            throw new IllegalStateException("No ArtifactSaver registered for moduleCode=" + moduleCode);
-        }
+            String moduleCode = moduleResolver.resolve(type, topic());
+            ArtifactSaver saver = registry.get(moduleCode);
+            if (saver == null) {
+                throw new IllegalStateException("No ArtifactSaver registered for moduleCode=" + moduleCode);
+            }
 
-        log.info("stage=saver, module={}, uid={}", moduleCode, uid);
+            log.info("stage=saver, module={}, uid={}", moduleCode, uid);
 
-        RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
-                .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
+            RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
+                    .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        Map<String, Object> result = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
+            Map<String, Object> result = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
 
-        Map<String, Object> output = new HashMap<>(result != null ? result : Map.of());
-        output.put("saved", result != null);
+            Map<String, Object> output = new HashMap<>(result != null ? result : Map.of());
+            output.put("saved", result != null);
 
-        ref.setCanonicalSnapshotJson(null);
-        rawDataRefRepository.save(ref);
+            ref.setCanonicalSnapshotJson(null);
+            rawDataRefRepository.save(ref);
 
-        if (runId != null) {
+            Object batchId = output.get("batchId");
+            String outputSummary = batchId != null ? "batchId=" + batchId : "saved=" + output.get("saved");
+            pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(output));
             pipelineRunService.completeRun(runId);
-        }
 
-        return output;
+            return output;
+        } catch (Exception e) {
+            pipelineRunService.failStage(stageLogId, runId, "saver", e.getMessage());
+            throw e;
+        }
     }
 }

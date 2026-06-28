@@ -49,11 +49,6 @@ public class PipelineRunService {
     }
 
     @Transactional
-    public PipelineRun startScanRun(Long configurationId, String artifactType, String batchId) {
-        return createRun(null, artifactType, configurationId, batchId, null);
-    }
-
-    @Transactional
     public void bindExecution(Long runId, String processInstanceId, String executionId) {
         runRepository.findById(runId).ifPresent(run -> {
             run.setCamundaPid(processInstanceId);

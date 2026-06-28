@@ -9,6 +9,7 @@ import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
+import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.utils.GzipUtils;
 
 import java.util.List;
@@ -24,6 +25,7 @@ public class TransformerWorker extends AbstractWorker {
     private final RawDataRefRepository      rawDataRefRepository;
     private final ObjectMapper              objectMapper;
     private final ModuleResolver            moduleResolver;
+    private final PipelineRunService        pipelineRunService;
 
     private Map<String, ArtifactTransformer> registry;
 
@@ -41,17 +43,7 @@ public class TransformerWorker extends AbstractWorker {
 
     @Override
     protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId");
-    }
-
-    @Override
-    protected String inputDataFor(LockedExternalTask task) {
-        return String.valueOf(task.getVariables().get("rawDataRefId"));
-    }
-
-    @Override
-    protected String outputSummaryFor(Map<String, Object> outputVars) {
-        return outputVars == null ? null : String.valueOf(outputVars.get("rawDataRefId"));
+        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId", "pipelineRunId");
     }
 
     @Override
@@ -59,24 +51,33 @@ public class TransformerWorker extends AbstractWorker {
         String uid  = (String) task.getVariables().get("artifactUid");
         String artifactType = (String) task.getVariables().get("artifactType");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
+        Long runId = ((Number) task.getVariables().get("pipelineRunId")).longValue();
 
-        String moduleCode = moduleResolver.resolve(artifactType, topic());
-        ArtifactTransformer transformer = registry.get(moduleCode);
-        if (transformer == null) {
-            throw new IllegalStateException("No ArtifactTransformer registered for moduleCode=" + moduleCode);
+        Long stageLogId = pipelineRunService.startStage(runId, "transformer", "rawDataRefId=" + rawDataRefId);
+        try {
+            String moduleCode = moduleResolver.resolve(artifactType, topic());
+            ArtifactTransformer transformer = registry.get(moduleCode);
+            if (transformer == null) {
+                throw new IllegalStateException("No ArtifactTransformer registered for moduleCode=" + moduleCode);
+            }
+
+            log.info("stage=transformer, module={}, uid={}", moduleCode, uid);
+
+            RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
+                    .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
+
+            Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            String snapshotJson = objectMapper.writeValueAsString(snapshot);
+
+            ref.setCanonicalSnapshotJson(snapshotJson);
+            rawDataRefRepository.save(ref);
+
+            Map<String, Object> output = Map.of("rawDataRefId", rawDataRefId, "canonicalSnapshotBytes", snapshotJson.length());
+            pipelineRunService.completeStage(stageLogId, "rawDataRefId=" + rawDataRefId, buildSummary(output));
+            return output;
+        } catch (Exception e) {
+            pipelineRunService.failStage(stageLogId, runId, "transformer", e.getMessage());
+            throw e;
         }
-
-        log.info("stage=transformer, module={}, uid={}", moduleCode, uid);
-
-        RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
-                .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
-
-        Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
-        String snapshotJson = objectMapper.writeValueAsString(snapshot);
-
-        ref.setCanonicalSnapshotJson(snapshotJson);
-        rawDataRefRepository.save(ref);
-
-        return Map.of("rawDataRefId", rawDataRefId, "canonicalSnapshotBytes", snapshotJson.length());
     }
 }

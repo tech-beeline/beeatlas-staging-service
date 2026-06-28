@@ -6,12 +6,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
-import ru.beeline.staging.service.PipelineRunService;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Pure Camunda polling — no pipeline_stage_logs bookkeeping here. That used to be automatic
+ * (keyed off a "pipelineRunId" process variable read before process() ran), but pipelineRunId
+ * is an ordinary process variable that is NOT reset between multi-instance iterations: by the
+ * time the next iteration's Adapter task is fetched, it still holds the PREVIOUS iteration's
+ * value, so the automatic path logged a stage under the wrong run_id in addition to whatever
+ * the worker itself logged — duplicate rows. Each worker now resolves its own run id and calls
+ * PipelineRunService.startStage/completeStage/failStage explicitly, inside process().
+ */
 public abstract class AbstractWorker {
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
@@ -19,22 +26,9 @@ public abstract class AbstractWorker {
     @Autowired
     protected ExternalTaskService externalTaskService;
 
-    @Autowired
-    private PipelineRunService pipelineRunService;
-
     protected abstract String topic();
 
     protected abstract String workerId();
-
-    
-    protected String stageName() { return topic(); }
-
-    protected String inputDataFor(LockedExternalTask task) { return task.getVariables().toString(); }
-
-    protected String outputSummaryFor(Map<String, Object> outputVars) {
-        return outputVars == null ? null : outputVars.toString();
-    }
-
 
     protected abstract Map<String, Object> process(LockedExternalTask task) throws Exception;
 
@@ -42,26 +36,15 @@ public abstract class AbstractWorker {
 
     @Scheduled(fixedDelayString = "${staging.worker.poll-interval-ms:500}")
     public void poll() {
-        List<String> vars = new ArrayList<>(variablesToFetch());
-        if (!vars.contains("pipelineRunId")) {
-            vars.add("pipelineRunId");
-        }
-
         List<LockedExternalTask> tasks = externalTaskService
                 .fetchAndLock(10, workerId())
                 .topic(topic(), 30_000L)
-                .variables(vars)
+                .variables(variablesToFetch())
                 .execute();
 
         for (LockedExternalTask task : tasks) {
-            Long runId = extractRunId(task);
-            Long stageLogId = runId != null ? pipelineRunService.startStage(runId, stageName(), inputDataFor(task)) : null;
-
             try {
                 Map<String, Object> outputVars = process(task);
-                if (stageLogId != null) {
-                    pipelineRunService.completeStage(stageLogId, outputSummaryFor(outputVars), buildSummary(outputVars));
-                }
                 if (outputVars != null && !outputVars.isEmpty()) {
                     externalTaskService.complete(task.getId(), workerId(), outputVars);
                 } else {
@@ -69,15 +52,6 @@ public abstract class AbstractWorker {
                 }
             } catch (Exception e) {
                 log.error("Worker {} failed on task {}", workerId(), task.getId(), e);
-                if (stageLogId != null && runId != null) {
-                    int retries = task.getRetries() != null ? task.getRetries() - 1 : 2;
-                    if (retries <= 0) {
-                        pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
-                    } else {
-                        Map<String, Object> retryInfo = Map.of("retrying", true, "error", String.valueOf(e.getMessage()));
-                        pipelineRunService.completeStage(stageLogId, "retrying: " + e.getMessage(), retryInfo);
-                    }
-                }
                 int retries = task.getRetries() != null ? Math.max(0, task.getRetries() - 1) : 2;
                 externalTaskService.handleFailure(
                         task.getId(), workerId(), e.getMessage(), e.toString(), retries, 5_000L);
@@ -85,15 +59,9 @@ public abstract class AbstractWorker {
         }
     }
 
-    private Long extractRunId(LockedExternalTask task) {
-        Object raw = task.getVariables().get("pipelineRunId");
-        if (raw == null) return null;
-        try { return ((Number) raw).longValue(); } catch (Exception e) { return null; }
-    }
-
-    private Map<String, Object> buildSummary(Map<String, Object> outputVars) {
+    /** Reusable by any worker for summary_json — scalar/boolean fields only, kept for quick dashboards. */
+    protected static Map<String, Object> buildSummary(Map<String, Object> outputVars) {
         if (outputVars == null || outputVars.isEmpty()) return null;
-
         return outputVars.entrySet().stream()
                 .filter(e -> e.getValue() instanceof Number || e.getValue() instanceof Boolean)
                 .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));

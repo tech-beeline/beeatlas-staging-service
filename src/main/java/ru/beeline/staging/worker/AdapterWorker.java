@@ -76,7 +76,7 @@ public class AdapterWorker extends AbstractWorker {
             Map<String, Object> result = adapter.load(uid, sourceId, null);
 
             String rawDataRefId = result != null ? String.valueOf(result.get("rawDataRefId")) : null;
-            pipelineRunService.completeStage(stageLogId, rawDataRefId, summaryOf(result));
+            pipelineRunService.completeStage(stageLogId, rawDataRefId, buildSummary(result));
 
             Map<String, Object> output = result != null ? new HashMap<>(result) : new HashMap<>();
             output.put("pipelineRunId", runId);
@@ -86,12 +86,5 @@ public class AdapterWorker extends AbstractWorker {
             pipelineRunService.failStage(stageLogId, runId, "adapter", e.getMessage());
             throw e;
         }
-    }
-
-    private static Map<String, Object> summaryOf(Map<String, Object> outputVars) {
-        if (outputVars == null || outputVars.isEmpty()) return null;
-        return outputVars.entrySet().stream()
-                .filter(e -> e.getValue() instanceof Number || e.getValue() instanceof Boolean)
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 }
