@@ -75,8 +75,8 @@ public class AdapterWorker extends AbstractWorker {
             log.info("stage=adapter, module={}, uid={}", moduleCode, uid);
             Map<String, Object> result = adapter.load(uid, sourceId, null);
 
-            String rawDataRefId = result != null ? String.valueOf(result.get("rawDataRefId")) : null;
-            pipelineRunService.completeStage(stageLogId, rawDataRefId, buildSummary(result));
+            String outputSummary = result != null ? "rawDataRefId=" + result.get("rawDataRefId") : null;
+            pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(result));
 
             Map<String, Object> output = result != null ? new HashMap<>(result) : new HashMap<>();
             output.put("pipelineRunId", runId);
