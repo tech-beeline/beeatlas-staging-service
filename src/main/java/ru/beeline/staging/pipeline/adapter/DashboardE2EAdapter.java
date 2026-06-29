@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 import ru.beeline.staging.dashboard.DashboardClient;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.repository.RawDataRefRepository;
-import ru.beeline.staging.utils.GzipUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,7 +49,9 @@ public class DashboardE2EAdapter implements ArtifactAdapter {
             refId = rawDataRefRepository.save(ref).getId();
             log.info("Content unchanged for uid={}, reusing rawDataRefId={}", artifactUid, refId);
         } else {
-            byte[] gzipped = GzipUtils.gzip(rawJson.getBytes(StandardCharsets.UTF_8));
+            // TEMP: gzip disabled for easier manual inspection of raw_content while debugging — see GzipUtils.
+            // byte[] gzipped = GzipUtils.gzip(rawJson.getBytes(StandardCharsets.UTF_8));
+            byte[] gzipped = rawJson.getBytes(StandardCharsets.UTF_8);
 
             RawDataRef ref = new RawDataRef();
             ref.setArtifactUid(artifactUid);

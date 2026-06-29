@@ -16,12 +16,16 @@ CREATE TABLE staging.source_artefacts (
     ext_uid                 TEXT      NOT NULL,
     status                  TEXT      NOT NULL DEFAULT 'active',
     last_loaded_ref_id      BIGINT,
+    last_seen_scan_run_id   BIGINT,
     created_at              TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMP NOT NULL DEFAULT NOW(),
 
     CONSTRAINT source_artefacts_status_check CHECK (status IN ('active', 'inactive', 'deleted')),
     UNIQUE (source_artefact_type_id, ext_uid)
 );
+
+COMMENT ON COLUMN staging.source_artefacts.last_seen_scan_run_id IS
+    'The pre-adapter scan (staging.pipeline_runs row with artifact_uid IS NULL) that most recently found this ext_uid. FK added in V0003, after pipeline_runs exists.';
 
 CREATE INDEX idx_source_artefacts_type    ON staging.source_artefacts (source_artefact_type_id);
 CREATE INDEX idx_source_artefacts_ext_uid ON staging.source_artefacts (ext_uid);

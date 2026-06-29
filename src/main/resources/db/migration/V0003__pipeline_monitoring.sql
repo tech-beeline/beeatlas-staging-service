@@ -41,6 +41,12 @@ CREATE INDEX idx_pipeline_runs_started  ON staging.pipeline_runs (started_at DES
 CREATE INDEX idx_pipeline_runs_batch_id ON staging.pipeline_runs (batch_id);
 CREATE INDEX idx_pipeline_runs_parent_run_id ON staging.pipeline_runs (parent_run_id);
 
+ALTER TABLE staging.source_artefacts
+    ADD CONSTRAINT fk_source_artefacts_last_seen_scan
+    FOREIGN KEY (last_seen_scan_run_id) REFERENCES staging.pipeline_runs (id);
+
+CREATE INDEX idx_source_artefacts_last_seen_scan ON staging.source_artefacts (last_seen_scan_run_id);
+
 CREATE TABLE staging.pipeline_stage_logs (
     id             BIGSERIAL   PRIMARY KEY,
     run_id         BIGINT      NOT NULL REFERENCES staging.pipeline_runs (id),

@@ -63,6 +63,9 @@ preAdapter → adapter → validator → transformer → saver
 | Статус каждого запуска целиком (pending/loading/.../completed/failed) | `staging.pipeline_runs` |
 | Какие модули планировались для конкретного запуска | `staging.pipeline_runs.pipeline_definition_id` → `staging.pipeline_definitions.modules_sequence` (FK, не дублируется в каждой строке `pipeline_runs`) |
 | Что произошло на каждом этапе конкретного запуска — вход и выход | `staging.pipeline_stage_logs` (`input_data`/`output_data`) |
+| Какие артефакты источника вообще существуют (по `ext_uid`), когда их последний раз видели | `staging.source_artefacts` (`last_seen_scan_run_id` → `pipeline_runs`, скан, который его в последний раз нашёл) |
+
+`staging.source_artefacts`/`source_artefact_types` — identity-учёт артефактов источника по `ext_uid` (отдельно от `pipeline_runs`, который про запуски пайплайна, а не про "что есть в источнике"). `PreAdapterWorker` на каждый найденный сканом артефакт делает upsert через `SourceArtefactService.recordSeen(config, extUid, scanRunId)`: если артефакт новый — создаёт строку (`status=active`), если уже был — обновляет `status=active`/`last_seen_scan_run_id`/`updated_at`. `source_artefact_types` резолвится по паре `(data_type_id, source_system_id)` конфигурации.
 
 `pipeline_stage_logs.input_data`/`output_data` — обычный `TEXT`, не `jsonb`. Каждый воркер логирует туда **только идентификатор**, который реально обработал (`rawDataRefId` у Validator/Transformer/Saver, `artifactUid` у Adapter, список `uid1,uid2,...` у Pre-Adapter) — не весь дамп переменных Camunda и не JSON-обёртку. Остальной контекст (artifactType, configurationId, pipelineRunId) уже есть на родительской строке `pipeline_runs` через `run_id`, дублировать его в каждой стадии незачем.
 

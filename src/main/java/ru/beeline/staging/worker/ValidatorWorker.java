@@ -9,8 +9,8 @@ import ru.beeline.staging.pipeline.validator.ArtifactValidator;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
-import ru.beeline.staging.utils.GzipUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -66,7 +66,9 @@ public class ValidatorWorker extends AbstractWorker {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            Map<String, Object> result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/DashboardE2EAdapter.
+            // Map<String, Object> result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            Map<String, Object> result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
             Map<String, Object> output = result != null ? result : Map.of("valid", true);
 
             Object warnings = output.get("validationWarningsCount");

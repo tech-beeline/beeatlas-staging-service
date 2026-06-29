@@ -9,6 +9,7 @@ import ru.beeline.staging.pipeline.preadapter.ArtifactPreAdapter;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
+import ru.beeline.staging.service.SourceArtefactService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,7 @@ public class PreAdapterWorker extends AbstractWorker {
     private final ConfigurationRepository configurationRepository;
     private final ModuleResolver          moduleResolver;
     private final PipelineRunService      pipelineRunService;
+    private final SourceArtefactService   sourceArtefactService;
     private final List<ArtifactPreAdapter> preAdapters;
 
     private Map<String, ArtifactPreAdapter> registry;
@@ -29,10 +31,12 @@ public class PreAdapterWorker extends AbstractWorker {
     public PreAdapterWorker(ConfigurationRepository configurationRepository,
                              ModuleResolver moduleResolver,
                              PipelineRunService pipelineRunService,
+                             SourceArtefactService sourceArtefactService,
                              List<ArtifactPreAdapter> preAdapters) {
         this.configurationRepository = configurationRepository;
         this.moduleResolver          = moduleResolver;
         this.pipelineRunService      = pipelineRunService;
+        this.sourceArtefactService   = sourceArtefactService;
         this.preAdapters             = preAdapters;
     }
 
@@ -85,6 +89,7 @@ public class PreAdapterWorker extends AbstractWorker {
 
         List<String> artifactRefs = new ArrayList<>();
         for (ArtifactPreAdapter.FoundArtifact item : found) {
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId());
             PipelineRun run = pipelineRunService.createRun(
                     item.uid(), artifactType, configurationId, task.getProcessInstanceId(), scan.getId());
             artifactRefs.add(run.getId() + "|" + item.uid());

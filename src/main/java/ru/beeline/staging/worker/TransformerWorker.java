@@ -10,8 +10,8 @@ import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
-import ru.beeline.staging.utils.GzipUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -66,7 +66,9 @@ public class TransformerWorker extends AbstractWorker {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/DashboardE2EAdapter.
+            // Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            Object snapshot = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
             String snapshotJson = objectMapper.writeValueAsString(snapshot);
 
             ref.setCanonicalSnapshotJson(snapshotJson);
