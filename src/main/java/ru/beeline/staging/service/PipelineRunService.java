@@ -49,6 +49,14 @@ public class PipelineRunService {
     }
 
     @Transactional
+    public void setRawDataRefId(Long runId, Long rawDataRefId) {
+        runRepository.findById(runId).ifPresent(run -> {
+            run.setRawDataRefId(rawDataRefId);
+            runRepository.save(run);
+        });
+    }
+
+    @Transactional
     public void bindExecution(Long runId, String processInstanceId, String executionId) {
         runRepository.findById(runId).ifPresent(run -> {
             run.setCamundaPid(processInstanceId);

@@ -75,6 +75,9 @@ public class AdapterWorker extends AbstractWorker {
             log.info("stage=adapter, module={}, uid={}", moduleCode, uid);
             Map<String, Object> result = adapter.load(uid, sourceId, null);
 
+            if (result != null && result.get("rawDataRefId") != null) {
+                pipelineRunService.setRawDataRefId(runId, ((Number) result.get("rawDataRefId")).longValue());
+            }
             String outputSummary = result != null ? "rawDataRefId=" + result.get("rawDataRefId") : null;
             pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(result));
 

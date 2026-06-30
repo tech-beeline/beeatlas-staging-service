@@ -6,6 +6,7 @@ import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.pipeline.saver.ArtifactSaver;
+import ru.beeline.staging.repository.ArtifactBatchRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
@@ -20,10 +21,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SaverWorker extends AbstractWorker {
 
-    private final List<ArtifactSaver>  savers;
-    private final ModuleResolver       moduleResolver;
-    private final PipelineRunService   pipelineRunService;
-    private final RawDataRefRepository rawDataRefRepository;
+    private final List<ArtifactSaver>      savers;
+    private final ModuleResolver           moduleResolver;
+    private final PipelineRunService       pipelineRunService;
+    private final RawDataRefRepository     rawDataRefRepository;
+    private final ArtifactBatchRepository  artifactBatchRepository;
 
     private Map<String, ArtifactSaver> registry;
 
@@ -57,6 +59,13 @@ public class SaverWorker extends AbstractWorker {
                 log.info("Run {} already completed — skipping duplicate save for uid={}", runId, uid);
                 pipelineRunService.completeStage(stageLogId, "skipped: already completed", null);
                 return null;
+            }
+
+            if (artifactBatchRepository.existsByArtifactUidAndArtifactTypeAndRawDataRefIdAndCurrentTrue(uid, type, rawDataRefId)) {
+                log.info("stage=saver, uid={} — content unchanged (rawDataRefId={}), skipping save", uid, rawDataRefId);
+                pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
+                pipelineRunService.completeRun(runId);
+                return Map.of("saved", false);
             }
 
             String moduleCode = moduleResolver.resolve(type, topic());
