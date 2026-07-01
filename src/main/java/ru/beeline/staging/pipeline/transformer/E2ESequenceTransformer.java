@@ -85,37 +85,29 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
                                    E2ESequenceSnapshot snapshot, Map<String, OperationDraft> operationsByExtUid) {
         if (!rootSequence.isArray()) return;
 
+        BiStepDraft scenario = new BiStepDraft();
+        scenario.setUid(artifactUid);
+        scenario.setName(scenarioName);
+        scenario.setExternalGuid(artifactUid);
+        snapshot.getBiSteps().add(scenario);
+
         int rootIdx = 0;
         for (JsonNode rootItem : rootSequence) {
             String pointer = "/sequence/" + rootIdx;
-            String stepUid = textOrNull(rootItem, "uid");
             String operationGuid = textOrNull(rootItem, "operation_guid");
 
-            if (stepUid != null) {
-                BiStepDraft step = new BiStepDraft();
-                step.setUid(stepUid);
-                step.setName(scenarioName);
-                step.setRps(doubleOrNull(rootItem, "rps"));
-                step.setLatency(doubleOrNull(rootItem, "latency"));
-                step.setErrorRate(doubleOrNull(rootItem, "error_rate"));
-                step.setContext(pointer);
-                step.setExternalGuid(artifactUid);
-                step.setSourceId(textOrNull(rootItem, "diagram_uid"));
-                snapshot.getBiSteps().add(step);
+            if (operationGuid != null) {
+                ensureOperation(operationGuid, rootItem, pointer, operationsByExtUid, snapshot);
 
-                if (operationGuid != null) {
-                    ensureOperation(operationGuid, rootItem, pointer, operationsByExtUid, snapshot);
+                BiStepRelationDraft relation = new BiStepRelationDraft();
+                relation.setBiStepUid(artifactUid);
+                relation.setOperationExtUid(operationGuid);
+                relation.setCallOrder(rootIdx);
+                relation.setStereotype(textOrNull(rootItem, "stereotype"));
+                relation.setContext(pointer);
+                snapshot.getBiStepRelations().add(relation);
 
-                    BiStepRelationDraft relation = new BiStepRelationDraft();
-                    relation.setBiStepUid(stepUid);
-                    relation.setOperationExtUid(operationGuid);
-                    relation.setCallOrder(0);
-                    relation.setStereotype(textOrNull(rootItem, "stereotype"));
-                    relation.setContext(pointer);
-                    snapshot.getBiStepRelations().add(relation);
-
-                    mapOperationSequence(rootItem.path("sequence"), operationGuid, pointer, snapshot, operationsByExtUid);
-                }
+                mapOperationSequence(rootItem.path("sequence"), operationGuid, pointer, snapshot, operationsByExtUid);
             }
             rootIdx++;
         }
