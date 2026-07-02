@@ -89,6 +89,15 @@ CREATE INDEX idx_sequence_versions_tc_id          ON staging.sequence_versions (
 CREATE INDEX idx_sequence_relation_versions_batch ON staging.sequence_relation_versions (batch_id);
 
 -- ---------------------------------------------------------------------------
+-- Stage dictionary (shared by all entity types)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE staging.stages (
+    id   SERIAL PRIMARY KEY,
+    name TEXT   NOT NULL
+);
+
+-- ---------------------------------------------------------------------------
 -- Stage tables for TC
 -- ---------------------------------------------------------------------------
 
