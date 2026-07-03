@@ -39,4 +39,7 @@ public class SequenceVersion {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "match_notice_id")
+    private Long matchNoticeId;
 }

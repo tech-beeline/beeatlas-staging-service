@@ -49,4 +49,7 @@ public class OperationVersion {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "match_notice_id")
+    private Long matchNoticeId;
 }

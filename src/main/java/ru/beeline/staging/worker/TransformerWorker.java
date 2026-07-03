@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
+import ru.beeline.staging.dto.notice.TransformResult;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
@@ -67,14 +68,20 @@ public class TransformerWorker extends AbstractWorker {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/DashboardE2EAdapter.
-            // Object snapshot = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
-            Object snapshot = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
-            String snapshotJson = objectMapper.writeValueAsString(snapshot);
+            // TransformResult result = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
+            String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
 
             ref.setCanonicalSnapshotJson(snapshotJson);
             rawDataRefRepository.save(ref);
 
-            Map<String, Object> output = Map.of("rawDataRefId", rawDataRefId, "canonicalSnapshotBytes", snapshotJson.length());
+            pipelineRunService.saveNotices(rawDataRefId, result.notices());
+
+            Map<String, Object> output = Map.of(
+                    "rawDataRefId", rawDataRefId,
+                    "canonicalSnapshotBytes", snapshotJson.length(),
+                    "noticeCount", (long) result.notices().size()
+            );
             pipelineRunService.completeStage(stageLogId, "rawDataRefId=" + rawDataRefId, buildSummary(output));
             return output;
         } catch (Exception e) {

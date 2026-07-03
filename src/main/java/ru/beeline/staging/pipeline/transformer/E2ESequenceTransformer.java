@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import ru.beeline.staging.dto.notice.TransformResult;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.BiStepDraft;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.BiStepRelationDraft;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.InterfaceDraft;
@@ -30,7 +31,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
     public String description() { return "Maps dashboard's e2e scenario JSON into the BI step / interface / operation snapshot"; }
 
     @Override
-    public E2ESequenceSnapshot transform(String artifactUid, String rawContent) throws Exception {
+    public TransformResult transform(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         E2ESequenceSnapshot snapshot = new E2ESequenceSnapshot();
         String scenarioName = textOrNull(root, "name");
@@ -43,7 +44,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
                 artifactUid, snapshot.getInterfaces().size(), snapshot.getOperations().size(),
                 snapshot.getBiSteps().size(), snapshot.getBiStepRelations().size(), snapshot.getOperationRelations().size());
 
-        return snapshot;
+        return TransformResult.of(snapshot);
     }
 
     private void mapInterfacesAndOperations(JsonNode interfaces, E2ESequenceSnapshot snapshot,

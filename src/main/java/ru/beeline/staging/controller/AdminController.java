@@ -9,8 +9,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.dto.notice.NoticeType;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.service.ArtifactNoticeService;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.worker.PipelineTickScheduler;
 
@@ -31,6 +33,7 @@ public class AdminController {
     private final PipelineTickScheduler   pipelineTickScheduler;
     private final PipelineRunService      pipelineRunService;
     private final PipelineRunRepository   pipelineRunRepository;
+    private final ArtifactNoticeService   noticeService;
 
     @PostMapping("/scan/e2e")
     public ResponseEntity<Map<String, Object>> scanE2E() {
@@ -81,6 +84,27 @@ public class AdminController {
         int tasksReset = pipelineRunService.retryFailedRun(runId, retries);
         log.info("Retry requested for pipelineRunId={}: {} task(s) reset", runId, tasksReset);
         return ResponseEntity.accepted().body(Map.of("tasksReset", tasksReset));
+    }
+
+    @GetMapping("/notice-types")
+    public ResponseEntity<List<NoticeType>> listNoticeTypes(
+            @RequestParam(defaultValue = "pending") String state) {
+        return ResponseEntity.ok(noticeService.listByState(state));
+    }
+
+    @PostMapping("/notice-types/{code}/confirm")
+    public ResponseEntity<NoticeType> confirmNoticeType(
+            @PathVariable String code,
+            @RequestParam String confirmedBy) {
+        return ResponseEntity.ok(noticeService.confirmNoticeType(code, confirmedBy));
+    }
+
+    @PostMapping("/notice-types/{code}/reject")
+    public ResponseEntity<Void> rejectNoticeType(
+            @PathVariable String code,
+            @RequestParam String rejectedBy) {
+        noticeService.rejectNoticeType(code, rejectedBy);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/configurations/{configurationId}/history")

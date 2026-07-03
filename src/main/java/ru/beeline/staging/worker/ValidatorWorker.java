@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
+import ru.beeline.staging.dto.notice.ArtifactNotice;
+import ru.beeline.staging.dto.notice.ValidateResult;
 import ru.beeline.staging.pipeline.validator.ArtifactValidator;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
@@ -67,13 +69,25 @@ public class ValidatorWorker extends AbstractWorker {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/DashboardE2EAdapter.
-            // Map<String, Object> result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
-            Map<String, Object> result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
-            Map<String, Object> output = result != null ? result : Map.of("valid", true);
+            // ValidateResult result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+            ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
 
-            Object warnings = output.get("validationWarningsCount");
-            String outputSummary = warnings != null ? "warnings=" + warnings : "valid";
-            pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(output));
+            List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
+
+            long errorCount = saved.stream().filter(n -> "error".equals(n.level())).count();
+            if (errorCount > 0) {
+                throw new IllegalStateException("Validation failed: " + errorCount + " error notice(s) for uid=" + uid);
+            }
+
+            long warningCount = saved.stream().filter(n -> "warning".equals(n.level())).count();
+            Map<String, Object> output = Map.of(
+                    "valid", errorCount == 0,
+                    "validationWarningsCount", warningCount,
+                    "noticeCount", (long) saved.size()
+            );
+            pipelineRunService.completeStage(stageLogId,
+                    warningCount > 0 ? "warnings=" + warningCount : "valid",
+                    buildSummary(output));
             return output;
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, "validator", e.getMessage());

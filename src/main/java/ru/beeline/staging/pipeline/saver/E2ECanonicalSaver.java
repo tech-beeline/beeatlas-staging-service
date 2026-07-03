@@ -9,16 +9,20 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.canonical.*;
+import ru.beeline.staging.dto.notice.ArtifactNotice;
+import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.repository.canonical.*;
+import ru.beeline.staging.service.ArtifactNoticeService;
 import ru.beeline.staging.service.PipelineRunService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -36,10 +40,11 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     private final BiStepRelationVersionRepository      biStepRelationVersionRepository;
     private final OperationRelationVersionRepository   operationRelationVersionRepository;
     private final PipelineRunService                   pipelineRunService;
-    private final PipelineRunRepository                 pipelineRunRepository;
-    private final ConfigurationRepository               configurationRepository;
-    private final SourceSystemRepository                sourceSystemRepository;
-    private final ObjectMapper                          objectMapper;
+    private final PipelineRunRepository                pipelineRunRepository;
+    private final ConfigurationRepository              configurationRepository;
+    private final SourceSystemRepository               sourceSystemRepository;
+    private final ArtifactNoticeService                noticeService;
+    private final ObjectMapper                         objectMapper;
 
     @Override
     public String moduleCode() { return MODULE_CODE; }
@@ -49,24 +54,25 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
     @Override
     @Transactional
-    public Map<String, Object> save(String artifactUid, String artifactType, long rawDataRefId,
-                                     Long runId, String canonicalSnapshotJson) throws Exception {
+    public SaveResult save(String artifactUid, String artifactType, long rawDataRefId,
+                           Long runId, String canonicalSnapshotJson) throws Exception {
         if (canonicalSnapshotJson == null || canonicalSnapshotJson.isBlank()) {
             log.warn("No canonicalSnapshotJson present for uid={} — nothing to save", artifactUid);
-            return null;
+            return SaveResult.of(Map.of());
         }
 
         E2ESequenceSnapshot snapshot = objectMapper.readValue(canonicalSnapshotJson, E2ESequenceSnapshot.class);
-        SaveResult result = save(snapshot, rawDataRefId, runId, artifactUid, artifactType);
-        log.info("Saved canonical model for uid={}: {}", artifactUid, result);
+        SaveStats stats = saveSnapshot(snapshot, rawDataRefId, runId, artifactUid, artifactType);
+        log.info("Saved canonical model for uid={}: {}", artifactUid, stats);
 
-        return Map.of("batchId", result.getBatchId() != null ? result.getBatchId() : -1L);
+        return SaveResult.of(Map.of("batchId", stats.getBatchId() != null ? stats.getBatchId() : -1L));
     }
 
-    private SaveResult save(E2ESequenceSnapshot snapshot, Long rawDataRefId,
-                             Long runId, String artifactUid, String artifactType) {
+    private SaveStats saveSnapshot(E2ESequenceSnapshot snapshot, Long rawDataRefId,
+                                   Long runId, String artifactUid, String artifactType) {
         LocalDateTime now = LocalDateTime.now();
         String sourceCode = resolveSourceCode(runId);
+        String artifactContext = toJson(Map.of("stage", "saver", "artifact_uid", artifactUid));
 
         ArtifactBatch batch = pipelineRunService.createBatch(
                 artifactUid, artifactType, runId, rawDataRefId,
@@ -77,12 +83,17 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
+            boolean[] created = {false};
             InterfaceEntity entity = interfaceRepository.findByUid(draft.getUid()).orElseGet(() -> {
+                created[0] = true;
                 InterfaceEntity e = new InterfaceEntity();
                 e.setUid(draft.getUid());
                 e.setCreatedAt(now);
                 return interfaceRepository.save(e);
             });
+
+            String noticeCode = created[0] ? "match.interface.created" : "match.interface.matched_by_uid";
+            Long matchNoticeId = saveMatchNotice(noticeCode, rawDataRefId, "interface", draft.getUid(), null, artifactContext);
 
             InterfaceVersion version = new InterfaceVersion();
             version.setInterfaceId(entity.getId());
@@ -91,12 +102,15 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             version.setRawDataRefId(rawDataRefId);
             version.setBatchId(batchId);
             version.setCreatedAt(now);
+            version.setMatchNoticeId(matchNoticeId);
             interfaceVersionsByUid.put(draft.getUid(), interfaceVersionRepository.save(version));
         }
 
         Map<String, OperationVersion> operationVersionsByExtUid = new HashMap<>();
         for (E2ESequenceSnapshot.OperationDraft draft : snapshot.getOperations()) {
+            boolean[] created = {false};
             OperationEntity entity = operationRepository.findByExtUid(draft.getExtUid()).orElseGet(() -> {
+                created[0] = true;
                 OperationEntity e = new OperationEntity();
                 e.setExtUid(draft.getExtUid());
                 e.setCreatedAt(now);
@@ -113,6 +127,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             entity.setType(draft.getType());
             operationRepository.save(entity);
 
+            String noticeCode = created[0] ? "match.operation.created" : "match.operation.matched_by_ext_uid";
+            Long matchNoticeId = saveMatchNotice(noticeCode, rawDataRefId, "operation", draft.getExtUid(), null, artifactContext);
+
             OperationVersion version = new OperationVersion();
             version.setOperationId(entity.getId());
             version.setInterfaceVersionId(ifaceVersion != null ? ifaceVersion.getId() : null);
@@ -125,12 +142,15 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             version.setBatchId(batchId);
             version.setContext(draft.getContext());
             version.setCreatedAt(now);
+            version.setMatchNoticeId(matchNoticeId);
             operationVersionsByExtUid.put(draft.getExtUid(), operationVersionRepository.save(version));
         }
 
         Map<String, BiStepVersion> biStepVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
             // bi_step_id intentionally left null — identity/dedup rule for BiStep not decided yet.
+            Long matchNoticeId = saveMatchNotice("match.bi_step.always_new", rawDataRefId, "bi_step", draft.getUid(), null, artifactContext);
+
             BiStepVersion version = new BiStepVersion();
             version.setName(draft.getName());
             version.setRps(toDecimal(draft.getRps()));
@@ -142,6 +162,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             version.setRawDataRefId(rawDataRefId);
             version.setBatchId(batchId);
             version.setCreatedAt(now);
+            version.setMatchNoticeId(matchNoticeId);
             biStepVersionsByUid.put(draft.getUid(), biStepVersionRepository.save(version));
         }
 
@@ -187,18 +208,27 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             operationRelationsSaved++;
         }
 
-        SaveResult result = new SaveResult();
-        result.setBatchId(batchId);
-        result.setInterfacesSaved(interfaceVersionsByUid.size());
-        result.setOperationsSaved(operationVersionsByExtUid.size());
-        result.setBiStepsSaved(biStepVersionsByUid.size());
-        result.setBiStepRelationsSaved(relationsSaved);
-        result.setOperationRelationsSaved(operationRelationsSaved);
-        return result;
+        SaveStats stats = new SaveStats();
+        stats.setBatchId(batchId);
+        stats.setInterfacesSaved(interfaceVersionsByUid.size());
+        stats.setOperationsSaved(operationVersionsByExtUid.size());
+        stats.setBiStepsSaved(biStepVersionsByUid.size());
+        stats.setBiStepRelationsSaved(relationsSaved);
+        stats.setOperationRelationsSaved(operationRelationsSaved);
+        return stats;
     }
 
-    /** bi_step_versions.source_id — the source system code (staging.source_systems.code) of
-     *  this artifact's configuration, e.g. "sparx" — not anything from the raw payload. */
+    private Long saveMatchNotice(String code, Long rawDataRefId, String entityType, String entityUid,
+                                 Long entityVersionId, String context) {
+        ArtifactNotice notice = new ArtifactNotice(
+                null, null, code, "info", "match",
+                rawDataRefId, entityType, entityUid, entityVersionId,
+                code, null, context
+        );
+        List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
+        return saved.isEmpty() ? null : saved.get(0).id();
+    }
+
     private String resolveSourceCode(Long runId) {
         if (runId == null) return null;
         return pipelineRunRepository.findById(runId)
@@ -210,12 +240,20 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                 .orElse(null);
     }
 
+    private String toJson(Map<String, Object> map) {
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
     private static BigDecimal toDecimal(Double value) {
         return value != null ? BigDecimal.valueOf(value) : null;
     }
 
     @Data
-    private static class SaveResult {
+    private static class SaveStats {
         private Long batchId;
         private int  interfacesSaved;
         private int  operationsSaved;

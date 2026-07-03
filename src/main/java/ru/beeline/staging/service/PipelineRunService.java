@@ -10,6 +10,7 @@ import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.PipelineDefinitionEntry;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.PipelineStageLog;
+import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.repository.ArtifactBatchRepository;
 import ru.beeline.staging.repository.PipelineDefinitionEntryRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
@@ -30,6 +31,7 @@ public class PipelineRunService {
     private final ArtifactBatchRepository    batchRepository;
     private final ExternalTaskService        externalTaskService;
     private final PipelineDefinitionEntryRepository pipelineDefinitionRepository;
+    private final ArtifactNoticeService      noticeService;
 
     @Transactional
     public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
@@ -164,6 +166,10 @@ public class PipelineRunService {
         log.info("Created artifact batch id={} for uid={} type={} (biSteps={}, ifaces={}, ops={})",
                 saved.getId(), artifactUid, artifactType, biStepsCount, interfacesCount, operationsCount);
         return saved;
+    }
+
+    public List<ArtifactNotice> saveNotices(Long rawDataRefId, List<ArtifactNotice> notices) {
+        return noticeService.saveNotices(rawDataRefId, notices);
     }
 
     private static String stageToStatus(String stageName) {

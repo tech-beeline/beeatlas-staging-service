@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
+import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.saver.ArtifactSaver;
 import ru.beeline.staging.repository.ArtifactBatchRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
@@ -79,16 +80,17 @@ public class SaverWorker extends AbstractWorker {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            Map<String, Object> result = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
+            SaveResult saverResult = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
+            // match-notices are saved inside the saver's own transaction; saverResult.notices() is empty
 
-            Map<String, Object> output = new HashMap<>(result != null ? result : Map.of());
-            output.put("saved", result != null);
+            Map<String, Object> output = new HashMap<>(saverResult.summary() != null ? saverResult.summary() : Map.of());
+            output.put("saved", true);
 
             ref.setCanonicalSnapshotJson(null);
             rawDataRefRepository.save(ref);
 
             Object batchId = output.get("batchId");
-            String outputSummary = batchId != null ? "batchId=" + batchId : "saved=" + output.get("saved");
+            String outputSummary = batchId != null ? "batchId=" + batchId : "saved=true";
             pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(output));
             pipelineRunService.completeRun(runId);
 

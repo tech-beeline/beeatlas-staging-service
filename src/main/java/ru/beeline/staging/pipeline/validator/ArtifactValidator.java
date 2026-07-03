@@ -1,6 +1,6 @@
 package ru.beeline.staging.pipeline.validator;
 
-import java.util.Map;
+import ru.beeline.staging.dto.notice.ValidateResult;
 
 public interface ArtifactValidator {
 
@@ -8,5 +8,5 @@ public interface ArtifactValidator {
 
     String description();
 
-    Map<String, Object> validate(String artifactUid, String rawContent) throws Exception;
+    ValidateResult validate(String artifactUid, String rawContent) throws Exception;
 }

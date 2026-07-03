@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import ru.beeline.staging.dto.notice.ArtifactNotice;
+import ru.beeline.staging.dto.notice.ValidateResult;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +28,7 @@ public class E2ESequenceValidator implements ArtifactValidator {
     public String description() { return "Collects dashboard's own embedded validation warnings from the e2e sequence JSON"; }
 
     @Override
-    public Map<String, Object> validate(String artifactUid, String rawContent) throws Exception {
+    public ValidateResult validate(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
 
         List<String> warnings = new ArrayList<>();
@@ -34,11 +36,25 @@ public class E2ESequenceValidator implements ArtifactValidator {
 
         if (warnings.isEmpty()) {
             log.info("e2e-sequence validation OK for uid={}", artifactUid);
-            return null;
+            return ValidateResult.empty();
         }
 
         log.warn("e2e-sequence validation found {} issue(s) for uid={}: {}", warnings.size(), artifactUid, warnings);
-        return Map.of("validationWarningsCount", warnings.size());
+
+        String context = toJson(Map.of("stage", "validator", "artifact_uid", artifactUid));
+        List<ArtifactNotice> notices = warnings.stream().map(w -> new ArtifactNotice(
+                null, null,
+                "validation.e2e_sequence.embedded_error",
+                "warning",
+                "validation",
+                null,
+                null, null, null,
+                w,
+                null,
+                context
+        )).toList();
+
+        return ValidateResult.of(notices);
     }
 
     private void collectValidationErrors(JsonNode messages, List<String> out) {
@@ -53,6 +69,14 @@ public class E2ESequenceValidator implements ArtifactValidator {
                 }
             }
             collectValidationErrors(message.path("sequence"), out);
+        }
+    }
+
+    private String toJson(Map<String, Object> map) {
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (Exception e) {
+            return "{}";
         }
     }
 }

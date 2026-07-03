@@ -1,10 +1,12 @@
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.dto.notice.TransformResult;
+
 public interface ArtifactTransformer {
 
     String moduleCode();
 
     String description();
 
-    Object transform(String artifactUid, String rawContent) throws Exception;
+    TransformResult transform(String artifactUid, String rawContent) throws Exception;
 }
