@@ -34,7 +34,6 @@ public class PipelineTickScheduler {
 
         for (Configuration config : candidates) {
             if (isAlreadyRunning(config)) {
-                log.info("Skip configId={} — process already running", config.getId());
                 continue;
             }
             if (!intervalElapsed(config)) {
