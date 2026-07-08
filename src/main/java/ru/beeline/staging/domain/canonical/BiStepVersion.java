@@ -6,6 +6,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -40,6 +41,9 @@ public class BiStepVersion {
 
     @Column(name = "context")
     private String context;
+
+    @Column(name = "raw_data_context_id")
+    private UUID rawDataContextId;
 
     @Column(name = "external_guid")
     private String externalGuid;

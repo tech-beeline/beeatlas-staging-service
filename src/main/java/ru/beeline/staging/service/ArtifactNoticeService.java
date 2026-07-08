@@ -16,6 +16,7 @@ import ru.beeline.staging.repository.NoticeTypeRepository;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -24,6 +25,7 @@ public class ArtifactNoticeService {
 
     private final NoticeTypeRepository noticeTypeRepository;
     private final ArtifactNoticeRepository artifactNoticeRepository;
+    private final RawDataContextService rawDataContextService;
 
     @Transactional("stagingTransactionManager")
     public List<ArtifactNotice> saveNotices(Long rawDataRefId, List<ArtifactNotice> notices) {
@@ -37,11 +39,21 @@ public class ArtifactNoticeService {
                 continue;
             }
 
+            // A json_path (starting with "/") in context() gets materialized into raw_data_context;
+            // a plain descriptive JSON blob (e.g. {"stage":"validator",...}) is left as free-text context.
+            UUID rawDataContextId = notice.rawDataContextId();
+            String contextText = notice.context();
+            if (rawDataContextId == null && contextText != null && contextText.startsWith("/")) {
+                rawDataContextId = rawDataContextService.pointTo(rawDataRefId, contextText);
+                contextText = null;
+            }
+
             ArtifactNoticeEntity entity = new ArtifactNoticeEntity();
             entity.setNoticeTypeId(type.getId());
             entity.setRawDataRefId(rawDataRefId);
-            entity.setContext(notice.context());
+            entity.setContext(contextText);
             entity.setDetails(notice.details());
+            entity.setRawDataContextId(rawDataContextId);
             ArtifactNoticeEntity persisted = artifactNoticeRepository.save(entity);
 
             saved.add(new ArtifactNotice(
@@ -49,7 +61,8 @@ public class ArtifactNoticeService {
                     notice.code(), notice.level(), notice.category(),
                     rawDataRefId,
                     notice.entityType(), notice.entityUid(), notice.entityVersionId(),
-                    notice.message(), notice.details(), notice.context()
+                    notice.message(), notice.details(), contextText,
+                    rawDataContextId
             ));
         }
         return saved;

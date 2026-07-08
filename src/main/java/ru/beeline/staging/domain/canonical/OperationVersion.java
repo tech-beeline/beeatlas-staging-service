@@ -6,6 +6,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -46,6 +47,9 @@ public class OperationVersion {
 
     @Column(name = "context")
     private String context;
+
+    @Column(name = "raw_data_context_id")
+    private UUID rawDataContextId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

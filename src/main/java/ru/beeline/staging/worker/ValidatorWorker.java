@@ -68,7 +68,7 @@ public class ValidatorWorker extends AbstractWorker {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/DashboardE2EAdapter.
+            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             // ValidateResult result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
             ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
 

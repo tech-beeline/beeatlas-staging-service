@@ -1,5 +1,7 @@
 package ru.beeline.staging.dto.notice;
 
+import java.util.UUID;
+
 public record ArtifactNotice(
         Long id,
         Long noticeTypeId,
@@ -12,5 +14,6 @@ public record ArtifactNotice(
         Long entityVersionId,
         String message,
         String details,
-        String context
+        String context,
+        UUID rawDataContextId
 ) {}

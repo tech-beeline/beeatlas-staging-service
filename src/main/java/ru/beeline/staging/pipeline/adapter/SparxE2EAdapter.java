@@ -3,9 +3,9 @@ package ru.beeline.staging.pipeline.adapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.beeline.staging.dashboard.DashboardClient;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.sparx.SparxE2ERepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -16,25 +16,25 @@ import java.util.Optional;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DashboardE2EAdapter implements ArtifactAdapter {
+public class SparxE2EAdapter implements ArtifactAdapter {
 
-    public static final String MODULE_CODE = "dashboard-e2e-adapter";
+    public static final String MODULE_CODE = "sparx-e2e-adapter";
     public static final String TYPE        = "e2e-sequence";
 
-    private final DashboardClient      dashboardClient;
+    private final SparxE2ERepository   sparxE2ERepository;
     private final RawDataRefRepository rawDataRefRepository;
 
     @Override
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Downloads the e2e scenario sequence JSON from Dashboard"; }
+    public String description() { return "Downloads the full raw e2e scenario export directly from Sparx EA"; }
 
     @Override
     public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {
-        String rawJson = dashboardClient.getScenarioSequence(artifactUid);
+        String rawJson = sparxE2ERepository.fetchScenarioRaw(artifactUid);
         if (rawJson == null || rawJson.isBlank()) {
-            throw new IllegalStateException("Dashboard returned empty response for uid=" + artifactUid);
+            throw new IllegalStateException("Sparx EA returned empty response for uid=" + artifactUid);
         }
 
         String contentHash = sha256(rawJson.getBytes(StandardCharsets.UTF_8));
@@ -49,21 +49,19 @@ public class DashboardE2EAdapter implements ArtifactAdapter {
             refId = rawDataRefRepository.save(ref).getId();
             log.info("Content unchanged for uid={}, reusing rawDataRefId={}", artifactUid, refId);
         } else {
-            // TEMP: gzip disabled for easier manual inspection of raw_content while debugging — see GzipUtils.
-            // byte[] gzipped = GzipUtils.gzip(rawJson.getBytes(StandardCharsets.UTF_8));
-            byte[] gzipped = rawJson.getBytes(StandardCharsets.UTF_8);
+            byte[] content = rawJson.getBytes(StandardCharsets.UTF_8);
 
             RawDataRef ref = new RawDataRef();
             ref.setArtifactUid(artifactUid);
             ref.setArtifactType(TYPE);
             ref.setSourceId(sourceId);
-            ref.setRawContent(gzipped);
+            ref.setRawContent(content);
             ref.setContentHash(contentHash);
-            ref.setSizeBytes((long) gzipped.length);
+            ref.setSizeBytes((long) content.length);
             ref.setLoadedAt(LocalDateTime.now());
             ref.setUpdatedAt(LocalDateTime.now());
             refId = rawDataRefRepository.save(ref).getId();
-            log.info("Stored raw data uid={}, rawDataRefId={}, gzipBytes={}", artifactUid, refId, gzipped.length);
+            log.info("Stored raw data uid={}, rawDataRefId={}, bytes={}", artifactUid, refId, content.length);
         }
 
         return Map.of("rawDataRefId", refId, "contentHash", contentHash);

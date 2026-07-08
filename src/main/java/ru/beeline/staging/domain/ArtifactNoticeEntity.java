@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -24,6 +25,9 @@ public class ArtifactNoticeEntity {
 
     @Column(name = "context")
     private String context;
+
+    @Column(name = "raw_data_context_id")
+    private UUID rawDataContextId;
 
     @Column(name = "details")
     private String details;

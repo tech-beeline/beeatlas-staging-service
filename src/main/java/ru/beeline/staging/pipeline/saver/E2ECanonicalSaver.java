@@ -8,14 +8,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.PipelineRun;
-import ru.beeline.staging.domain.canonical.*;
+import ru.beeline.staging.domain.canonical.BiStepRelationVersion;
+import ru.beeline.staging.domain.canonical.BiStepVersion;
+import ru.beeline.staging.domain.canonical.InterfaceVersion;
+import ru.beeline.staging.domain.canonical.OperationRelationVersion;
+import ru.beeline.staging.domain.canonical.OperationVersion;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
-import ru.beeline.staging.repository.canonical.*;
+import ru.beeline.staging.repository.canonical.BiStepRelationVersionRepository;
+import ru.beeline.staging.repository.canonical.BiStepVersionRepository;
+import ru.beeline.staging.repository.canonical.OperationRelationVersionRepository;
 import ru.beeline.staging.service.ArtifactNoticeService;
 import ru.beeline.staging.service.PipelineRunService;
 
@@ -32,17 +38,15 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
     public static final String MODULE_CODE = "e2e-canonical-saver";
 
-    private final InterfaceRepository                  interfaceRepository;
-    private final OperationRepository                  operationRepository;
-    private final BiStepVersionRepository              biStepVersionRepository;
-    private final InterfaceVersionRepository           interfaceVersionRepository;
-    private final OperationVersionRepository           operationVersionRepository;
-    private final BiStepRelationVersionRepository      biStepRelationVersionRepository;
-    private final OperationRelationVersionRepository   operationRelationVersionRepository;
-    private final PipelineRunService                   pipelineRunService;
-    private final PipelineRunRepository                pipelineRunRepository;
-    private final ConfigurationRepository              configurationRepository;
-    private final SourceSystemRepository               sourceSystemRepository;
+    private final BiStepVersionRepository            biStepVersionRepository;
+    private final BiStepRelationVersionRepository    biStepRelationVersionRepository;
+    private final OperationRelationVersionRepository operationRelationVersionRepository;
+    private final InterfaceMatchService              interfaceMatchService;
+    private final OperationMatchService               operationMatchService;
+    private final PipelineRunService                 pipelineRunService;
+    private final PipelineRunRepository              pipelineRunRepository;
+    private final ConfigurationRepository             configurationRepository;
+    private final SourceSystemRepository              sourceSystemRepository;
     private final ArtifactNoticeService                noticeService;
     private final ObjectMapper                         objectMapper;
 
@@ -72,7 +76,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                                    Long runId, String artifactUid, String artifactType) {
         LocalDateTime now = LocalDateTime.now();
         String sourceCode = resolveSourceCode(runId);
-        String artifactContext = toJson(Map.of("stage", "saver", "artifact_uid", artifactUid));
 
         ArtifactBatch batch = pipelineRunService.createBatch(
                 artifactUid, artifactType, runId, rawDataRefId,
@@ -83,86 +86,40 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
-            boolean[] created = {false};
-            InterfaceEntity entity = interfaceRepository.findByUid(draft.getUid()).orElseGet(() -> {
-                created[0] = true;
-                InterfaceEntity e = new InterfaceEntity();
-                e.setUid(draft.getUid());
-                e.setCreatedAt(now);
-                return interfaceRepository.save(e);
-            });
-
-            String noticeCode = created[0] ? "match.interface.created" : "match.interface.matched_by_uid";
-            Long matchNoticeId = saveMatchNotice(noticeCode, rawDataRefId, "interface", draft.getUid(), null, artifactContext);
-
-            InterfaceVersion version = new InterfaceVersion();
-            version.setInterfaceId(entity.getId());
-            version.setExtUid(draft.getUid());
-            version.setProtocol(draft.getProtocol());
-            version.setRawDataRefId(rawDataRefId);
-            version.setBatchId(batchId);
-            version.setCreatedAt(now);
-            version.setMatchNoticeId(matchNoticeId);
-            interfaceVersionsByUid.put(draft.getUid(), interfaceVersionRepository.save(version));
+            InterfaceVersion version = interfaceMatchService.matchOrCreate(
+                    draft.getUid(), draft.getProtocol(), draft.getContext(), rawDataRefId, batchId);
+            interfaceVersionsByUid.put(draft.getUid(), version);
         }
 
         Map<String, OperationVersion> operationVersionsByExtUid = new HashMap<>();
         for (E2ESequenceSnapshot.OperationDraft draft : snapshot.getOperations()) {
-            boolean[] created = {false};
-            OperationEntity entity = operationRepository.findByExtUid(draft.getExtUid()).orElseGet(() -> {
-                created[0] = true;
-                OperationEntity e = new OperationEntity();
-                e.setExtUid(draft.getExtUid());
-                e.setCreatedAt(now);
-                return operationRepository.save(e);
-            });
-
             InterfaceVersion ifaceVersion = draft.getInterfaceUid() != null
                     ? interfaceVersionsByUid.get(draft.getInterfaceUid())
                     : null;
-            if (entity.getInterfaceId() == null && ifaceVersion != null) {
-                entity.setInterfaceId(ifaceVersion.getInterfaceId());
-            }
-            entity.setName(draft.getName());
-            entity.setType(draft.getType());
-            operationRepository.save(entity);
-
-            String noticeCode = created[0] ? "match.operation.created" : "match.operation.matched_by_ext_uid";
-            Long matchNoticeId = saveMatchNotice(noticeCode, rawDataRefId, "operation", draft.getExtUid(), null, artifactContext);
-
-            OperationVersion version = new OperationVersion();
-            version.setOperationId(entity.getId());
-            version.setInterfaceVersionId(ifaceVersion != null ? ifaceVersion.getId() : null);
-            version.setName(draft.getName());
-            version.setType(draft.getType());
-            version.setRps(toDecimal(draft.getRps()));
-            version.setLatency(toDecimal(draft.getLatency()));
-            version.setErrorRate(toDecimal(draft.getErrorRate()));
-            version.setRawDataRefId(rawDataRefId);
-            version.setBatchId(batchId);
-            version.setContext(draft.getContext());
-            version.setCreatedAt(now);
-            version.setMatchNoticeId(matchNoticeId);
-            operationVersionsByExtUid.put(draft.getExtUid(), operationVersionRepository.save(version));
+            OperationVersion version = operationMatchService.matchOrCreate(
+                    draft.getExtUid(), draft.getName(), draft.getType(),
+                    draft.getRps(), draft.getLatency(), draft.getErrorRate(),
+                    ifaceVersion, draft.getContext(), rawDataRefId, batchId);
+            operationVersionsByExtUid.put(draft.getExtUid(), version);
         }
 
         Map<String, BiStepVersion> biStepVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
             // bi_step_id intentionally left null — identity/dedup rule for BiStep not decided yet.
-            Long matchNoticeId = saveMatchNotice("match.bi_step.always_new", rawDataRefId, "bi_step", draft.getUid(), null, artifactContext);
+            ArtifactNotice matchNotice = saveMatchNotice("match.bi_step.always_new", rawDataRefId, draft.getUid(), draft.getContext());
 
             BiStepVersion version = new BiStepVersion();
             version.setName(draft.getName());
             version.setRps(toDecimal(draft.getRps()));
             version.setLatency(toDecimal(draft.getLatency()));
             version.setErrorRate(toDecimal(draft.getErrorRate()));
-            version.setContext(draft.getContext());
+            version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
             version.setExternalGuid(draft.getExternalGuid());
             version.setSourceId(sourceCode);
             version.setRawDataRefId(rawDataRefId);
             version.setBatchId(batchId);
             version.setCreatedAt(now);
-            version.setMatchNoticeId(matchNoticeId);
+            version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
             biStepVersionsByUid.put(draft.getUid(), biStepVersionRepository.save(version));
         }
 
@@ -179,7 +136,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             relation.setOperationVersionId(op.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
-            relation.setContext(draft.getContext());
             relation.setRawDataRefId(rawDataRefId);
             relation.setBatchId(batchId);
             relation.setCreatedAt(now);
@@ -200,7 +156,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             relation.setCalleeOperationVersionId(callee.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
-            relation.setContext(draft.getContext());
             relation.setRawDataRefId(rawDataRefId);
             relation.setBatchId(batchId);
             relation.setCreatedAt(now);
@@ -218,15 +173,14 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         return stats;
     }
 
-    private Long saveMatchNotice(String code, Long rawDataRefId, String entityType, String entityUid,
-                                 Long entityVersionId, String context) {
+    private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
         ArtifactNotice notice = new ArtifactNotice(
                 null, null, code, "info", "match",
-                rawDataRefId, entityType, entityUid, entityVersionId,
-                code, null, context
+                rawDataRefId, "bi_step", entityUid, null,
+                code, null, jsonPointer, null
         );
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
-        return saved.isEmpty() ? null : saved.get(0).id();
+        return saved.isEmpty() ? null : saved.get(0);
     }
 
     private String resolveSourceCode(Long runId) {
@@ -238,14 +192,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                 .flatMap(sourceSystemId -> sourceSystemRepository.findById(sourceSystemId.intValue()))
                 .map(ru.beeline.staging.domain.SourceSystem::getCode)
                 .orElse(null);
-    }
-
-    private String toJson(Map<String, Object> map) {
-        try {
-            return objectMapper.writeValueAsString(map);
-        } catch (Exception e) {
-            return "{}";
-        }
     }
 
     private static BigDecimal toDecimal(Double value) {

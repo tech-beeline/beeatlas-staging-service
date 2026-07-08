@@ -12,6 +12,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Structural validation of the raw Sparx EA scenario export. Semantic checks (missing references,
+ * ambiguous diagram links, etc.) happen in ScenarioDecomposer/transform instead, where they can be
+ * pinned to the exact fragment that failed.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -19,57 +24,58 @@ public class E2ESequenceValidator implements ArtifactValidator {
 
     public static final String MODULE_CODE = "e2e-sequence-validator";
 
+    private static final List<String> REQUIRED_ARRAY_BLOCKS =
+            List.of("diagrams", "objects", "systems", "interfaces", "operations");
+
     private final ObjectMapper objectMapper;
 
     @Override
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Collects dashboard's own embedded validation warnings from the e2e sequence JSON"; }
+    public String description() { return "Structurally validates the raw Sparx EA scenario export"; }
 
     @Override
     public ValidateResult validate(String artifactUid, String rawContent) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
+        List<ArtifactNotice> notices = new ArrayList<>();
 
-        List<String> warnings = new ArrayList<>();
-        collectValidationErrors(root.path("sequence"), warnings);
+        String entranceDiagramUid = textOrNull(root, "entrance_diagram_uid");
+        if (entranceDiagramUid == null || entranceDiagramUid.isBlank()) {
+            notices.add(error("validation.missing_required_field", "entrance_diagram_uid is missing",
+                    Map.of("field", "entrance_diagram_uid")));
+        }
 
-        if (warnings.isEmpty()) {
+        for (String block : REQUIRED_ARRAY_BLOCKS) {
+            if (!root.path(block).isArray()) {
+                notices.add(error("validation.missing_required_field", block + " is missing or not an array",
+                        Map.of("field", block)));
+            }
+        }
+
+        if (entranceDiagramUid != null && root.path("diagrams").isArray()) {
+            boolean found = false;
+            for (JsonNode diagram : root.path("diagrams")) {
+                if (entranceDiagramUid.equals(textOrNull(diagram, "uid"))) { found = true; break; }
+            }
+            if (!found) {
+                notices.add(error("validation.invalid_format", "entrance_diagram_uid does not resolve among diagrams[].uid",
+                        Map.of("entrance_diagram_uid", entranceDiagramUid)));
+            }
+        }
+
+        if (notices.isEmpty()) {
             log.info("e2e-sequence validation OK for uid={}", artifactUid);
             return ValidateResult.empty();
         }
 
-        log.warn("e2e-sequence validation found {} issue(s) for uid={}: {}", warnings.size(), artifactUid, warnings);
-
-        String context = toJson(Map.of("stage", "validator", "artifact_uid", artifactUid));
-        List<ArtifactNotice> notices = warnings.stream().map(w -> new ArtifactNotice(
-                null, null,
-                "validation.e2e_sequence.embedded_error",
-                "warning",
-                "validation",
-                null,
-                null, null, null,
-                w,
-                null,
-                context
-        )).toList();
-
+        log.warn("e2e-sequence validation found {} issue(s) for uid={}", notices.size(), artifactUid);
         return ValidateResult.of(notices);
     }
 
-    private void collectValidationErrors(JsonNode messages, List<String> out) {
-        if (messages == null || !messages.isArray()) {
-            return;
-        }
-        for (JsonNode message : messages) {
-            JsonNode errors = message.path("validationError");
-            if (errors.isArray()) {
-                for (JsonNode error : errors) {
-                    out.add(error.asText());
-                }
-            }
-            collectValidationErrors(message.path("sequence"), out);
-        }
+    private ArtifactNotice error(String code, String message, Map<String, Object> details) {
+        return new ArtifactNotice(null, null, code, "error", "validation",
+                null, null, null, null, message, toJson(details), null, null);
     }
 
     private String toJson(Map<String, Object> map) {
@@ -78,5 +84,11 @@ public class E2ESequenceValidator implements ArtifactValidator {
         } catch (Exception e) {
             return "{}";
         }
+    }
+
+    private static String textOrNull(JsonNode node, String field) {
+        if (node == null || node.isMissingNode()) return null;
+        JsonNode value = node.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asText();
     }
 }

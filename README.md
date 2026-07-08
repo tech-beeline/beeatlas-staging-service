@@ -18,11 +18,13 @@ preAdapter → adapter → validator → transformer → saver
    |---|---|
    | `pipeline/preadapter/` | `ArtifactPreAdapter` — находит список артефактов в источнике |
    | `pipeline/adapter/` | `ArtifactAdapter` — скачивает сырые данные одного артефакта |
-   | `pipeline/validator/` | `ArtifactValidator` — проверяет сырые данные |
-   | `pipeline/transformer/` | `ArtifactTransformer` — маппит сырые данные в свою сущность |
-   | `pipeline/saver/` | `ArtifactSaver` — сохраняет сущность в БД |
+   | `pipeline/validator/` | `ArtifactValidator` — проверяет сырые данные, возвращает `ValidateResult` |
+   | `pipeline/transformer/` | `ArtifactTransformer` — маппит сырые данные в свою сущность, возвращает `TransformResult` |
+   | `pipeline/saver/` | `ArtifactSaver` — сохраняет сущность в БД, возвращает `SaveResult` |
 
    Смотри `pipeline/*/E2E*.java` / `SparxE2EPreAdapter.java` / `DashboardE2EAdapter.java` как живой пример.
+
+   `ValidateResult`/`TransformResult`/`SaveResult` (пакет `dto/notice`) кроме основного результата стадии (`TransformResult` — ещё и `snapshot`, `SaveResult` — ещё и `summary`) несут `List<ArtifactNotice> notices` — список примечательных фактов, которые модуль обнаружил на своей стадии (предупреждение валидации, "почему эта версия сущности была создана/сматчена с существующей" и т.п.). Сохранять notices руками не нужно: `ValidatorWorker`/`TransformerWorker` сами прогоняют их через `PipelineRunService.saveNotices(...)`; `Saver`, которому нужен `id` notice синхронно (чтобы проставить `matchNoticeId` на сохраняемую версию сущности), обращается к `ArtifactNoticeService` напрямую внутри своей транзакции — как это делает `E2ECanonicalSaver`. Живые примеры генерации notices: `E2ESequenceValidator` (warning по встроенным `validationError`) и `E2ECanonicalSaver` (provenance матчинга interface/operation/bi_step). Подробнее — раздел "Data lineage / notices" ниже.
 
 2. **Миграция.** Напиши `db/migration/V000N__<entity>.sql` со своими каноническими таблицами (по образцу `V0004__canonical_model_e2e.sql`). Эти таблицы видны только твоему `ArtifactSaver` — остальной пайплайн про них не знает.
 
@@ -68,6 +70,38 @@ preAdapter → adapter → validator → transformer → saver
 `staging.source_artefacts`/`source_artefact_types` — identity-учёт артефактов источника по `ext_uid` (отдельно от `pipeline_runs`, который про запуски пайплайна, а не про "что есть в источнике"). `PreAdapterWorker` на каждый найденный сканом артефакт делает upsert через `SourceArtefactService.recordSeen(config, extUid, scanRunId)`: если артефакт новый — создаёт строку (`status=active`), если уже был — обновляет `status=active`/`last_seen_scan_run_id`/`updated_at`. `source_artefact_types` резолвится по паре `(data_type_id, source_system_id)` конфигурации.
 
 `pipeline_stage_logs.input_data`/`output_data` — обычный `TEXT`, не `jsonb`. Каждый воркер логирует туда **только идентификатор**, который реально обработал (`rawDataRefId` у Validator/Transformer/Saver, `artifactUid` у Adapter, список `uid1,uid2,...` у Pre-Adapter) — не весь дамп переменных Camunda и не JSON-обёртку. Остальной контекст (artifactType, configurationId, pipelineRunId) уже есть на родительской строке `pipeline_runs` через `run_id`, дублировать его в каждой стадии незачем.
+
+## Data lineage / notices (отслеживание происхождения данных)
+
+Notice — запись о примечательном факте, который модуль обнаружил на своей стадии (validate/transform/save) для конкретного `raw_data_ref`: предупреждение валидации, встроенная ошибка из исходного JSON, или provenance-заметка "почему эта версия сущности была создана / с какой существующей сматчена".
+
+| Таблица | Что хранит |
+|---|---|
+| `staging.notice_types` | Справочник различимых кодов (`code` уникален, `level` ∈ info/warning/error, `category` ∈ validation/transform/match). Строка создаётся автоматически при первом появлении кода (`state=pending`); человек может её `confirm` (легитимный, ожидаемый код) или `reject` (шумный/ложный — после этого новые occurrence с этим кодом больше не сохраняются). |
+| `staging.artifact_notices` | Сами occurrence — по одной строке на каждый вызов, привязаны к `raw_data_ref_id`, ссылаются на `notice_type_id`, несут `context`/`details`. |
+
+Поведение при обработке: если валидатор вернул хотя бы один notice с `level=error` — стадия падает (`IllegalStateException`), warning-и просто копятся в `noticeCount`/`validationWarningsCount` вывода стадии. Модули не пишут в эти таблицы напрямую — `ValidatorWorker`/`TransformerWorker` сохраняют notices через `PipelineRunService.saveNotices(...)`, а `Saver` — синхронно через `ArtifactNoticeService` (нужен id сразу же).
+
+Provenance-связь: колонка `match_notice_id` на `bi_step_versions`/`interface_versions`/`operation_versions`/`tc_versions`/`sequence_versions` указывает на notice, объясняющую появление этой версии — например коды `match.interface.created`, `match.operation.matched_by_ext_uid`, `match.bi_step.always_new` (у bi_step пока нет правила дедупликации — он всегда "новый").
+
+Admin API для управления справочником кодов:
+- `GET /admin/notice-types?state=pending` — список кодов в заданном состоянии (по умолчанию `pending`);
+- `POST /admin/notice-types/{code}/confirm?confirmedBy=...` — подтвердить код как ожидаемый;
+- `POST /admin/notice-types/{code}/reject?rejectedBy=...` — пометить код как шумный (новые occurrence с ним перестают сохраняться).
+
+Эндпоинта для просмотра отдельных occurrence пока нет — только уровень типов; сами occurrence смотрятся прямым SQL-запросом к `staging.artifact_notices` или через `match_notice_id`.
+
+## Каноническая модель Tc/Sequence (в разработке, ещё не подключена к пайплайну)
+
+`V0006__canonical_model_sequence.sql` добавляет схему для будущего `artifactType=sequence`, параллельную существующей e2e-модели:
+
+- `tc`/`tc_versions` — Tc ("Технологическая Цепочка") — продуктовый аналог `bi_steps`/`bi_step_versions`;
+- `sequences`/`sequence_versions` — один Tc → один-или-много Sequence (аналога в e2e-модели нет);
+- `sequence_relation_versions` — рёбра caller→callee внутри Sequence (ссылаются на существующие `operation_versions` из e2e-модели).
+
+**Осторожно с термином.** `staging.stages` и сущности `Stage`/`StageTc`/`StageTcVersion`/`StageSequence`/`StageSequenceRelation` — это **не** "стадия пайплайна" (pre-adapter/adapter/validator/transformer/saver из разделов выше), а отдельный справочник состояний/окружений, к которому привязываются версии Tc/Sequence: своя колонка `status` (active/inactive/deleted) и у `StageTcVersion` — `next_version_id`, указывающий на версию, которая её сменила (цепочка версий в рамках конкретного Stage).
+
+Статус: пока только миграция + JPA-сущности (`domain/canonical/Tc*`, `Sequence*`, `Stage*`) + Spring Data репозитории. Ни один `ArtifactValidator`/`Transformer`/`Saver` эту модель не читает и не пишет — `SequenceModelSaverService`, упомянутый в комментарии миграции как будущий потребитель, ещё не написан. Не путать `E2ESequenceValidator`/`E2ESequenceTransformer` — они работают со старой e2e-моделью (`artifactType=e2e-sequence`), "Sequence" в их имени про форму исходного JSON, а не про эти таблицы.
 
 ### Один Camunda-процесс, один реальный Pre-Adapter
 

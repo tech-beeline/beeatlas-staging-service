@@ -67,7 +67,7 @@ public class TransformerWorker extends AbstractWorker {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/DashboardE2EAdapter.
+            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             // TransformResult result = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
