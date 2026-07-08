@@ -26,6 +26,9 @@ public class InterfaceVersion {
     @Column(name = "protocol")
     private String protocol;
 
+    @Column(name = "source")
+    private String source;
+
     @Column(name = "raw_data_ref_id")
     private Long rawDataRefId;
 

@@ -47,8 +47,12 @@ VALUES
      'Операция сопоставлена с уже существующей записью в staging.operations по совпадению ext_uid.',
      'confirmed'),
 
-    ('match.bi_step.always_new', 'info', 'match',
-     'Правило дедупликации для bi_step ещё не определено — каждая выгрузка сценария создаёт новую версию bi_step без попытки сматчить её с предыдущей.',
+    ('match.bi_step.created', 'info', 'match',
+     'bi_step с таким uid (step_id) встречен впервые — создана новая идентити-запись в staging.bi_steps.',
+     'confirmed'),
+
+    ('match.bi_step.matched_by_uid', 'info', 'match',
+     'bi_step сопоставлен с уже существующей записью в staging.bi_steps по совпадению uid (step_id).',
      'confirmed')
 
 ON CONFLICT (code) DO UPDATE SET

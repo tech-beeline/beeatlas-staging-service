@@ -22,7 +22,8 @@ public class InterfaceMatchService {
     private final ArtifactNoticeService      noticeService;
 
     @Transactional
-    public InterfaceVersion matchOrCreate(String uid, String protocol, String jsonPointer, Long rawDataRefId, Long batchId) {
+    public InterfaceVersion matchOrCreate(String uid, String extUid, String protocol, String source,
+                                           String jsonPointer, Long rawDataRefId, Long batchId) {
         boolean[] created = {false};
         InterfaceEntity entity = interfaceRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -37,8 +38,9 @@ public class InterfaceMatchService {
 
         InterfaceVersion version = new InterfaceVersion();
         version.setInterfaceId(entity.getId());
-        version.setExtUid(uid);
+        version.setExtUid(extUid);
         version.setProtocol(protocol);
+        version.setSource(source);
         version.setRawDataRefId(rawDataRefId);
         version.setBatchId(batchId);
         version.setCreatedAt(LocalDateTime.now());

@@ -17,7 +17,9 @@ public class E2ESequenceSnapshot {
     @Data
     public static class InterfaceDraft {
         private String uid;
+        private String extUid;
         private String protocol;
+        private String source;
         private String context;
     }
 

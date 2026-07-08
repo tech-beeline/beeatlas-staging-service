@@ -13,22 +13,17 @@ import ru.beeline.staging.domain.canonical.BiStepVersion;
 import ru.beeline.staging.domain.canonical.InterfaceVersion;
 import ru.beeline.staging.domain.canonical.OperationRelationVersion;
 import ru.beeline.staging.domain.canonical.OperationVersion;
-import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.repository.canonical.BiStepRelationVersionRepository;
-import ru.beeline.staging.repository.canonical.BiStepVersionRepository;
 import ru.beeline.staging.repository.canonical.OperationRelationVersionRepository;
-import ru.beeline.staging.service.ArtifactNoticeService;
 import ru.beeline.staging.service.PipelineRunService;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -38,16 +33,15 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
     public static final String MODULE_CODE = "e2e-canonical-saver";
 
-    private final BiStepVersionRepository            biStepVersionRepository;
     private final BiStepRelationVersionRepository    biStepRelationVersionRepository;
     private final OperationRelationVersionRepository operationRelationVersionRepository;
+    private final BiStepMatchService                 biStepMatchService;
     private final InterfaceMatchService              interfaceMatchService;
     private final OperationMatchService               operationMatchService;
     private final PipelineRunService                 pipelineRunService;
     private final PipelineRunRepository              pipelineRunRepository;
     private final ConfigurationRepository             configurationRepository;
     private final SourceSystemRepository              sourceSystemRepository;
-    private final ArtifactNoticeService                noticeService;
     private final ObjectMapper                         objectMapper;
 
     @Override
@@ -87,7 +81,8 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
             InterfaceVersion version = interfaceMatchService.matchOrCreate(
-                    draft.getUid(), draft.getProtocol(), draft.getContext(), rawDataRefId, batchId);
+                    draft.getUid(), draft.getExtUid(), draft.getProtocol(), draft.getSource(),
+                    draft.getContext(), rawDataRefId, batchId);
             interfaceVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -105,22 +100,10 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
         Map<String, BiStepVersion> biStepVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
-            // bi_step_id intentionally left null — identity/dedup rule for BiStep not decided yet.
-            ArtifactNotice matchNotice = saveMatchNotice("match.bi_step.always_new", rawDataRefId, draft.getUid(), draft.getContext());
-
-            BiStepVersion version = new BiStepVersion();
-            version.setName(draft.getName());
-            version.setRps(toDecimal(draft.getRps()));
-            version.setLatency(toDecimal(draft.getLatency()));
-            version.setErrorRate(toDecimal(draft.getErrorRate()));
-            version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
-            version.setExternalGuid(draft.getExternalGuid());
-            version.setSourceId(sourceCode);
-            version.setRawDataRefId(rawDataRefId);
-            version.setBatchId(batchId);
-            version.setCreatedAt(now);
-            version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
-            biStepVersionsByUid.put(draft.getUid(), biStepVersionRepository.save(version));
+            BiStepVersion version = biStepMatchService.matchOrCreate(
+                    draft.getUid(), draft.getName(), draft.getRps(), draft.getLatency(), draft.getErrorRate(),
+                    draft.getExternalGuid(), sourceCode, draft.getContext(), rawDataRefId, batchId);
+            biStepVersionsByUid.put(draft.getUid(), version);
         }
 
         int relationsSaved = 0;
@@ -173,16 +156,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         return stats;
     }
 
-    private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
-        ArtifactNotice notice = new ArtifactNotice(
-                null, null, code, "info", "match",
-                rawDataRefId, "bi_step", entityUid, null,
-                code, null, jsonPointer, null
-        );
-        List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
-        return saved.isEmpty() ? null : saved.get(0);
-    }
-
     private String resolveSourceCode(Long runId) {
         if (runId == null) return null;
         return pipelineRunRepository.findById(runId)
@@ -192,10 +165,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                 .flatMap(sourceSystemId -> sourceSystemRepository.findById(sourceSystemId.intValue()))
                 .map(ru.beeline.staging.domain.SourceSystem::getCode)
                 .orElse(null);
-    }
-
-    private static BigDecimal toDecimal(Double value) {
-        return value != null ? BigDecimal.valueOf(value) : null;
     }
 
     @Data

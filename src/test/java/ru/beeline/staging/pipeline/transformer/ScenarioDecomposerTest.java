@@ -55,8 +55,8 @@ class ScenarioDecomposerTest {
               ],
               "systems": [],
               "interfaces": [
-                {"id":10,"code":"iface.b","name":"Iface B","tags":[{"property":"show_in_e2e","value":"0"},{"property":"app_front","value":"0"},{"property":"protocol","value":"rest"}]},
-                {"id":20,"code":"iface.c","name":"Iface C","tags":[{"property":"show_in_e2e","value":"1"},{"property":"app_front","value":"0"}]}
+                {"id":10,"code":"iface.b","name":"Iface B","source":"manual","tags":[{"property":"show_in_e2e","value":"0"},{"property":"app_front","value":"0"},{"property":"protocol","value":"rest"}]},
+                {"id":20,"code":"iface.c","name":"Iface C","source":"structurizr","tags":[{"property":"show_in_e2e","value":"1"},{"property":"app_front","value":"0"}]}
               ],
               "operations": [
                 {"uid":"OP1","name":"DoB","interface_id":10,"tags":[{"property":"rps","value":"10"},{"property":"latency","value":"20"},{"property":"error_rate","value":"0.1"}]},
@@ -80,6 +80,12 @@ class ScenarioDecomposerTest {
 
         assertThat(snapshot.getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
                 .contains("iface.b", "iface.c");
+        assertThat(snapshot.getInterfaces()).filteredOn(i -> "iface.b".equals(i.getUid()))
+                .extracting(E2ESequenceSnapshot.InterfaceDraft::getExtUid)
+                .containsExactly("10");
+        assertThat(snapshot.getInterfaces()).filteredOn(i -> "iface.c".equals(i.getUid()))
+                .extracting(E2ESequenceSnapshot.InterfaceDraft::getSource)
+                .containsExactly("structurizr");
 
         assertThat(snapshot.getBiStepRelations()).hasSize(1);
         assertThat(snapshot.getBiStepRelations().get(0).getOperationExtUid()).isEqualTo("OP1");
@@ -98,6 +104,35 @@ class ScenarioDecomposerTest {
         assertHasNotice(notices, "transform.included", "M2", "show_in_e2e_override");
 
         assertThat(notices).allMatch(n -> "transform".equals(n.category()) || "match".equals(n.category()));
+    }
+
+    @Test
+    void emitsMapFailedNoticeForUnresolvedStartObjectId() throws Exception {
+        String json = """
+            {
+              "entrance_diagram_uid": "D1",
+              "diagrams": [
+                {
+                  "uid": "D1",
+                  "name": "Root scenario",
+                  "notes": "step_id=Step.01.00.00.00",
+                  "messages": [
+                    {"uid":"M1","name":"CallB","start_object_id":77,"end_object_id":2,"operation_guid":"OP1","seqno":1,"pdata4":"0"}
+                  ]
+                }
+              ],
+              "objects": [ {"id":2,"name":"B","alias":"SYS_B"} ],
+              "systems": [],
+              "interfaces": [ {"id":10,"code":"iface.b","tags":[]} ],
+              "operations": [ {"uid":"OP1","name":"DoB","interface_id":10,"tags":[]} ]
+            }
+            """;
+
+        ScenarioDecomposer.Result result = decomposer.decompose(objectMapper.readTree(json), "scenario-3");
+
+        assertHasNotice(result.notices(), "transform.map_failed", "M1", "missing_reference");
+        assertThat(result.notices()).anyMatch(n -> "transform.map_failed".equals(n.code())
+                && n.details() != null && n.details().contains("\"start_object_id\""));
     }
 
     @Test

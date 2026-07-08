@@ -41,8 +41,9 @@ public class ScenarioDecomposer {
         Map<Integer, JsonNode> objectsById = indexByIntField(root.path("objects"), "id");
         Map<Integer, JsonNode> interfacesById = indexByIntField(root.path("interfaces"), "id");
         Map<String, JsonNode> operationsByUid = indexByStringField(root.path("operations"), "uid");
-        // RFC6901 pointers into root.interfaces[]/root.operations[] by array position — stored as the
-        // json_path in raw_data_context for interface/operation drafts.
+        // RFC6901 pointers into root.diagrams[]/interfaces[]/operations[] by array position — stored
+        // as the json_path in raw_data_context for bi_step/interface/operation drafts and notices.
+        Map<String, Integer> diagramArrayIndexByUid = arrayIndexByStringField(root.path("diagrams"), "uid");
         Map<Integer, Integer> interfaceArrayIndexById = arrayIndexByIntField(root.path("interfaces"), "id");
         Map<String, Integer> operationArrayIndexByUid = arrayIndexByStringField(root.path("operations"), "uid");
 
@@ -52,11 +53,13 @@ public class ScenarioDecomposer {
                     "value", String.valueOf(entranceDiagramUid)), "/entrance_diagram_uid"));
             return new Result(snapshot, notices, null);
         }
+        Integer rootDiagramIdx = diagramArrayIndexByUid.get(entranceDiagramUid);
+        String rootDiagramPointer = rootDiagramIdx != null ? "/diagrams/" + rootDiagramIdx : "/entrance_diagram_uid";
 
         String stepId = parseStepId(textOrNull(rootDiagram, "notes"));
         if (stepId == null) {
             notices.add(mapFailed("error", details("missing_required_field", "field", "step_id",
-                    "diagram_uid", entranceDiagramUid), "/diagrams[uid=" + entranceDiagramUid + "]/notes"));
+                    "diagram_uid", entranceDiagramUid), rootDiagramPointer + "/notes"));
             return new Result(snapshot, notices, null);
         }
 
@@ -65,7 +68,8 @@ public class ScenarioDecomposer {
         for (JsonNode diagram : root.path("diagrams")) {
             String diagramUid = textOrNull(diagram, "uid");
             if (diagramUid == null) continue;
-            diagramRoots.put(diagramUid, buildLocalTree(diagram, diagramUid, objectsById, interfacesById, operationsByUid, notices));
+            Integer diagramIdx = diagramArrayIndexByUid.get(diagramUid);
+            diagramRoots.put(diagramUid, buildLocalTree(diagram, diagramUid, diagramIdx, objectsById, interfacesById, operationsByUid, notices));
         }
 
         // Step 4: merge child diagrams via linked_diagram_uid — one flat pass over every node
@@ -82,11 +86,13 @@ public class ScenarioDecomposer {
         List<CallNode> finalSequence = collapse(rootWrapper, notices);
 
         // Step 6/7: decompose the surviving tree into canonical drafts
+        // bi_steps.uid is the business key (step_id, e.g. "Step.01.00.00.00") — external_guid keeps
+        // the Sparx diagram GUID (entrance_diagram_uid) as the technical/source-side reference.
         BiStepDraft biStep = new BiStepDraft();
-        biStep.setUid(artifactUid);
+        biStep.setUid(stepId);
         biStep.setName(textOrNull(rootDiagram, "name"));
         biStep.setExternalGuid(entranceDiagramUid);
-        biStep.setContext("/diagrams[uid=" + entranceDiagramUid + "]");
+        biStep.setContext(rootDiagramPointer);
         snapshot.getBiSteps().add(biStep);
 
         Map<String, OperationDraft> operationDrafts = new LinkedHashMap<>();
@@ -102,7 +108,7 @@ public class ScenarioDecomposer {
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
 
             BiStepRelationDraft rel = new BiStepRelationDraft();
-            rel.setBiStepUid(artifactUid);
+            rel.setBiStepUid(stepId);
             rel.setOperationExtUid(node.operationGuid);
             rel.setCallOrder(callOrder++);
             rel.setStereotype(node.stereotype);
@@ -120,7 +126,7 @@ public class ScenarioDecomposer {
     // Step 3 — per-diagram local tree (mirrors build-call-tree.mjs addMessage)
     // ------------------------------------------------------------------
 
-    private CallNode buildLocalTree(JsonNode diagram, String diagramUid, Map<Integer, JsonNode> objectsById,
+    private CallNode buildLocalTree(JsonNode diagram, String diagramUid, Integer diagramIdx, Map<Integer, JsonNode> objectsById,
                                      Map<Integer, JsonNode> interfacesById, Map<String, JsonNode> operationsByUid,
                                      List<ArtifactNotice> notices) {
         CallNode root = new CallNode();
@@ -137,7 +143,7 @@ public class ScenarioDecomposer {
         CallNode context = root;
         for (int originalIdx : order) {
             JsonNode msg = messages.get(originalIdx);
-            CallNode node = wrapMessage(msg, diagramUid, originalIdx, objectsById, interfacesById, operationsByUid, notices);
+            CallNode node = wrapMessage(msg, diagramUid, diagramIdx, originalIdx, objectsById, interfacesById, operationsByUid, notices);
 
             if (node.isRet) { noteSequenceSkip(node, "is_ret", notices); continue; }
             if (node.name != null && EXCLUDED_NAMES.contains(node.name.trim().toLowerCase())) {
@@ -162,12 +168,13 @@ public class ScenarioDecomposer {
         return root;
     }
 
-    private CallNode wrapMessage(JsonNode msg, String diagramUid, int originalIdx, Map<Integer, JsonNode> objectsById,
+    private CallNode wrapMessage(JsonNode msg, String diagramUid, Integer diagramIdx, int originalIdx, Map<Integer, JsonNode> objectsById,
                                   Map<Integer, JsonNode> interfacesById, Map<String, JsonNode> operationsByUid,
                                   List<ArtifactNotice> notices) {
         CallNode node = new CallNode();
         node.diagramUid = diagramUid;
-        node.pointer = "/diagrams[uid=" + diagramUid + "]/messages/" + originalIdx;
+        node.pointer = diagramIdx != null ? "/diagrams/" + diagramIdx + "/messages/" + originalIdx
+                                           : "/diagrams/messages/" + originalIdx;
         node.uid = textOrNull(msg, "uid");
         node.name = textOrNull(msg, "name");
         node.clientId = intOrNull(msg, "start_object_id");
@@ -176,6 +183,11 @@ public class ScenarioDecomposer {
         node.operationGuid = textOrNull(msg, "operation_guid");
         node.linkedDiagramUid = textOrNull(msg, "linked_diagram_uid");
         node.isRet = "1".equals(textOrNull(msg, "pdata4"));
+
+        if (node.clientId != null && !objectsById.containsKey(node.clientId)) {
+            notices.add(mapFailed("warning", details("missing_reference", "field", "start_object_id",
+                    "value", String.valueOf(node.clientId), "message_uid", node.uid), node.pointer));
+        }
 
         JsonNode serverObj = node.serverId != null ? objectsById.get(node.serverId) : null;
         node.serverAppCode = serverObj != null ? textOrNull(serverObj, "alias") : null;
@@ -382,7 +394,9 @@ public class ScenarioDecomposer {
             if (ifaceUid != null && registeredInterfaces.add(ifaceUid)) {
                 InterfaceDraft ifaceDraft = new InterfaceDraft();
                 ifaceDraft.setUid(ifaceUid);
+                ifaceDraft.setExtUid(String.valueOf(ifaceId));
                 ifaceDraft.setProtocol(tagsOf(iface).get("protocol"));
+                ifaceDraft.setSource(textOrNull(iface, "source"));
                 Integer ifaceIdx = interfaceArrayIndexById.get(ifaceId);
                 ifaceDraft.setContext(ifaceIdx != null ? "/interfaces/" + ifaceIdx : null);
                 snapshot.getInterfaces().add(ifaceDraft);
