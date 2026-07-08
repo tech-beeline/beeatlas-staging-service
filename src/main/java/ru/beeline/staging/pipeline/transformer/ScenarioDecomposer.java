@@ -277,7 +277,7 @@ public class ScenarioDecomposer {
                 continue;
             }
             if (ch.methodShowInE2e && !Objects.equals(ch.operationGuid, parent.operationGuid)) {
-                keep(ch, result, notices);
+                keep(ch, result, notices, "show_in_e2e_override");
                 continue;
             }
             boolean sameAppCode = ch.serverAppCode != null && ch.serverAppCode.equals(parent.serverAppCode);
@@ -286,7 +286,7 @@ public class ScenarioDecomposer {
             if (sameAppCode || sameOperationGuid || noAppCode) {
                 skip(parent, ch, result, sameAppCode ? "same_system" : sameOperationGuid ? "self_reference" : "unresolved_system", notices);
             } else {
-                keep(ch, result, notices);
+                keep(ch, result, notices, "external_call");
             }
         }
         return result;
@@ -309,7 +309,11 @@ public class ScenarioDecomposer {
         result.addAll(collapse(ch, notices));
     }
 
-    private void keep(CallNode ch, List<CallNode> result, List<ArtifactNotice> notices) {
+    private void keep(CallNode ch, List<CallNode> result, List<ArtifactNotice> notices, String reason) {
+        notices.add(notice("transform.included", "info",
+                details(reason, "message_uid", ch.uid, "message_name", ch.name,
+                        "operation_guid", ch.operationGuid, "callee", ch.serverAppCode),
+                ch.pointer));
         ch.children = collapse(ch, notices);
         result.add(ch);
     }

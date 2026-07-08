@@ -91,9 +91,11 @@ class ScenarioDecomposerTest {
 
         List<ArtifactNotice> notices = result.notices();
 
-        assertHasDataLossNotice(notices, "M3", "same_system");
-        assertHasDataLossNotice(notices, "M4", "app_front_no_method");
-        assertHasDataLossNotice(notices, "M5", "is_ret");
+        assertHasNotice(notices, "transform.data_loss", "M3", "same_system");
+        assertHasNotice(notices, "transform.data_loss", "M4", "app_front_no_method");
+        assertHasNotice(notices, "transform.data_loss", "M5", "is_ret");
+        assertHasNotice(notices, "transform.included", "M1", "external_call");
+        assertHasNotice(notices, "transform.included", "M2", "show_in_e2e_override");
 
         assertThat(notices).allMatch(n -> "transform".equals(n.category()) || "match".equals(n.category()));
     }
@@ -115,9 +117,9 @@ class ScenarioDecomposerTest {
                 "transform.map_failed".equals(n.code()) && "error".equals(n.level()));
     }
 
-    private void assertHasDataLossNotice(List<ArtifactNotice> notices, String messageUid, String expectedReason) {
+    private void assertHasNotice(List<ArtifactNotice> notices, String code, String messageUid, String expectedReason) {
         Predicate<ArtifactNotice> matches = n -> {
-            if (!"transform.data_loss".equals(n.code())) return false;
+            if (!code.equals(n.code())) return false;
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> details = objectMapper.readValue(n.details(), Map.class);
@@ -130,8 +132,8 @@ class ScenarioDecomposerTest {
         };
         Optional<ArtifactNotice> found = notices.stream().filter(matches).findFirst();
         assertThat(found)
-                .withFailMessage("Expected a transform.data_loss notice for message_uid=%s reason=%s, got: %s",
-                        messageUid, expectedReason, notices)
+                .withFailMessage("Expected a %s notice for message_uid=%s reason=%s, got: %s",
+                        code, messageUid, expectedReason, notices)
                 .isPresent();
     }
 }
