@@ -208,11 +208,11 @@ public class StructurizrDynamicViewDecomposer {
     // ------------------------------------------------------------------
 
     private ArtifactNotice mapFailed(String level, Map<String, Object> details, String pointer) {
-        return notice("transform.map_failed", level, details, pointer);
+        return notice("structurizr-sequence.transform.map_failed", level, details, pointer);
     }
 
     private ArtifactNotice dataLoss(String reason, String relationshipId, String pointer) {
-        return notice("transform.data_loss", "info", details(reason, "relationship_id", String.valueOf(relationshipId)), pointer);
+        return notice("structurizr-sequence.transform.data_loss", "info", details(reason, "relationship_id", String.valueOf(relationshipId)), pointer);
     }
 
     private ArtifactNotice notice(String code, String level, Map<String, Object> details, String pointer) {

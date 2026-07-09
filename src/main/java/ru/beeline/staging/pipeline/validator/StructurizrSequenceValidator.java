@@ -41,9 +41,14 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
 
         JsonNode dynamicViews = root.path("views").path("dynamicViews");
         if (!dynamicViews.isArray()) {
-            notices.add(error("validation.missing_required_field", "views.dynamicViews is missing or not an array",
+            // Not an anomaly: most products only model C4 containers/components in Structurizr and
+            // never draw a single Dynamic View — the pre-adapter scans every product with a
+            // structurizrApiUrl, not just ones known to have sequence diagrams. Nothing to load this
+            // time, not a validation failure — see the artifact-level error path below for what
+            // actually deserves that.
+            notices.add(info("structurizr-sequence.validation.no_dynamic_views", "views.dynamicViews is missing or not an array — product has no sequence diagrams modeled",
                     Map.of("field", "views.dynamicViews")));
-            log.warn("structurizr-sequence validation found {} issue(s) for uid={}", notices.size(), artifactUid);
+            log.info("structurizr-sequence: no dynamicViews for uid={}", artifactUid);
             return ValidateResult.of(notices);
         }
 
@@ -56,16 +61,16 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
                 // Not an artifact-level error: the transformer already skips a dynamicView with no key
                 // on its own (see StructurizrDynamicViewDecomposer) without losing the rest of the
                 // snapshot, so this must not fail the whole run the way ValidatorWorker treats "error".
-                notices.add(warning("validation.missing_required_field", "dynamicView.key is missing",
+                notices.add(warning("structurizr-sequence.validation.missing_dynamic_view_key", "dynamicView.key is missing",
                         Map.of("pointer", pointer)));
             } else if (!seenKeys.add(key)) {
-                notices.add(warning("validation.duplicate_key", "dynamicView.key is not unique within the workspace",
+                notices.add(warning("structurizr-sequence.validation.duplicate_key", "dynamicView.key is not unique within the workspace",
                         Map.of("key", key, "pointer", pointer)));
             }
 
             JsonNode relationships = dynamicView.path("relationships");
             if (!relationships.isArray() || relationships.isEmpty()) {
-                notices.add(warning("validation.empty_relationships", "dynamicView has no relationships",
+                notices.add(warning("structurizr-sequence.validation.empty_relationships", "dynamicView has no relationships",
                         Map.of("key", String.valueOf(key), "pointer", pointer)));
             }
             idx++;
@@ -80,8 +85,8 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
         return ValidateResult.of(notices);
     }
 
-    private ArtifactNotice error(String code, String message, Map<String, Object> details) {
-        return new ArtifactNotice(null, null, code, "error", "validation",
+    private ArtifactNotice info(String code, String message, Map<String, Object> details) {
+        return new ArtifactNotice(null, null, code, "info", "validation",
                 null, null, null, null, message, toJson(details), null, null);
     }
 
