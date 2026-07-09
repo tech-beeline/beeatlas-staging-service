@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 /**
  * Pure Camunda polling — no pipeline_stage_logs bookkeeping here. That used to be automatic
@@ -18,6 +19,11 @@ import java.util.Map;
  * value, so the automatic path logged a stage under the wrong run_id in addition to whatever
  * the worker itself logged — duplicate rows. Each worker now resolves its own run id and calls
  * PipelineRunService.startStage/completeStage/failStage explicitly, inside process().
+ *
+ * Fetched tasks are handed off to the shared pipelineWorkerExecutor instead of being processed
+ * one-by-one on this method's own scheduling thread — different artifactTypes and different
+ * products within the same scan (BPMN multi-instance is isSequential=false) can then run
+ * concurrently, bounded by the executor's pool size rather than by this loop.
  */
 public abstract class AbstractWorker {
 
@@ -25,6 +31,9 @@ public abstract class AbstractWorker {
 
     @Autowired
     protected ExternalTaskService externalTaskService;
+
+    @Autowired
+    protected ExecutorService pipelineWorkerExecutor;
 
     protected abstract String topic();
 
@@ -43,19 +52,23 @@ public abstract class AbstractWorker {
                 .execute();
 
         for (LockedExternalTask task : tasks) {
-            try {
-                Map<String, Object> outputVars = process(task);
-                if (outputVars != null && !outputVars.isEmpty()) {
-                    externalTaskService.complete(task.getId(), workerId(), outputVars);
-                } else {
-                    externalTaskService.complete(task.getId(), workerId());
-                }
-            } catch (Exception e) {
-                log.error("Worker {} failed on task {}", workerId(), task.getId(), e);
-                int retries = task.getRetries() != null ? Math.max(0, task.getRetries() - 1) : 2;
-                externalTaskService.handleFailure(
-                        task.getId(), workerId(), e.getMessage(), e.toString(), retries, 5_000L);
+            pipelineWorkerExecutor.submit(() -> handle(task));
+        }
+    }
+
+    private void handle(LockedExternalTask task) {
+        try {
+            Map<String, Object> outputVars = process(task);
+            if (outputVars != null && !outputVars.isEmpty()) {
+                externalTaskService.complete(task.getId(), workerId(), outputVars);
+            } else {
+                externalTaskService.complete(task.getId(), workerId());
             }
+        } catch (Exception e) {
+            log.error("Worker {} failed on task {}", workerId(), task.getId(), e);
+            int retries = task.getRetries() != null ? Math.max(0, task.getRetries() - 1) : 2;
+            externalTaskService.handleFailure(
+                    task.getId(), workerId(), e.getMessage(), e.toString(), retries, 5_000L);
         }
     }
 

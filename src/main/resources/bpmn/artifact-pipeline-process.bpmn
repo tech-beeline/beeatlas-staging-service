@@ -37,7 +37,7 @@
     <bpmn:subProcess id="SubProcess_PerArtifact" name="Per artifact">
       <bpmn:incoming>Flow_1</bpmn:incoming>
       <bpmn:outgoing>Flow_5</bpmn:outgoing>
-      <bpmn:multiInstanceLoopCharacteristics isSequential="true"
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false"
                                              camunda:collection="artifactRefs"
                                              camunda:elementVariable="artifactRef" />
 
