@@ -22,6 +22,9 @@ public class SequenceEntity {
     @Column(name = "tc_code", nullable = false)
     private String tcCode;
 
+    @Column(name = "key")
+    private String key;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 }
