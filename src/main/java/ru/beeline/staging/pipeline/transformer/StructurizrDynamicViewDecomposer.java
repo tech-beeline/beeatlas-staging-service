@@ -59,7 +59,9 @@ public class StructurizrDynamicViewDecomposer {
 
             String key = textOrNull(dynamicView, "key");
             if (key == null || key.isBlank()) {
-                notices.add(mapFailed("error", details("missing_required_field", "field", "key"), pointer));
+                // Per-item skip, not a whole-artifact failure — same reasoning as the validator's
+                // downgrade of this exact case (see StructurizrSequenceValidator).
+                notices.add(mapFailed("warning", details("missing_required_field", "field", "key"), pointer));
                 continue;
             }
 

@@ -53,7 +53,10 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
             String pointer = "/views/dynamicViews/" + idx;
             String key = textOrNull(dynamicView, "key");
             if (key == null || key.isBlank()) {
-                notices.add(error("validation.missing_required_field", "dynamicView.key is missing",
+                // Not an artifact-level error: the transformer already skips a dynamicView with no key
+                // on its own (see StructurizrDynamicViewDecomposer) without losing the rest of the
+                // snapshot, so this must not fail the whole run the way ValidatorWorker treats "error".
+                notices.add(warning("validation.missing_required_field", "dynamicView.key is missing",
                         Map.of("pointer", pointer)));
             } else if (!seenKeys.add(key)) {
                 notices.add(warning("validation.duplicate_key", "dynamicView.key is not unique within the workspace",
