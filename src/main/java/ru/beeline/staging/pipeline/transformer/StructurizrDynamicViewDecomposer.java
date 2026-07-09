@@ -11,11 +11,14 @@ import ru.beeline.staging.pipeline.transformer.StructurizrSequenceSnapshot.Seque
 import ru.beeline.staging.pipeline.transformer.StructurizrSequenceSnapshot.SequenceRelationDraft;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Maps a Structurizr workspace export's views.dynamicViews onto the canonical Tc/Sequence model, per
@@ -27,12 +30,20 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class StructurizrDynamicViewDecomposer {
 
+    // Authoring convention (see "Сценарии использования" vision doc): relationship description is
+    // multi-line — first line is a human-readable message, last line is the real endpoint that
+    // becomes the operation's identity ("GET /index.html"), and an optional middle line names the
+    // TC of the external system being called ("BC-012345"). A single-line description (no \n at
+    // all) is treated as the endpoint itself — some authors skip the descriptive first line.
+    private static final Pattern HTTP_METHOD_PATTERN = Pattern.compile("^(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\\b", Pattern.CASE_INSENSITIVE);
+
     private final ObjectMapper objectMapper;
 
     public record Result(StructurizrSequenceSnapshot snapshot, List<ArtifactNotice> notices) {}
 
     private record ElementInfo(String code, String name, String type) {}
     private record RelationshipInfo(String sourceId, String destinationId, String description, String technology) {}
+    private record RelationshipText(String message, String tcCode, String endpoint) {}
 
     public Result decompose(JsonNode root, String artifactUid) {
         List<ArtifactNotice> notices = new ArrayList<>();
@@ -100,8 +111,10 @@ public class StructurizrDynamicViewDecomposer {
                     continue;
                 }
 
-                String name = firstNonBlank(textOrNull(step, "description"), relInfo.description(), relationshipId);
-                registerOperationAndInterface(relationshipId, name, relInfo, elementsById,
+                String rawDescription = firstNonBlank(textOrNull(step, "description"), relInfo.description());
+                RelationshipText text = parseRelationshipText(rawDescription);
+                String operationName = firstNonBlank(text.endpoint(), relationshipId);
+                registerOperationAndInterface(relationshipId, operationName, relInfo, elementsById,
                         operationDrafts, registeredInterfaces, snapshot, stepPointer);
                 chainedOperationExtUids.add(relationshipId);
             }
@@ -133,6 +146,7 @@ public class StructurizrDynamicViewDecomposer {
         OperationDraft operation = new OperationDraft();
         operation.setExtUid(relationshipId);
         operation.setName(name);
+        operation.setType(httpMethodOf(name));
         operation.setInterfaceUid(interfaceUid);
         operation.setContext(pointer);
         operationDrafts.put(relationshipId, operation);
@@ -243,6 +257,31 @@ public class StructurizrDynamicViewDecomposer {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    private static RelationshipText parseRelationshipText(String description) {
+        if (description == null || description.isBlank()) {
+            return new RelationshipText(null, null, null);
+        }
+        String[] lines = description.split("\\r?\\n");
+        for (int i = 0; i < lines.length; i++) lines[i] = lines[i].trim();
+
+        if (lines.length == 1) {
+            // No separate message line — treat the single line as the endpoint itself.
+            return new RelationshipText(null, null, lines[0]);
+        }
+        String message  = lines[0];
+        String endpoint = lines[lines.length - 1];
+        String tcCode   = lines.length >= 3
+                ? String.join(" ", Arrays.copyOfRange(lines, 1, lines.length - 1))
+                : null;
+        return new RelationshipText(message, tcCode, endpoint);
+    }
+
+    private static String httpMethodOf(String endpoint) {
+        if (endpoint == null) return null;
+        Matcher m = HTTP_METHOD_PATTERN.matcher(endpoint.trim());
+        return m.find() ? m.group(1).toUpperCase() : null;
     }
 
     private static String firstNonBlank(String... values) {

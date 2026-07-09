@@ -55,16 +55,30 @@ public class StuckProcessMonitor {
 
 
     private void checkStuckExternalTasks(Date threshold) {
-        List<ExternalTask> stuck = externalTaskService.createExternalTaskQuery()
+        List<ExternalTask> lockedStuck = externalTaskService.createExternalTaskQuery()
                 .lockExpirationBefore(threshold)
                 .list();
+        resetRetries(lockedStuck, "locked > " + stuckThresholdMinutes + " min");
 
-        if (stuck.isEmpty()) return;
+        // A task with retries=0 is a Camunda incident, not a lock waiting to fire — fetchAndLock will
+        // never pick it up again on its own (unlike the lockExpirationBefore case above), so an
+        // external error (e.g. the 5xx an adapter's HTTP call got back) can otherwise wedge that one
+        // artifact's iteration forever. Since BPMN multi-instance is isSequential=false, this no
+        // longer blocks sibling artifacts in the same scan — but the stuck iteration itself still
+        // needs its retries reset before it will run again.
+        List<ExternalTask> exhausted = externalTaskService.createExternalTaskQuery()
+                .noRetriesLeft()
+                .list();
+        resetRetries(exhausted, "retries exhausted (incident)");
+    }
 
-        log.warn("Found {} external task(s) locked > {} min", stuck.size(), stuckThresholdMinutes);
-        for (ExternalTask task : stuck) {
-            log.warn("Stuck task: id={}, topic={}, processInstance={}, retries={}",
-                    task.getId(), task.getTopicName(), task.getProcessInstanceId(), task.getRetries());
+    private void resetRetries(List<ExternalTask> tasks, String reason) {
+        if (tasks.isEmpty()) return;
+
+        log.warn("Found {} external task(s): {}", tasks.size(), reason);
+        for (ExternalTask task : tasks) {
+            log.warn("Stuck task: id={}, topic={}, processInstance={}, retries={}, reason={}",
+                    task.getId(), task.getTopicName(), task.getProcessInstanceId(), task.getRetries(), reason);
             try {
                 externalTaskService.setRetries(task.getId(), autoRetryCount);
                 log.info("Reset retries={} for stuck task {}", autoRetryCount, task.getId());
