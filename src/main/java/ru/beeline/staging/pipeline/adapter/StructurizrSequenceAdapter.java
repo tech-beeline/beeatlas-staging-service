@@ -50,7 +50,13 @@ public class StructurizrSequenceAdapter implements ArtifactAdapter {
         }
 
         String jsonUrl = (structurizrApiUrl.endsWith("/") ? structurizrApiUrl.substring(0, structurizrApiUrl.length() - 1) : structurizrApiUrl) + "/json";
-        String rawJson = restTemplate.getForObject(jsonUrl, String.class);
+        log.info("Fetching Structurizr workspace export: alias={} url={}", artifactUid, jsonUrl);
+        String rawJson;
+        try {
+            rawJson = restTemplate.getForObject(jsonUrl, String.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fetch Structurizr workspace: alias=" + artifactUid + " url=" + jsonUrl + " — " + e.getMessage(), e);
+        }
         if (rawJson == null || rawJson.isBlank()) {
             throw new IllegalStateException("Structurizr returned empty workspace export for alias=" + artifactUid + " url=" + jsonUrl);
         }

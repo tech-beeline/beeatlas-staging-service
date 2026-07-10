@@ -53,9 +53,11 @@ staging:
     poll-interval-ms: 500
     lock-duration-ms: 30000
   recovery:
-    check-interval-ms: 300000      # 5 min
+    check-interval-ms: 300000      # 5 min — locked-but-expired external tasks + long-running-process warning
     stuck-threshold-minutes: 30
     auto-retry-count: 3
+    incident-retry-interval-ms: 30000  # StuckProcessMonitor.healIncidents — how often to retry exhausted-retry incidents
+    max-incident-auto-retries: 2       # give up after this many auto-heal attempts, leave as a permanent incident
   camunda:
     schema: ${STAGING_CAMUNDA_SCHEMA:staging_camunda}
   scheduler:

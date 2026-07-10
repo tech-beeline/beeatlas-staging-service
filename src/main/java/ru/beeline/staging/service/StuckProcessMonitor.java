@@ -17,6 +17,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -32,6 +34,14 @@ public class StuckProcessMonitor {
 
     @Value("${staging.recovery.auto-retry-count:3}")
     private int autoRetryCount;
+
+    @Value("${staging.recovery.max-incident-auto-retries:2}")
+    private int maxIncidentAutoRetries;
+
+    /** externalTaskId -> auto-heal attempts already made. Stays small in practice (Camunda deletes
+     *  the ACT_RU_EXT_TASK row once the task finally completes or gets manually retried elsewhere),
+     *  and resets on app restart — an acceptable trade-off for not needing new schema for this counter. */
+    private final Map<String, Integer> incidentRetryAttempts = new ConcurrentHashMap<>();
 
     @EventListener(ApplicationStartedEvent.class)
     public void logResumedOnStartup() {
@@ -59,17 +69,45 @@ public class StuckProcessMonitor {
                 .lockExpirationBefore(threshold)
                 .list();
         resetRetries(lockedStuck, "locked > " + stuckThresholdMinutes + " min");
+    }
 
-        // A task with retries=0 is a Camunda incident, not a lock waiting to fire — fetchAndLock will
-        // never pick it up again on its own (unlike the lockExpirationBefore case above), so an
-        // external error (e.g. the 5xx an adapter's HTTP call got back) can otherwise wedge that one
-        // artifact's iteration forever. Since BPMN multi-instance is isSequential=false, this no
-        // longer blocks sibling artifacts in the same scan — but the stuck iteration itself still
-        // needs its retries reset before it will run again.
+    /**
+     * A task with retries=0 is a Camunda incident, not a lock waiting to fire — fetchAndLock will
+     * never pick it up again on its own, so an external error (e.g. the 5xx an adapter's HTTP call
+     * got back) would otherwise wedge that artifact's iteration forever. Auto-heals up to
+     * maxIncidentAutoRetries times (spaced by this method's own schedule, not the 5-minute
+     * checkStuckProcesses cycle above), then gives up and leaves it as a permanent incident —
+     * unlimited auto-retry would otherwise hide a genuinely broken product/config forever behind an
+     * endless retry loop instead of surfacing it for someone to fix.
+     */
+    @Scheduled(fixedDelayString = "${staging.recovery.incident-retry-interval-ms:30000}")
+    public void healIncidents() {
         List<ExternalTask> exhausted = externalTaskService.createExternalTaskQuery()
                 .noRetriesLeft()
                 .list();
-        resetRetries(exhausted, "retries exhausted (incident)");
+        if (exhausted.isEmpty()) return;
+
+        for (ExternalTask task : exhausted) {
+            int attempts = incidentRetryAttempts.getOrDefault(task.getId(), 0);
+            if (attempts >= maxIncidentAutoRetries) {
+                continue;
+            }
+
+            attempts++;
+            incidentRetryAttempts.put(task.getId(), attempts);
+            log.warn("Auto-healing incident id={} topic={} processInstance={} (attempt {}/{})",
+                    task.getId(), task.getTopicName(), task.getProcessInstanceId(), attempts, maxIncidentAutoRetries);
+            try {
+                externalTaskService.setRetries(task.getId(), 1);
+            } catch (Exception e) {
+                log.error("Failed to reset retries for task {}", task.getId(), e);
+            }
+
+            if (attempts == maxIncidentAutoRetries) {
+                log.warn("Task id={} won't be auto-retried again if it fails once more — left as a permanent incident needing manual retry",
+                        task.getId());
+            }
+        }
     }
 
     private void resetRetries(List<ExternalTask> tasks, String reason) {

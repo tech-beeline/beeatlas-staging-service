@@ -29,8 +29,14 @@ public class ProductServiceClient {
     }
 
     public List<ProductSummary> listProducts() {
-        ProductSummary[] products = restTemplate.getForObject(baseUrl + "/api/v1/product/info", ProductSummary[].class);
-        return products != null ? List.of(products) : List.of();
+        String url = baseUrl + "/api/v1/product/info";
+        log.info("Fetching product list: url={}", url);
+        try {
+            ProductSummary[] products = restTemplate.getForObject(url, ProductSummary[].class);
+            return products != null ? List.of(products) : List.of();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fetch product list: url=" + url + " — " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -39,10 +45,14 @@ public class ProductServiceClient {
      * metadata, so it re-resolves structurizrApiUrl itself instead of relying on a passed-through value.
      */
     public Optional<ProductSummary> getProductInfo(String alias) {
+        String url = baseUrl + "/api/v1/product/" + alias + "/info";
+        log.info("Fetching product info: alias={} url={}", alias, url);
         try {
-            return Optional.ofNullable(restTemplate.getForObject(baseUrl + "/api/v1/product/" + alias + "/info", ProductSummary.class));
+            return Optional.ofNullable(restTemplate.getForObject(url, ProductSummary.class));
         } catch (HttpClientErrorException.NotFound e) {
             return Optional.empty();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fetch product info: alias=" + alias + " url=" + url + " — " + e.getMessage(), e);
         }
     }
 }
