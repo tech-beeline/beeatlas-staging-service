@@ -46,7 +46,7 @@ public class SparxE2ERepository {
             ),
             cte_diagram_link AS
             (
-                SELECT
+                SELECT DISTINCT
                     od.diagram_id,
                     o.object_id,
                     d.diagram_id AS child_diagram_id,
@@ -92,7 +92,7 @@ public class SparxE2ERepository {
                 FROM cte_diagrams cd
                 JOIN t_diagram d ON d.diagram_id = cd.diagram_id
             ), cte_diagram_messages AS (
-                SELECT
+                SELECT DISTINCT
                     c.diagramid AS diagram_id,
                     c.ea_guid AS uid,
                     c.name,

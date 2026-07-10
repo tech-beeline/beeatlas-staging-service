@@ -1,6 +1,8 @@
 package ru.beeline.staging.worker;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
@@ -14,6 +16,8 @@ import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -73,16 +77,15 @@ public class TransformerWorker extends AbstractWorker {
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             // TransformResult result = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
-            if (result.notices().size() > MAX_NOTICES) {
-                throw new IllegalStateException("Transform produced " + result.notices().size()
-                        + " notices for uid=" + uid + " (> " + MAX_NOTICES + ") — likely duplicate/cyclic raw data, refusing to save");
-            }
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
 
             ref.setCanonicalSnapshotJson(snapshotJson);
             rawDataRefRepository.save(ref);
 
-            List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
+            List<ArtifactNotice> noticesToSave = result.notices().size() > MAX_NOTICES
+                    ? aggregateByCodeAndReason(result.notices())
+                    : result.notices();
+            List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, noticesToSave);
             long errorCount = saved.stream().filter(n -> "error".equals(n.level())).count();
             if (errorCount > 0) {
                 throw new IllegalStateException("Transform failed: " + errorCount + " error notice(s) for uid=" + uid);
@@ -98,6 +101,47 @@ public class TransformerWorker extends AbstractWorker {
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, "transformer", e.getMessage());
             throw e;
+        }
+    }
+
+    private List<ArtifactNotice> aggregateByCodeAndReason(List<ArtifactNotice> notices) {
+        Map<String, List<ArtifactNotice>> grouped = notices.stream()
+                .collect(Collectors.groupingBy(
+                        n -> n.code() + "|" + n.level() + "|" + reasonOf(n.details()),
+                        LinkedHashMap::new, Collectors.toList()));
+
+        List<ArtifactNotice> result = new ArrayList<>();
+        for (List<ArtifactNotice> group : grouped.values()) {
+            ArtifactNotice first = group.get(0);
+            if (group.size() == 1) {
+                result.add(first);
+                continue;
+            }
+            result.add(new ArtifactNotice(
+                    first.id(), first.noticeTypeId(), first.code(), first.level(), first.category(),
+                    first.rawDataRefId(), first.entityType(), first.entityUid(), first.entityVersionId(),
+                    first.message(), withOccurrenceCount(first.details(), group.size()),
+                    first.context(), first.rawDataContextId()));
+        }
+        return result;
+    }
+
+    private String reasonOf(String detailsJson) {
+        try {
+            JsonNode reason = objectMapper.readTree(detailsJson).path("reason");
+            return reason.isMissingNode() ? "" : reason.asText();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String withOccurrenceCount(String detailsJson, int count) {
+        try {
+            ObjectNode node = (ObjectNode) objectMapper.readTree(detailsJson);
+            node.put("occurrence_count", count);
+            return objectMapper.writeValueAsString(node);
+        } catch (Exception e) {
+            return detailsJson;
         }
     }
 }
