@@ -9,7 +9,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 
 /**
  * Pure Camunda polling — no pipeline_stage_logs bookkeeping here. That used to be automatic (keyed
@@ -19,19 +18,19 @@ import java.util.concurrent.ExecutorService;
  * worker itself logged — duplicate rows. Each worker now resolves its own run id and calls
  * PipelineRunService.startStage/completeStage/failStage explicitly, inside process().
  *
- * Fetched tasks are handed off to the shared pipelineWorkerExecutor instead of being processed
- * one-by-one on this method's own scheduling thread — different artifactTypes and different
- * products within the same scan (BPMN multi-instance is isSequential=false) can then run
- * concurrently, bounded by the executor's pool size rather than by this loop.
+ * Fetched tasks are processed one-by-one, synchronously, on this method's own scheduling thread —
+ * deliberately, for now. A brief attempt at running products within one scan concurrently
+ * (BPMN multi-instance isSequential=false + submitting tasks to a shared executor) surfaced a real
+ * bug: several sibling iterations resolving a same-named variable (pipelineRunId, artifactUid,
+ * rawDataRefId, ...) to a shared ancestor scope and racing to update it — Camunda throws
+ * OptimisticLockingException on VariableInstanceEntity, and worse, a losing/misdirected read could
+ * make Validator/Transformer/Saver operate against a DIFFERENT artifact's run_id. Reverted back to
+ * sequential (isSequential=true in the BPMN, no executor here) until that's solved properly.
  *
- * process()'s output is completed as LOCAL variables (not global/shared ones): with parallel
- * multi-instance, several iterations' executions can resolve a same-named global variable
- * (pipelineRunId, artifactUid, rawDataRefId, ...) to the same shared ancestor scope and race to
- * update that single row — Camunda then throws OptimisticLockingException on VariableInstanceEntity.
- * Local variables are scoped strictly to the current execution, so sibling iterations never contend.
- * PreAdapterWorker overrides useLocalVariables() to keep its own output (artifactRefs) global — the
- * multi-instance's camunda:collection="artifactRefs" must see it, and pre-adapter only ever runs once
- * per scan (no concurrent writers), so there's nothing to race with.
+ * process()'s output is still completed as LOCAL variables (not global/shared ones) — harmless and
+ * strictly safer even sequentially, kept as defense-in-depth. PreAdapterWorker overrides
+ * useLocalVariables() to keep its own output (artifactRefs) global — the multi-instance's
+ * camunda:collection="artifactRefs" must see it.
  */
 public abstract class AbstractWorker {
 
@@ -39,9 +38,6 @@ public abstract class AbstractWorker {
 
     @Autowired
     protected ExternalTaskService externalTaskService;
-
-    @Autowired
-    protected ExecutorService pipelineWorkerExecutor;
 
     protected abstract String topic();
 
@@ -63,7 +59,7 @@ public abstract class AbstractWorker {
                 .execute();
 
         for (LockedExternalTask task : tasks) {
-            pipelineWorkerExecutor.submit(() -> handle(task));
+            handle(task);
         }
     }
 

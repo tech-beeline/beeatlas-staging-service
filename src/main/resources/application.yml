@@ -59,7 +59,6 @@ staging:
   worker:
     poll-interval-ms: 500
     lock-duration-ms: 30000
-    pool-size: 10                  # pipelineWorkerExecutor — shared by all 5 pipeline workers (see WorkerExecutorConfig)
   recovery:
     check-interval-ms: 300000      # 5 min
     stuck-threshold-minutes: 30
