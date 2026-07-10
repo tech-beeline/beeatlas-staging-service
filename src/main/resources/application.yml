@@ -36,6 +36,11 @@ camunda:
     job-execution:
       enabled: true
       lock-time-in-millis: 900000
+      core-pool-size: 1     # SpringJobExecutor runs asyncBefore continuations on its own Spring
+      max-pool-size: 1      # TaskExecutor, independent of our @Scheduled workers — default (3/10
+      queue-capacity: 100   # threads) let it race with external-task completion on the same
+                             # ExecutionEntity (OptimisticLockingException). Force single-threaded
+                             # here too, generous queue so job submission is never rejected.
     history-level: full
     history-time-to-live: P180D
     webapp:

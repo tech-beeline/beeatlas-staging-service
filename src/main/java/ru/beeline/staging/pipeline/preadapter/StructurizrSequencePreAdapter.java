@@ -7,10 +7,8 @@ import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.product.ProductServiceClient;
 import ru.beeline.staging.product.dto.ProductSummary;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Scans fdm-products (GET /api/v1/product/info) for products that carry a Structurizr workspace —
@@ -53,6 +51,8 @@ public class StructurizrSequencePreAdapter implements ArtifactPreAdapter {
             metadata.put("structurizrWorkspaceName", product.getStructurizrWorkspaceName());
             found.add(new FoundArtifact(product.getAlias(), metadata));
         }
-        return found;
+        return found.stream()
+                .sorted(Comparator.comparing(FoundArtifact::uid))
+                .limit(10).collect(Collectors.toUnmodifiableList());
     }
 }

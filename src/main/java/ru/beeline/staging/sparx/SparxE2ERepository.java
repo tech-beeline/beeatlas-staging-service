@@ -26,6 +26,7 @@ public class SparxE2ERepository {
                 JOIN t_object ref ON ref.object_id = odd.object_id AND ref.object_type = 'InteractionOccurrence'
                 JOIN t_diagram d ON d.diagram_id::text = ref.pdata1
             WHERE p.stereotype = 'e2e_diagram'
+            LIMIT 50
             """;
 
     // Full raw export of one e2e scenario: entrance_diagram_uid/diagrams/objects/systems/interfaces/operations,
