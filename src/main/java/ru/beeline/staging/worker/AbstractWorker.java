@@ -27,10 +27,12 @@ import java.util.Map;
  * make Validator/Transformer/Saver operate against a DIFFERENT artifact's run_id. Reverted back to
  * sequential (isSequential=true in the BPMN, no executor here) until that's solved properly.
  *
- * process()'s output is still completed as LOCAL variables (not global/shared ones) — harmless and
- * strictly safer even sequentially, kept as defense-in-depth. PreAdapterWorker overrides
- * useLocalVariables() to keep its own output (artifactRefs) global — the multi-instance's
- * camunda:collection="artifactRefs" must see it.
+ * process()'s output is completed as an ordinary GLOBAL variable, same as before that parallelism
+ * attempt. A "local variables" version was tried as defense-in-depth, but local scoping turned out
+ * to NOT survive from one activity to the next within the same multi-instance iteration either
+ * (Validator couldn't see rawDataRefId that Adapter had just set — NullPointerException) — so it
+ * broke even the sequential case it was supposed to be harmless for. With isSequential=true there's
+ * only one iteration executing at a time, so there's no sibling to race with global variables anyway.
  */
 public abstract class AbstractWorker {
 
@@ -46,9 +48,6 @@ public abstract class AbstractWorker {
     protected abstract Map<String, Object> process(LockedExternalTask task) throws Exception;
 
     protected List<String> variablesToFetch() { return List.of(); }
-
-    /** Override to return false for a worker whose output must stay a global/shared process variable. */
-    protected boolean useLocalVariables() { return true; }
 
     @Scheduled(fixedDelayString = "${staging.worker.poll-interval-ms:500}")
     public void poll() {
@@ -67,11 +66,7 @@ public abstract class AbstractWorker {
         try {
             Map<String, Object> outputVars = process(task);
             if (outputVars != null && !outputVars.isEmpty()) {
-                if (useLocalVariables()) {
-                    externalTaskService.complete(task.getId(), workerId(), Map.of(), outputVars);
-                } else {
-                    externalTaskService.complete(task.getId(), workerId(), outputVars);
-                }
+                externalTaskService.complete(task.getId(), workerId(), outputVars);
             } else {
                 externalTaskService.complete(task.getId(), workerId());
             }
