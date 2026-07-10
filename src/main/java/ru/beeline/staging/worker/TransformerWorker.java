@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
+import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.TransformResult;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.RawDataRefRepository;
@@ -75,7 +76,11 @@ public class TransformerWorker extends AbstractWorker {
             ref.setCanonicalSnapshotJson(snapshotJson);
             rawDataRefRepository.save(ref);
 
-            pipelineRunService.saveNotices(rawDataRefId, result.notices());
+            List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
+            long errorCount = saved.stream().filter(n -> "error".equals(n.level())).count();
+            if (errorCount > 0) {
+                throw new IllegalStateException("Transform failed: " + errorCount + " error notice(s) for uid=" + uid);
+            }
 
             Map<String, Object> output = Map.of(
                     "rawDataRefId", rawDataRefId,
