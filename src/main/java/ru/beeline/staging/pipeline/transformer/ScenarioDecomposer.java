@@ -39,6 +39,7 @@ public class ScenarioDecomposer {
         String entranceDiagramUid = textOrNull(root, "entrance_diagram_uid");
         Map<String, JsonNode> diagramsByUid = indexByStringField(root.path("diagrams"), "uid");
         Map<Integer, JsonNode> objectsById = indexByIntField(root.path("objects"), "id");
+        Map<Integer, JsonNode> systemsById = indexByIntField(root.path("systems"), "id");
         Map<Integer, JsonNode> interfacesById = indexByIntField(root.path("interfaces"), "id");
         Map<String, JsonNode> operationsByUid = indexByStringField(root.path("operations"), "uid");
         // RFC6901 pointers into root.diagrams[]/interfaces[]/operations[] by array position — stored
@@ -69,7 +70,7 @@ public class ScenarioDecomposer {
             String diagramUid = textOrNull(diagram, "uid");
             if (diagramUid == null) continue;
             Integer diagramIdx = diagramArrayIndexByUid.get(diagramUid);
-            diagramRoots.put(diagramUid, buildLocalTree(diagram, diagramUid, diagramIdx, objectsById, interfacesById, operationsByUid, notices));
+            diagramRoots.put(diagramUid, buildLocalTree(diagram, diagramUid, diagramIdx, objectsById, systemsById, interfacesById, operationsByUid, notices));
         }
 
         // Step 4: merge child diagrams via linked_diagram_uid — one flat pass over every node
@@ -127,7 +128,7 @@ public class ScenarioDecomposer {
     // ------------------------------------------------------------------
 
     private CallNode buildLocalTree(JsonNode diagram, String diagramUid, Integer diagramIdx, Map<Integer, JsonNode> objectsById,
-                                     Map<Integer, JsonNode> interfacesById, Map<String, JsonNode> operationsByUid,
+                                     Map<Integer, JsonNode> systemsById, Map<Integer, JsonNode> interfacesById, Map<String, JsonNode> operationsByUid,
                                      List<ArtifactNotice> notices) {
         CallNode root = new CallNode();
         root.diagramUid = diagramUid;
@@ -153,7 +154,7 @@ public class ScenarioDecomposer {
         CallNode context = root;
         for (int originalIdx : order) {
             JsonNode msg = messages.get(originalIdx);
-            CallNode node = wrapMessage(msg, diagramUid, diagramIdx, originalIdx, objectsById, interfacesById, operationsByUid, notices);
+            CallNode node = wrapMessage(msg, diagramUid, diagramIdx, originalIdx, objectsById, systemsById, interfacesById, operationsByUid, notices);
 
             if (node.isRet) { noteSequenceSkip(node, "is_ret", notices); continue; }
             if (node.name != null && EXCLUDED_NAMES.contains(node.name.trim().toLowerCase())) {
@@ -179,7 +180,7 @@ public class ScenarioDecomposer {
     }
 
     private CallNode wrapMessage(JsonNode msg, String diagramUid, Integer diagramIdx, int originalIdx, Map<Integer, JsonNode> objectsById,
-                                  Map<Integer, JsonNode> interfacesById, Map<String, JsonNode> operationsByUid,
+                                  Map<Integer, JsonNode> systemsById, Map<Integer, JsonNode> interfacesById, Map<String, JsonNode> operationsByUid,
                                   List<ArtifactNotice> notices) {
         CallNode node = new CallNode();
         node.diagramUid = diagramUid;
@@ -200,7 +201,7 @@ public class ScenarioDecomposer {
         }
 
         JsonNode serverObj = node.serverId != null ? objectsById.get(node.serverId) : null;
-        node.serverAppCode = serverObj != null ? textOrNull(serverObj, "alias") : null;
+        node.serverAppCode = resolveAppCode(serverObj, systemsById);
         if (node.serverId != null && serverObj == null) {
             notices.add(mapFailed("warning", details("missing_reference", "field", "end_object_id",
                     "value", String.valueOf(node.serverId), "message_uid", node.uid), node.pointer));
@@ -506,6 +507,14 @@ public class ScenarioDecomposer {
             if (property != null) tags.put(property, value);
         }
         return tags;
+    }
+
+    private static String resolveAppCode(JsonNode obj, Map<Integer, JsonNode> systemsById) {
+        if (obj == null) return null;
+        Integer systemId = intOrNull(obj, "system_id");
+        JsonNode system = systemId != null ? systemsById.get(systemId) : null;
+        String code = system != null ? textOrNull(system, "code") : null;
+        return code != null ? code : textOrNull(obj, "alias");
     }
 
     private static String textOrNull(JsonNode node, String field) {
