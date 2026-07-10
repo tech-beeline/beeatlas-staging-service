@@ -10,11 +10,6 @@ import ru.beeline.staging.product.dto.ProductSummary;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Scans fdm-products (GET /api/v1/product/info) for products that carry a Structurizr workspace —
- * one found artifact per product, keyed by its alias. Appending "/json" to structurizrApiUrl is the
- * adapter's job (see StructurizrSequenceAdapter); the pre-adapter only resolves which products qualify.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

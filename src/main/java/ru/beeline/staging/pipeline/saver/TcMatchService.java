@@ -13,10 +13,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Find-or-create + versioning for the tc identity, matched by tc_code — same pattern as
- * BiStepMatchService/InterfaceMatchService/OperationMatchService.
- */
 @Service
 @RequiredArgsConstructor
 public class TcMatchService {

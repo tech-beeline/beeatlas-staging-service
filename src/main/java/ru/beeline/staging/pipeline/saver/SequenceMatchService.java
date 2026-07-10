@@ -13,10 +13,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Find-or-create + versioning for the sequence identity, matched by (tc_id, key) — key is the
- * Structurizr dynamicView's own key (e.g. "UC01"), same pattern as BiStepMatchService/TcMatchService.
- */
 @Service
 @RequiredArgsConstructor
 public class SequenceMatchService {

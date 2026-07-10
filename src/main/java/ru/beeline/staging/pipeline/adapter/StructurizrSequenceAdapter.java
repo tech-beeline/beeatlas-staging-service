@@ -15,12 +15,6 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Downloads one product's Structurizr workspace export. artifactUid is the product alias (as found
- * by StructurizrSequencePreAdapter) — per AdapterWorker, metadata found by the pre-adapter is never
- * forwarded here, so structurizrApiUrl is re-resolved from fdm-products by alias, same as
- * SparxE2EAdapter re-resolves its scenario by uid alone.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

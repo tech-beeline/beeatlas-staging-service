@@ -36,11 +36,6 @@ camunda:
     job-execution:
       enabled: true
       lock-time-in-millis: 900000
-      core-pool-size: 1     # SpringJobExecutor runs asyncBefore continuations on its own Spring
-      max-pool-size: 1      # TaskExecutor, independent of our @Scheduled workers — default (3/10
-      queue-capacity: 100   # threads) let it race with external-task completion on the same
-                             # ExecutionEntity (OptimisticLockingException). Force single-threaded
-                             # here too, generous queue so job submission is never rejected.
     history-level: full
     history-time-to-live: P180D
     webapp:
@@ -58,11 +53,11 @@ staging:
     poll-interval-ms: 500
     lock-duration-ms: 30000
   recovery:
-    check-interval-ms: 300000      # 5 min — locked-but-expired external tasks + long-running-process warning
+    check-interval-ms: 300000      # 5 min
     stuck-threshold-minutes: 30
     auto-retry-count: 3
-    incident-retry-interval-ms: 30000  # StuckProcessMonitor.healIncidents — how often to retry exhausted-retry incidents
-    max-incident-auto-retries: 2       # give up after this many auto-heal attempts, leave as a permanent incident
+    incident-retry-interval-ms: 30000
+    max-incident-auto-retries: 2
   camunda:
     schema: ${STAGING_CAMUNDA_SCHEMA:staging_camunda}
   scheduler:
