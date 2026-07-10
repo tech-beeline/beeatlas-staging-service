@@ -10,6 +10,7 @@
                   exporterVersion="5.0.0">
 
   <bpmn:message id="Message_ConfigScanReady" name="config.scan.ready" />
+  <bpmn:error id="Error_ArtifactFailed" name="ArtifactFailed" errorCode="artifact-failed" />
 
   <bpmn:process id="artifact-pipeline-process"
                 name="Artifact Pipeline Process"
@@ -67,6 +68,12 @@
         <bpmn:outgoing>SubFlow_3</bpmn:outgoing>
       </bpmn:serviceTask>
 
+      <bpmn:boundaryEvent id="BoundaryError_Validator" attachedToRef="Task_Validator" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_ValidatorError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Validator" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_ValidatorError" sourceRef="BoundaryError_Validator" targetRef="SubEnd" />
+
       <bpmn:sequenceFlow id="SubFlow_3" sourceRef="Task_Validator" targetRef="Task_Transformer" />
 
       <bpmn:serviceTask id="Task_Transformer"
@@ -77,6 +84,12 @@
         <bpmn:incoming>SubFlow_3</bpmn:incoming>
         <bpmn:outgoing>SubFlow_4</bpmn:outgoing>
       </bpmn:serviceTask>
+
+      <bpmn:boundaryEvent id="BoundaryError_Transformer" attachedToRef="Task_Transformer" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_TransformerError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Transformer" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_TransformerError" sourceRef="BoundaryError_Transformer" targetRef="SubEnd" />
 
       <bpmn:sequenceFlow id="SubFlow_4" sourceRef="Task_Transformer" targetRef="Task_Saver" />
 
@@ -89,10 +102,19 @@
         <bpmn:outgoing>SubFlow_5</bpmn:outgoing>
       </bpmn:serviceTask>
 
+      <bpmn:boundaryEvent id="BoundaryError_Saver" attachedToRef="Task_Saver" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_SaverError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Saver" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_SaverError" sourceRef="BoundaryError_Saver" targetRef="SubEnd" />
+
       <bpmn:sequenceFlow id="SubFlow_5" sourceRef="Task_Saver" targetRef="SubEnd" />
 
       <bpmn:endEvent id="SubEnd" name="Item Done">
         <bpmn:incoming>SubFlow_5</bpmn:incoming>
+        <bpmn:incoming>SubFlow_ValidatorError</bpmn:incoming>
+        <bpmn:incoming>SubFlow_TransformerError</bpmn:incoming>
+        <bpmn:incoming>SubFlow_SaverError</bpmn:incoming>
       </bpmn:endEvent>
     </bpmn:subProcess>
 
@@ -134,6 +156,15 @@
       <bpmndi:BPMNShape id="SubEnd_di" bpmnElement="SubEnd">
         <dc:Bounds x="1062" y="110" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Validator_di" bpmnElement="BoundaryError_Validator">
+        <dc:Bounds x="692" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Transformer_di" bpmnElement="BoundaryError_Transformer">
+        <dc:Bounds x="822" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Saver_di" bpmnElement="BoundaryError_Saver">
+        <dc:Bounds x="952" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
         <dc:Bounds x="1192" y="112" width="36" height="36" />
         <bpmndi:BPMNLabel><dc:Bounds x="1198" y="155" width="24" height="14" /></bpmndi:BPMNLabel>
@@ -165,6 +196,24 @@
       <bpmndi:BPMNEdge id="SubFlow_5_di" bpmnElement="SubFlow_5">
         <di:waypoint x="1020" y="128" />
         <di:waypoint x="1062" y="128" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_ValidatorError_di" bpmnElement="SubFlow_ValidatorError">
+        <di:waypoint x="710" y="186" />
+        <di:waypoint x="710" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_TransformerError_di" bpmnElement="SubFlow_TransformerError">
+        <di:waypoint x="840" y="186" />
+        <di:waypoint x="840" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_SaverError_di" bpmnElement="SubFlow_SaverError">
+        <di:waypoint x="970" y="186" />
+        <di:waypoint x="970" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
         <di:waypoint x="1130" y="130" />

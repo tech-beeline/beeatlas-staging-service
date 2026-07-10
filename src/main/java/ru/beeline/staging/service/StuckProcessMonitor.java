@@ -20,7 +20,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -78,16 +77,11 @@ public class StuckProcessMonitor {
         healJobIncidents();
     }
 
-    private static final Set<String> NON_RETRYABLE_TOPICS = Set.of("validator", "transformer", "saver");
-
     private void healExternalTaskIncidents() {
         List<ExternalTask> exhausted = externalTaskService.createExternalTaskQuery()
                 .noRetriesLeft()
                 .list();
         for (ExternalTask task : exhausted) {
-            if (NON_RETRYABLE_TOPICS.contains(task.getTopicName())) {
-                continue;
-            }
             healOnce("externalTask", task.getId(), task.getTopicName(), task.getProcessInstanceId(),
                     () -> externalTaskService.setRetries(task.getId(), 1));
         }

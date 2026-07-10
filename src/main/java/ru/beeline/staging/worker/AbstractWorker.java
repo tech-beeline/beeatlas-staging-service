@@ -9,8 +9,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public abstract class AbstractWorker {
+
+    private static final String ARTIFACT_FAILED_ERROR_CODE = "artifact-failed";
+    private static final Set<String> BPMN_ERROR_TOPICS = Set.of("validator", "transformer", "saver");
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -48,7 +52,11 @@ public abstract class AbstractWorker {
             }
         } catch (Exception e) {
             log.error("Worker {} failed on task {}", workerId(), task.getId(), e);
-            externalTaskService.handleFailure(task.getId(), workerId(), e.getMessage(), e.toString(), 0, 0L);
+            if (BPMN_ERROR_TOPICS.contains(topic())) {
+                externalTaskService.handleBpmnError(task.getId(), workerId(), ARTIFACT_FAILED_ERROR_CODE, e.getMessage());
+            } else {
+                externalTaskService.handleFailure(task.getId(), workerId(), e.getMessage(), e.toString(), 0, 0L);
+            }
         }
     }
 
