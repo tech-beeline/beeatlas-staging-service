@@ -15,14 +15,17 @@ public class SparxE2ERepository {
 
     private static final String FIND_ALL_SCENARIOS = """
             SELECT DISTINCT
-                            d.ea_guid   AS uid,
-                            d.name      AS name,
-                            d.version   AS version,
-                            d.ea_guid   AS process_uid,
-                            d.name      AS process_name,
-                            d.notes     AS notes
-                        FROM t_diagram d
-                        WHERE d.stereotype = 'e2e_diagram'
+                d.ea_guid   AS uid,
+                d.name      AS name,
+                d.version   AS version,
+                p.ea_guid   AS process_uid,
+                p.name      AS process_name,
+                d.notes     AS notes
+            FROM t_diagram p
+                JOIN t_diagramobjects odd ON odd.diagram_id = p.diagram_id
+                JOIN t_object ref ON ref.object_id = odd.object_id AND ref.object_type = 'InteractionOccurrence'
+                JOIN t_diagram d ON d.diagram_id::text = ref.pdata1
+            WHERE p.stereotype = 'e2e_diagram'
             """;
 
     // Full raw export of one e2e scenario: entrance_diagram_uid/diagrams/objects/systems/interfaces/operations,
