@@ -136,8 +136,18 @@ public class ScenarioDecomposer {
         List<JsonNode> messages = new ArrayList<>();
         diagram.path("messages").forEach(messages::add);
 
+        Set<String> seenMessageUids = new HashSet<>();
         List<Integer> order = new ArrayList<>();
-        for (int i = 0; i < messages.size(); i++) order.add(i);
+        for (int i = 0; i < messages.size(); i++) {
+            String msgUid = textOrNull(messages.get(i), "uid");
+            if (msgUid != null && !seenMessageUids.add(msgUid)) {
+                String pointer = diagramIdx != null ? "/diagrams/" + diagramIdx + "/messages/" + i : "/diagrams/messages/" + i;
+                notices.add(notice("transform.data_loss", "info",
+                        details("duplicate_message_row", "message_uid", msgUid), pointer));
+                continue;
+            }
+            order.add(i);
+        }
         order.sort(Comparator.comparingInt(i -> intOrZero(messages.get(i), "seqno")));
 
         CallNode context = root;

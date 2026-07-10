@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TransformerWorker extends AbstractWorker {
 
+    private static final int MAX_NOTICES = 2000;
+
     private final List<ArtifactTransformer> transformers;
     private final RawDataRefRepository      rawDataRefRepository;
     private final ObjectMapper              objectMapper;
@@ -71,6 +73,10 @@ public class TransformerWorker extends AbstractWorker {
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             // TransformResult result = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
+            if (result.notices().size() > MAX_NOTICES) {
+                throw new IllegalStateException("Transform produced " + result.notices().size()
+                        + " notices for uid=" + uid + " (> " + MAX_NOTICES + ") — likely duplicate/cyclic raw data, refusing to save");
+            }
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
 
             ref.setCanonicalSnapshotJson(snapshotJson);
