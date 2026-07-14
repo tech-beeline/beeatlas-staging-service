@@ -39,12 +39,18 @@ public class AdminController {
     public ResponseEntity<Map<String, Object>> scanE2E() {
         List<Configuration> configs = configurationRepository.findByArtifactTypeAndIsActiveTrue("e2e-sequence");
         int started = 0;
+        int skipped = 0;
         for (Configuration config : configs) {
+            if (pipelineTickScheduler.isAlreadyRunning(config)) {
+                log.info("Skip configId={} — scan already running", config.getId());
+                skipped++;
+                continue;
+            }
             pipelineTickScheduler.startScan(config);
             started++;
         }
-        log.info("Manually started {} scan(s)", started);
-        return ResponseEntity.accepted().body(Map.of("startedCount", started));
+        log.info("Manually started {} scan(s), skipped {} already running", started, skipped);
+        return ResponseEntity.accepted().body(Map.of("startedCount", started, "skippedCount", skipped));
     }
 
     @PostMapping("/external-tasks/{taskId}/retry")

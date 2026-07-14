@@ -5,6 +5,7 @@ import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.util.List;
@@ -21,6 +22,9 @@ public abstract class AbstractWorker {
     @Autowired
     protected ExternalTaskService externalTaskService;
 
+    @Value("${staging.worker.lock-duration-ms:30000}")
+    protected long lockDurationMs;
+
     protected abstract String topic();
 
     protected abstract String workerId();
@@ -33,7 +37,7 @@ public abstract class AbstractWorker {
     public void poll() {
         List<LockedExternalTask> tasks = externalTaskService
                 .fetchAndLock(10, workerId())
-                .topic(topic(), 30_000L)
+                .topic(topic(), lockDurationMs)
                 .variables(variablesToFetch())
                 .execute();
 

@@ -51,7 +51,7 @@ staging:
       password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
   worker:
     poll-interval-ms: 500
-    lock-duration-ms: 30000
+    lock-duration-ms: 120000
   recovery:
     check-interval-ms: 300000      # 5 min
     stuck-threshold-minutes: 30

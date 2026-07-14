@@ -3,15 +3,12 @@ package ru.beeline.staging.pipeline.adapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.sparx.SparxE2ERepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.Optional;
 
 @Slf4j
 @Component
@@ -37,31 +34,17 @@ public class SparxE2EAdapter implements ArtifactAdapter {
             throw new IllegalStateException("Sparx EA returned empty response for uid=" + artifactUid);
         }
 
-        String contentHash = sha256(rawJson.getBytes(StandardCharsets.UTF_8));
+        byte[] content = rawJson.getBytes(StandardCharsets.UTF_8);
+        String contentHash = sha256(content);
 
-        Optional<RawDataRef> existing = rawDataRefRepository
-                .findTopByArtifactUidOrderByLoadedAtDesc(artifactUid);
+        RawDataRefRepository.UpsertResult result = rawDataRefRepository.upsertByContentHash(
+                artifactUid, TYPE, sourceId, content, contentHash, content.length);
 
-        long refId;
-        if (existing.isPresent() && contentHash.equals(existing.get().getContentHash())) {
-            RawDataRef ref = existing.get();
-            ref.setUpdatedAt(LocalDateTime.now());
-            refId = rawDataRefRepository.save(ref).getId();
-            log.info("Content unchanged for uid={}, reusing rawDataRefId={}", artifactUid, refId);
-        } else {
-            byte[] content = rawJson.getBytes(StandardCharsets.UTF_8);
-
-            RawDataRef ref = new RawDataRef();
-            ref.setArtifactUid(artifactUid);
-            ref.setArtifactType(TYPE);
-            ref.setSourceId(sourceId);
-            ref.setRawContent(content);
-            ref.setContentHash(contentHash);
-            ref.setSizeBytes((long) content.length);
-            ref.setLoadedAt(LocalDateTime.now());
-            ref.setUpdatedAt(LocalDateTime.now());
-            refId = rawDataRefRepository.save(ref).getId();
+        long refId = result.getId();
+        if (Boolean.TRUE.equals(result.getInserted())) {
             log.info("Stored raw data uid={}, rawDataRefId={}, bytes={}", artifactUid, refId, content.length);
+        } else {
+            log.info("Content unchanged for uid={}, reusing rawDataRefId={}", artifactUid, refId);
         }
 
         return Map.of("rawDataRefId", refId, "contentHash", contentHash);
