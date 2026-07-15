@@ -69,7 +69,7 @@ public class SparxE2ERepository {
                     		ea_guid as uid,
                     		name,
                     		0 as object_id
-                    	FROM t_diagram WHERE ea_guid=$1
+                    	FROM t_diagram WHERE ea_guid=?
                     	
                     	UNION DISTINCT
                     	SELECT
@@ -188,14 +188,14 @@ public class SparxE2ERepository {
                     	FROM cte_objects o
                     	JOIN t_object s ON s.object_id=o.system_id
                     )
-                    SELECT jsonb_build_object(
-                    	'entrance_diagram_uid', $1,
+                    SELECT (jsonb_build_object(
+                    	'entrance_diagram_uid', ?,
                     	'diagrams', COALESCE((SELECT jsonb_agg(d) FROM cte_diagram_detail d),'[]'::jsonb ),
                     	'objects', COALESCE((SELECT jsonb_agg(o) FROM cte_objects o),'[]'::jsonb),
                     	'systems' ,COALESCE((SELECT jsonb_agg(s) FROM cte_systems s),'[]'::jsonb),
                     	'interfaces', COALESCE((SELECT jsonb_agg(i) FROM cte_interfaces i),'[]'::jsonb),
                     	'operations', COALESCE((SELECT jsonb_agg(o) FROM cte_operations o),'[]'::jsonb)
-                    )
+                    ))::text
             """;
 
     private final JdbcTemplate sparxJdbcTemplate;
