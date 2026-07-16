@@ -12,7 +12,6 @@ import ru.beeline.staging.utils.JsonByteRangeLocator;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Records where a fragment lives inside an already-stored raw_data_ref, per ADR-005: a primary
@@ -29,7 +28,7 @@ public class RawDataContextService {
     private final RawDataRefRepository     rawDataRefRepository;
     private final ObjectMapper             objectMapper;
 
-    public UUID pointTo(Long rawDataRefId, String jsonPointer) {
+    public Long pointTo(Long rawDataRefId, String jsonPointer) {
         JsonByteRangeLocator.ByteRange byteRange = rawDataRefRepository.findById(rawDataRefId)
                 .map(RawDataRef::getRawContent)
                 .map(bytes -> JsonByteRangeLocator.locate(bytes, jsonPointer))
@@ -38,12 +37,20 @@ public class RawDataContextService {
             log.debug("Could not locate byte range for pointer={} in rawDataRefId={} — storing secondary-only context",
                     jsonPointer, rawDataRefId);
         }
+        return save(rawDataRefId, buildPosition(byteRange, jsonPointer));
+    }
 
+    /** No json_path available (free-text notice context, or none at all) — still satisfies the NOT NULL FK on artifact_notices. */
+    public Long pointToFreeText(Long rawDataRefId, String description) {
+        Map<String, Object> position = new LinkedHashMap<>();
+        position.put("secondary", Map.of("type", "free_text", "value", description == null ? "" : description));
+        return save(rawDataRefId, position);
+    }
+
+    private Long save(Long rawDataRefId, Map<String, Object> position) {
         RawDataContextEntity entity = new RawDataContextEntity();
         entity.setRawDataRefId(rawDataRefId);
-        entity.setFormat("json");
-        entity.setNavigationType("json_path");
-        entity.setPosition(toJson(buildPosition(byteRange, jsonPointer)));
+        entity.setPosition(toJson(position));
         return repository.save(entity).getId();
     }
 

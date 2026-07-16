@@ -6,5 +6,5 @@ import ru.beeline.staging.domain.canonical.OperationEntity;
 import java.util.Optional;
 
 public interface OperationRepository extends JpaRepository<OperationEntity, Long> {
-    Optional<OperationEntity> findByExtUid(String extUid);
+    Optional<OperationEntity> findByUid(String uid);
 }

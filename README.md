@@ -26,7 +26,7 @@ preAdapter → adapter → validator → transformer → saver
 
    `ValidateResult`/`TransformResult`/`SaveResult` (пакет `dto/notice`) кроме основного результата стадии (`TransformResult` — ещё и `snapshot`, `SaveResult` — ещё и `summary`) несут `List<ArtifactNotice> notices` — список примечательных фактов, которые модуль обнаружил на своей стадии (предупреждение валидации, "почему эта версия сущности была создана/сматчена с существующей" и т.п.). Сохранять notices руками не нужно: `ValidatorWorker`/`TransformerWorker` сами прогоняют их через `PipelineRunService.saveNotices(...)`; `Saver`, которому нужен `id` notice синхронно (чтобы проставить `matchNoticeId` на сохраняемую версию сущности), обращается к `ArtifactNoticeService` напрямую внутри своей транзакции — как это делает `E2ECanonicalSaver`. Живые примеры генерации notices: `E2ESequenceValidator` (warning по встроенным `validationError`) и `E2ECanonicalSaver` (provenance матчинга interface/operation/bi_step). Подробнее — раздел "Data lineage / notices" ниже.
 
-2. **Миграция.** Напиши `db/migration/V000N__<entity>.sql` со своими каноническими таблицами (по образцу `V0004__canonical_model_e2e.sql`). Эти таблицы видны только твоему `ArtifactSaver` — остальной пайплайн про них не знает.
+2. **Миграция.** Напиши `db/migration/V000N__<entity>.sql` со своими каноническими таблицами (по образцу `V0002__create_canonical_catalogs.sql` + `V0003__create_version_and_relation_tables.sql`: identity-таблица `id`+`uid`+`created_at`, отдельно `*_versions` со снимком и `raw_data_context_id`/`match_notice_id`). Эти таблицы видны только твоему `ArtifactSaver` — остальной пайплайн про них не знает. Заведи JPA-сущность в `domain/canonical/` и репозиторий в `repository/canonical/` **колонка-в-колонку** с миграцией — `hibernate.ddl-auto: none` не подскажет расхождение на старте, оно проявится только первым INSERT/SELECT.
 
 3. **Конфиг пайпа.** Добавь одну запись в `DEFINITIONS` в [`pipeline/PipelineDefinitions.java`](src/main/java/ru/beeline/staging/pipeline/PipelineDefinitions.java) — ключ это `artifactType`, значение — карта `этап → твой moduleCode()`:
 
@@ -78,11 +78,11 @@ Notice — запись о примечательном факте, которы
 | Таблица | Что хранит |
 |---|---|
 | `staging.notice_types` | Справочник различимых кодов (`code` уникален, `level` ∈ info/warning/error, `category` ∈ validation/transform/match). Строка создаётся автоматически при первом появлении кода (`state=pending`); человек может её `confirm` (легитимный, ожидаемый код) или `reject` (шумный/ложный — после этого новые occurrence с этим кодом больше не сохраняются). |
-| `staging.artifact_notices` | Сами occurrence — по одной строке на каждый вызов, привязаны к `raw_data_ref_id`, ссылаются на `notice_type_id`, несут `context`/`details`. |
+| `staging.artifact_notices` | Сами occurrence — по одной строке на каждый вызов, ссылаются на `notice_type_id` и `raw_data_context_id` (обязательная FK на `staging.raw_data_contexts`, точку в сыром JSON — `RawDataContextService` создаёт её на лету из `ArtifactNotice.context()`, если это json-pointer, либо как free-text fallback), несут `details`. |
 
 Поведение при обработке: если валидатор вернул хотя бы один notice с `level=error` — стадия падает (`IllegalStateException`), warning-и просто копятся в `noticeCount`/`validationWarningsCount` вывода стадии. Модули не пишут в эти таблицы напрямую — `ValidatorWorker`/`TransformerWorker` сохраняют notices через `PipelineRunService.saveNotices(...)`, а `Saver` — синхронно через `ArtifactNoticeService` (нужен id сразу же).
 
-Provenance-связь: колонка `match_notice_id` на `bi_step_versions`/`interface_versions`/`operation_versions`/`tc_versions`/`sequence_versions` указывает на notice, объясняющую появление этой версии — например коды `match.interface.created`, `match.operation.matched_by_ext_uid`, `match.bi_step.always_new` (у bi_step пока нет правила дедупликации — он всегда "новый").
+Provenance-связь: колонка `match_notice_id` на `product_versions`/`container_versions`/`tech_capability_versions`/`interface_versions`/`operation_versions`/`sequence_versions`/`bi_step_versions` указывает на notice, объясняющую появление этой версии — например коды `match.interface.created`, `match.operation.matched_by_uid`, `match.bi_step.always_new` (у bi_step пока нет правила дедупликации — он всегда "новый").
 
 Admin API для управления справочником кодов:
 - `GET /admin/notice-types?state=pending` — список кодов в заданном состоянии (по умолчанию `pending`);
@@ -91,17 +91,46 @@ Admin API для управления справочником кодов:
 
 Эндпоинта для просмотра отдельных occurrence пока нет — только уровень типов; сами occurrence смотрятся прямым SQL-запросом к `staging.artifact_notices` или через `match_notice_id`.
 
-## Каноническая модель Tc/Sequence (в разработке, ещё не подключена к пайплайну)
+## Каноническая модель product/container/tc/interface/operation/sequence
 
-`V0006__canonical_model_sequence.sql` добавляет схему для будущего `artifactType=sequence`, параллельную существующей e2e-модели:
+`V0001`–`V0004` определяют единую identity+version схему, общую для `artifactType=structurizr-sequence` (и частично переиспользуемую e2e-моделью): каждая сущность — это **identity-таблица** (`id` + `uid` + `created_at`, дедуп по `uid`) плюс отдельная **`*_versions`-таблица** (снимок конкретной выгрузки: поля, FK на предыдущий слой, `raw_data_context_id`, `match_notice_id`, `created_at`). JPA-сущности в `domain/canonical/` и репозитории в `repository/canonical/` следуют этим таблицам колонка-в-колонку — при правке миграции проверяй обе стороны, они расходятся легко и без ошибки схемы на старте (`hibernate.ddl-auto: none` не проверяет соответствие).
 
-- `tc`/`tc_versions` — Tc ("Технологическая Цепочка") — продуктовый аналог `bi_steps`/`bi_step_versions`;
-- `sequences`/`sequence_versions` — один Tc → один-или-много Sequence (аналога в e2e-модели нет);
-- `sequence_relation_versions` — рёбра caller→callee внутри Sequence (ссылаются на существующие `operation_versions` из e2e-модели).
+| Identity (`id`+`uid`) | Версии (`*_versions`) | Родитель по FK |
+|---|---|---|
+| `products` / `Product` | `product_versions` / `ProductVersion` | — |
+| `containers` / `Container` | `container_versions` / `ContainerVersion` | `product_version_id` |
+| `tech_capabilities` / `TechCapability` | `tech_capability_versions` / `TechCapabilityVersion` | — |
+| `interfaces` / `InterfaceEntity` | `interface_versions` / `InterfaceVersion` | `container_version_id` |
+| `operations` / `OperationEntity` | `operation_versions` / `OperationVersion` | `interface_version_id`, `tech_capability_version_id` |
+| `sequences` / `SequenceEntity` | `sequence_versions` / `SequenceVersion` | `tech_capability_version_id` |
+| — | `sequence_relation_versions` / `SequenceRelationVersion` | `sequence_version_id` → `operation_version_id` |
+| — | `operation_relation_versions` / `OperationRelationVersion` | `operation_version_id` → `related_operation_version_id` |
 
-**Осторожно с термином.** `staging.stages` и сущности `Stage`/`StageTc`/`StageTcVersion`/`StageSequence`/`StageSequenceRelation` — это **не** "стадия пайплайна" (pre-adapter/adapter/validator/transformer/saver из разделов выше), а отдельный справочник состояний/окружений, к которому привязываются версии Tc/Sequence: своя колонка `status` (active/inactive/deleted) и у `StageTcVersion` — `next_version_id`, указывающий на версию, которая её сменила (цепочка версий в рамках конкретного Stage).
+`StructurizrSequenceCanonicalSaver` записывает всё это строго в этом порядке (каждый следующий слой резолвит FK на предыдущий через in-memory map по `uid`, наполняемую соответствующим `*MatchService`: `ProductMatchService`, `ContainerMatchService`, `TechCapabilityMatchService`, `InterfaceMatchService`, `OperationMatchService`, `SequenceMatchService`).
 
-Статус: пока только миграция + JPA-сущности (`domain/canonical/Tc*`, `Sequence*`, `Stage*`) + Spring Data репозитории. Ни один `ArtifactValidator`/`Transformer`/`Saver` эту модель не читает и не пишет — `SequenceModelSaverService`, упомянутый в комментарии миграции как будущий потребитель, ещё не написан. Не путать `E2ESequenceValidator`/`E2ESequenceTransformer` — они работают со старой e2e-моделью (`artifactType=e2e-sequence`), "Sequence" в их имени про форму исходного JSON, а не про эти таблицы.
+**Осторожно с термином.** `staging.stages` и сущности `Stage`/`StageTc`/`StageTcVersion`/`StageSequence`/`StageSequenceRelation` — это **не** "стадия пайплайна" (pre-adapter/adapter/validator/transformer/saver из разделов выше), а отдельный справочник состояний/окружений, к которому привязываются версии ТС/Sequence: своя колонка `status` (active/inactive/deleted) и у `StageTcVersion` — `next_version_id`, указывающий на версию, которая её сменила (цепочка версий в рамках конкретного Stage). Эти таблицы (`stage_tech_capabilities`, `stage_tech_capability_versions`, `stage_sequences`, ...) пока не заполняются ни одним `Saver` — только миграция + JPA-сущности + репозитории.
+
+### Пайплайн structurizr-sequence
+
+Источник — `workspace.json` из Structurizr (C4-модель: `softwareSystem` → `container` → `component`). Продукт определяется через `model.properties.workspace_cmdb`, сматченный с `softwareSystem.properties."structurizr.dsl.identifier"` — один workspace может содержать несколько systems, обрабатывается только целевая.
+
+| Стадия | Модуль | Что делает |
+|---|---|---|
+| Pre-Adapter | `StructurizrSequencePreAdapter` | Опрашивает `fdm-products` и возвращает мнемоники (alias) всех продуктов с непустым `structurizrApiUrl` — то есть продуктов, для которых в Structurizr описана архитектура |
+| Adapter | `StructurizrSequenceAdapter` | Скачивает `{structurizrApiUrl}/json` для продукта, дедуп по `content_hash` в `raw_data_refs` |
+| Validator | `StructurizrSequenceValidator` | Структурная проверка + бизнес-правило: как минимум один `dynamicView.relationships[].description` должен резолвиться (см. ниже) в операцию, реально объявленную в `properties` одного из `type=api` компонентов продукта — иначе `error`-notice и стадия падает |
+| Transformer | `StructurizrDynamicViewDecomposer` (вызывается из `StructurizrSequenceTransformer`) | Раскладывает workspace.json на снимок `StructurizrSequenceSnapshot` (product/containers/techCapabilities/interfaces/operations/sequences/sequenceRelations/operationRelations) строго в порядке зависимостей из `structurizr-sequence-transform-rules.md` |
+| Saver | `StructurizrSequenceCanonicalSaver` | См. таблицу выше |
+
+Извлечение по типам элементов C4:
+
+- `container` → `containers`/`container_versions`, identity-`uid` = `properties.external_name`;
+- `component(type=capability)` → `tech_capabilities`/`tech_capability_versions`, `uid` = `{cmdb}.{properties.code}`;
+- `component(type=api)` → `interfaces`/`interface_versions`, `uid` = `properties.external_name`;
+- ключи `properties` такого компонента (кроме служебных — `external_name`, `api_url`, `protocol`, `version`, `tc`, `code`, `parents`, `source`) → `operations`/`operation_versions`, `uid` = `{interface_uid}_{normalized_name}`; значение — SLA-строка `RPS=..;LATENCY=..;ERROR_RATE=..;TC=..` (поддержаны оба разделителя, `:` и `=`);
+- `views.dynamicViews[]`, отфильтрованные по `elementId` целевой системы → `sequences`/`sequence_versions`, `uid` = `key`, привязка к ТС через `key` (как `{cmdb}.{key}`, либо `key` уже содержит точку).
+
+Каждый шаг `dynamicView.relationships[]` резолвится в операцию через `StructurizrParsingUtils.canonicalOperationKey(description)` — тот же формат ключа (`"{METHOD} {path}"` для REST, нижний регистр имени метода для SOAP), которым при извлечении `operations` индексируется ключ свойства интерфейса; это тот же resolver, что использует Validator для своей проверки. Первый relationship диаграммы (минимальный `order`) определяет "инициатора" (`relatedCallerId`/`sourceId`): вызовы от инициатора идут в `sequence_relation_versions`, остальные — в `operation_relation_versions` (caller резолвится по элементу-получателю предыдущего шага цепочки).
 
 ### Один Camunda-процесс, один реальный Pre-Adapter
 

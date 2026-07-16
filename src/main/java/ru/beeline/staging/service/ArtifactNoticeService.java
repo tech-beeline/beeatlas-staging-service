@@ -16,7 +16,6 @@ import ru.beeline.staging.repository.NoticeTypeRepository;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -39,19 +38,19 @@ public class ArtifactNoticeService {
                 continue;
             }
 
-            // A json_path (starting with "/") in context() gets materialized into raw_data_context;
-            // a plain descriptive JSON blob (e.g. {"stage":"validator",...}) is left as free-text context.
-            UUID rawDataContextId = notice.rawDataContextId();
+            // artifact_notices.raw_data_context_id is NOT NULL: a json_path (starting with "/") in
+            // context() gets materialized with its byte range, everything else falls back to a
+            // free-text context row so the FK is always satisfiable.
+            Long rawDataContextId = notice.rawDataContextId();
             String contextText = notice.context();
-            if (rawDataContextId == null && contextText != null && contextText.startsWith("/")) {
-                rawDataContextId = rawDataContextService.pointTo(rawDataRefId, contextText);
-                contextText = null;
+            if (rawDataContextId == null) {
+                rawDataContextId = (contextText != null && contextText.startsWith("/"))
+                        ? rawDataContextService.pointTo(rawDataRefId, contextText)
+                        : rawDataContextService.pointToFreeText(rawDataRefId, contextText);
             }
 
             ArtifactNoticeEntity entity = new ArtifactNoticeEntity();
             entity.setNoticeTypeId(type.getId());
-            entity.setRawDataRefId(rawDataRefId);
-            entity.setContext(contextText);
             entity.setDetails(notice.details());
             entity.setRawDataContextId(rawDataContextId);
             ArtifactNoticeEntity persisted = artifactNoticeRepository.save(entity);

@@ -19,11 +19,8 @@ public class SequenceRelationVersion {
     @Column(name = "sequence_version_id")
     private Long sequenceVersionId;
 
-    @Column(name = "caller_operation_version_id")
-    private Long callerOperationVersionId;
-
-    @Column(name = "callee_operation_version_id")
-    private Long calleeOperationVersionId;
+    @Column(name = "operation_version_id")
+    private Long operationVersionId;
 
     @Column(name = "call_order")
     private Integer callOrder;
@@ -31,14 +28,11 @@ public class SequenceRelationVersion {
     @Column(name = "stereotype")
     private String stereotype;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
+    @Column(name = "raw_data_context_id")
+    private Long rawDataContextId;
 
-    @Column(name = "batch_id")
-    private Long batchId;
-
-    @Column(name = "context")
-    private String context;
+    @Column(name = "match_notice_id")
+    private Long matchNoticeId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

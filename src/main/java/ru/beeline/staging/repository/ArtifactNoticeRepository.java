@@ -7,7 +7,5 @@ import java.util.List;
 
 public interface ArtifactNoticeRepository extends JpaRepository<ArtifactNoticeEntity, Long> {
 
-    List<ArtifactNoticeEntity> findByRawDataRefId(Long rawDataRefId);
-
     List<ArtifactNoticeEntity> findByNoticeTypeId(Long noticeTypeId);
 }

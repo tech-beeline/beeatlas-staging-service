@@ -4,8 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.OffsetDateTime;
-import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -20,18 +19,12 @@ public class ArtifactNoticeEntity {
     @Column(name = "notice_type_id", nullable = false)
     private Long noticeTypeId;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
-
-    @Column(name = "context")
-    private String context;
-
-    @Column(name = "raw_data_context_id")
-    private UUID rawDataContextId;
+    @Column(name = "raw_data_context_id", nullable = false)
+    private Long rawDataContextId;
 
     @Column(name = "details")
     private String details;
 
     @Column(name = "created_at", nullable = false)
-    private OffsetDateTime createdAt = OffsetDateTime.now();
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

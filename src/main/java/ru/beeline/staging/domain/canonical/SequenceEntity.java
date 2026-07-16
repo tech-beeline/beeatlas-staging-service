@@ -16,14 +16,8 @@ public class SequenceEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tc_id", nullable = false)
-    private Long tcId;
-
-    @Column(name = "tc_code", nullable = false)
-    private String tcCode;
-
-    @Column(name = "key")
-    private String key;
+    @Column(name = "uid", nullable = false)
+    private String uid;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

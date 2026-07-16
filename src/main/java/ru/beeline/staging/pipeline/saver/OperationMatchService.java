@@ -24,38 +24,35 @@ public class OperationMatchService {
     private final ArtifactNoticeService      noticeService;
 
     @Transactional
-    public OperationVersion matchOrCreate(String extUid, String name, String type,
+    public OperationVersion matchOrCreate(String uid, String extUid, String name, String type,
                                            Double rps, Double latency, Double errorRate,
+                                           String description, String returnType, Long techCapabilityVersionId,
                                            InterfaceVersion ifaceVersionOrNull, String jsonPointer,
                                            Long rawDataRefId, Long batchId) {
         boolean[] created = {false};
-        OperationEntity entity = operationRepository.findByExtUid(extUid).orElseGet(() -> {
+        OperationEntity entity = operationRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
             OperationEntity e = new OperationEntity();
-            e.setExtUid(extUid);
+            e.setUid(uid);
             e.setCreatedAt(LocalDateTime.now());
             return operationRepository.save(e);
         });
-        if (entity.getInterfaceId() == null && ifaceVersionOrNull != null) {
-            entity.setInterfaceId(ifaceVersionOrNull.getInterfaceId());
-        }
-        entity.setName(name);
-        entity.setType(type);
-        operationRepository.save(entity);
 
-        String code = created[0] ? "match.operation.created" : "match.operation.matched_by_ext_uid";
-        ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, extUid, jsonPointer);
+        String code = created[0] ? "match.operation.created" : "match.operation.matched_by_uid";
+        ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
         OperationVersion version = new OperationVersion();
         version.setOperationId(entity.getId());
         version.setInterfaceVersionId(ifaceVersionOrNull != null ? ifaceVersionOrNull.getId() : null);
+        version.setExtUid(extUid);
         version.setName(name);
         version.setType(type);
         version.setRps(toDecimal(rps));
         version.setLatency(toDecimal(latency));
         version.setErrorRate(toDecimal(errorRate));
-        version.setRawDataRefId(rawDataRefId);
-        version.setBatchId(batchId);
+        version.setDescription(description);
+        version.setReturnType(returnType);
+        version.setTechCapabilityVersionId(techCapabilityVersionId);
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);

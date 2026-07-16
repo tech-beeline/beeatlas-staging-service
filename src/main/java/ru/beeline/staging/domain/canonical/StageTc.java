@@ -7,7 +7,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "stage_tc", schema = "staging")
+@Table(name = "stage_tech_capabilities", schema = "staging")
 public class StageTc {
 
     @Id
@@ -17,7 +17,7 @@ public class StageTc {
     @Column(name = "stage_id", nullable = false)
     private Long stageId;
 
-    @Column(name = "tc_id")
+    @Column(name = "tech_capability_id")
     private Long tcId;
 
     @Column(name = "status")

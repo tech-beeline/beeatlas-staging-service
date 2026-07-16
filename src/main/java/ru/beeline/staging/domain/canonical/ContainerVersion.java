@@ -4,21 +4,23 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "bi_step_versions", schema = "staging")
-public class BiStepVersion {
+@Table(name = "container_versions", schema = "staging")
+public class ContainerVersion {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "bi_step_id")
-    private Long biStepId;
+    @Column(name = "container_id")
+    private Long containerId;
+
+    @Column(name = "product_version_id")
+    private Long productVersionId;
 
     @Column(name = "ext_uid")
     private String extUid;
@@ -26,17 +28,14 @@ public class BiStepVersion {
     @Column(name = "name")
     private String name;
 
-    @Column(name = "rps")
-    private BigDecimal rps;
+    @Column(name = "version")
+    private String version;
 
-    @Column(name = "latency")
-    private BigDecimal latency;
+    @Column(name = "description")
+    private String description;
 
-    @Column(name = "error_rate")
-    private BigDecimal errorRate;
-
-    @Column(name = "source_id")
-    private String sourceId;
+    @Column(name = "technology")
+    private String technology;
 
     @Column(name = "raw_data_context_id")
     private Long rawDataContextId;

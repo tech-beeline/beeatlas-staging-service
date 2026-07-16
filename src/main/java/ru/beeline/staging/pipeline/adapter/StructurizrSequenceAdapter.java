@@ -73,6 +73,7 @@ public class StructurizrSequenceAdapter implements ArtifactAdapter {
             ref.setArtifactUid(artifactUid);
             ref.setArtifactType(TYPE);
             ref.setSourceId(sourceId);
+            ref.setFormat("json");
             ref.setRawContent(content);
             ref.setContentHash(contentHash);
             ref.setSizeBytes((long) content.length);

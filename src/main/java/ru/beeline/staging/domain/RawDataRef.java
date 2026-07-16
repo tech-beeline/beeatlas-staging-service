@@ -27,6 +27,9 @@ public class RawDataRef {
     @Column(name = "source_id")
     private String sourceId;
 
+    @Column(name = "format")
+    private String format;
+
     @Column(name = "raw_content", columnDefinition = "bytea")
     private byte[] rawContent;
 

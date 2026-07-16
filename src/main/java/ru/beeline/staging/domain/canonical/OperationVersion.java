@@ -6,7 +6,6 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Getter
 @Setter
@@ -24,6 +23,9 @@ public class OperationVersion {
     @Column(name = "interface_version_id")
     private Long interfaceVersionId;
 
+    @Column(name = "ext_uid")
+    private String extUid;
+
     @Column(name = "name", nullable = false)
     private String name;
 
@@ -39,21 +41,21 @@ public class OperationVersion {
     @Column(name = "error_rate")
     private BigDecimal errorRate;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
+    @Column(name = "description")
+    private String description;
 
-    @Column(name = "batch_id")
-    private Long batchId;
+    @Column(name = "return_type")
+    private String returnType;
 
-    @Column(name = "context")
-    private String context;
+    @Column(name = "tech_capability_version_id")
+    private Long techCapabilityVersionId;
 
     @Column(name = "raw_data_context_id")
-    private UUID rawDataContextId;
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    private Long rawDataContextId;
 
     @Column(name = "match_notice_id")
     private Long matchNoticeId;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 }

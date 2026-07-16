@@ -23,7 +23,7 @@ public class StructurizrSequencePreAdapter implements ArtifactPreAdapter {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Scans fdm-products for products with a Structurizr workspace"; }
+    public String description() { return "Lists product mnemonics that have an architecture described in Structurizr (structurizrApiUrl set in fdm-products)"; }
 
     @Override
     public List<FoundArtifact> scan(Configuration config) {
@@ -48,6 +48,6 @@ public class StructurizrSequencePreAdapter implements ArtifactPreAdapter {
         }
         return found.stream()
                 .sorted(Comparator.comparing(FoundArtifact::uid))
-                .limit(10).collect(Collectors.toUnmodifiableList());
+                .collect(Collectors.toUnmodifiableList());
     }
 }

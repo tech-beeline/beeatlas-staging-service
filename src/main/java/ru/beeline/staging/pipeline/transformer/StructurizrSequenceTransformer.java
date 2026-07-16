@@ -21,7 +21,7 @@ public class StructurizrSequenceTransformer implements ArtifactTransformer {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Maps views.dynamicViews of a Structurizr workspace export onto the canonical Tc/Sequence model"; }
+    public String description() { return "Maps a Structurizr workspace export (product/container/tc/interface/operation/dynamicView) onto the canonical model"; }
 
     @Override
     public TransformResult transform(String artifactUid, String rawContent) throws Exception {
@@ -29,9 +29,11 @@ public class StructurizrSequenceTransformer implements ArtifactTransformer {
         StructurizrDynamicViewDecomposer.Result result = decomposer.decompose(root, artifactUid);
         StructurizrSequenceSnapshot snapshot = result.snapshot();
 
-        log.info("Transformed structurizr-sequence uid={}: sequences={}, interfaces={}, operations={}, sequenceRelations={}, notices={}",
-                artifactUid, snapshot.getSequences().size(), snapshot.getInterfaces().size(),
-                snapshot.getOperations().size(), snapshot.getSequenceRelations().size(), result.notices().size());
+        log.info("Transformed structurizr-sequence uid={}: containers={}, techCapabilities={}, interfaces={}, operations={}, " +
+                        "sequences={}, sequenceRelations={}, operationRelations={}, notices={}",
+                artifactUid, snapshot.getContainers().size(), snapshot.getTechCapabilities().size(), snapshot.getInterfaces().size(),
+                snapshot.getOperations().size(), snapshot.getSequences().size(), snapshot.getSequenceRelations().size(),
+                snapshot.getOperationRelations().size(), result.notices().size());
 
         return TransformResult.of(snapshot, result.notices());
     }

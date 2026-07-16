@@ -22,8 +22,9 @@ public class InterfaceMatchService {
     private final ArtifactNoticeService      noticeService;
 
     @Transactional
-    public InterfaceVersion matchOrCreate(String uid, String extUid, String protocol, String source,
-                                           String jsonPointer, Long rawDataRefId, Long batchId) {
+    public InterfaceVersion matchOrCreate(String uid, String extUid, String protocol, String name,
+                                           String specLink, String version, String description, String sourceMetric,
+                                           Long containerVersionId, String jsonPointer, Long rawDataRefId, Long batchId) {
         boolean[] created = {false};
         InterfaceEntity entity = interfaceRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -36,17 +37,20 @@ public class InterfaceMatchService {
         String code = created[0] ? "match.interface.created" : "match.interface.matched_by_uid";
         ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
-        InterfaceVersion version = new InterfaceVersion();
-        version.setInterfaceId(entity.getId());
-        version.setExtUid(extUid);
-        version.setProtocol(protocol);
-        version.setSource(source);
-        version.setRawDataRefId(rawDataRefId);
-        version.setBatchId(batchId);
-        version.setCreatedAt(LocalDateTime.now());
-        version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
-        version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
-        return interfaceVersionRepository.save(version);
+        InterfaceVersion versionEntity = new InterfaceVersion();
+        versionEntity.setInterfaceId(entity.getId());
+        versionEntity.setExtUid(extUid);
+        versionEntity.setProtocol(protocol);
+        versionEntity.setName(name);
+        versionEntity.setSpecLink(specLink);
+        versionEntity.setVersion(version);
+        versionEntity.setDescription(description);
+        versionEntity.setSourceMetric(sourceMetric);
+        versionEntity.setContainerVersionId(containerVersionId);
+        versionEntity.setCreatedAt(LocalDateTime.now());
+        versionEntity.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
+        versionEntity.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        return interfaceVersionRepository.save(versionEntity);
     }
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {

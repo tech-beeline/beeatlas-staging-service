@@ -37,6 +37,12 @@ public class ArtifactBatch {
     @Column(name = "operations_count", nullable = false)
     private int operationsCount;
 
+    @Column(name = "products_count", nullable = false)
+    private int productsCount;
+
+    @Column(name = "containers_count", nullable = false)
+    private int containersCount;
+
     @Column(name = "is_current", nullable = false)
     private boolean current = true;
 

@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Getter
 @Setter
@@ -26,24 +25,30 @@ public class InterfaceVersion {
     @Column(name = "protocol")
     private String protocol;
 
-    @Column(name = "source")
-    private String source;
+    @Column(name = "name")
+    private String name;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
+    @Column(name = "spec_link")
+    private String specLink;
 
-    @Column(name = "batch_id")
-    private Long batchId;
+    @Column(name = "version")
+    private String version;
 
-    @Column(name = "context")
-    private String context;
+    @Column(name = "description")
+    private String description;
+
+    @Column(name = "source_metric")
+    private String sourceMetric;
+
+    @Column(name = "container_version_id")
+    private Long containerVersionId;
 
     @Column(name = "raw_data_context_id")
-    private UUID rawDataContextId;
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    private Long rawDataContextId;
 
     @Column(name = "match_notice_id")
     private Long matchNoticeId;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 }

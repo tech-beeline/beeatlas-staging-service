@@ -9,24 +9,24 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "operation_relation_versions", schema = "staging")
-public class OperationRelationVersion {
+@Table(name = "tech_capability_versions", schema = "staging")
+public class TechCapabilityVersion {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "operation_version_id")
-    private Long operationVersionId;
+    @Column(name = "tech_capability_id")
+    private Long techCapabilityId;
 
-    @Column(name = "related_operation_version_id", nullable = false)
-    private Long relatedOperationVersionId;
+    @Column(name = "ext_uid")
+    private String extUid;
 
-    @Column(name = "call_order")
-    private Integer callOrder;
+    @Column(name = "name")
+    private String name;
 
-    @Column(name = "stereotype")
-    private String stereotype;
+    @Column(name = "description")
+    private String description;
 
     @Column(name = "raw_data_context_id")
     private Long rawDataContextId;

@@ -81,8 +81,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
             InterfaceVersion version = interfaceMatchService.matchOrCreate(
-                    draft.getUid(), draft.getExtUid(), draft.getProtocol(), draft.getSource(),
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getUid(), draft.getExtUid(), draft.getProtocol(), null,
+                    null, null, null, null,
+                    null, draft.getContext(), rawDataRefId, batchId);
             interfaceVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -92,8 +93,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                     ? interfaceVersionsByUid.get(draft.getInterfaceUid())
                     : null;
             OperationVersion version = operationMatchService.matchOrCreate(
-                    draft.getExtUid(), draft.getName(), draft.getType(),
+                    draft.getExtUid(), draft.getExtUid(), draft.getName(), draft.getType(),
                     draft.getRps(), draft.getLatency(), draft.getErrorRate(),
+                    null, null, null,
                     ifaceVersion, draft.getContext(), rawDataRefId, batchId);
             operationVersionsByExtUid.put(draft.getExtUid(), version);
         }
@@ -119,8 +121,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             relation.setOperationVersionId(op.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
-            relation.setRawDataRefId(rawDataRefId);
-            relation.setBatchId(batchId);
             relation.setCreatedAt(now);
             biStepRelationVersionRepository.save(relation);
             relationsSaved++;
@@ -136,11 +136,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             }
             OperationRelationVersion relation = new OperationRelationVersion();
             relation.setOperationVersionId(caller.getId());
-            relation.setCalleeOperationVersionId(callee.getId());
+            relation.setRelatedOperationVersionId(callee.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
-            relation.setRawDataRefId(rawDataRefId);
-            relation.setBatchId(batchId);
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
             operationRelationsSaved++;

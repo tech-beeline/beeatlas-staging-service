@@ -9,14 +9,14 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "operations", schema = "staging")
-public class OperationEntity {
+@Table(name = "tech_capabilities", schema = "staging")
+public class TechCapability {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "uid")
+    @Column(name = "uid", nullable = false, unique = true)
     private String uid;
 
     @Column(name = "created_at")

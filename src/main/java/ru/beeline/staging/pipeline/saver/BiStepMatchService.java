@@ -44,14 +44,12 @@ public class BiStepMatchService {
 
         BiStepVersion version = new BiStepVersion();
         version.setBiStepId(entity.getId());
+        version.setExtUid(externalGuid);
         version.setName(name);
         version.setRps(toDecimal(rps));
         version.setLatency(toDecimal(latency));
         version.setErrorRate(toDecimal(errorRate));
-        version.setExternalGuid(externalGuid);
         version.setSourceId(sourceId);
-        version.setRawDataRefId(rawDataRefId);
-        version.setBatchId(batchId);
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);

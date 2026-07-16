@@ -9,15 +9,18 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "tc_versions", schema = "staging")
-public class TcVersion {
+@Table(name = "product_versions", schema = "staging")
+public class ProductVersion {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tc_id")
-    private Long tcId;
+    @Column(name = "product_id")
+    private Long productId;
+
+    @Column(name = "ext_uid")
+    private String extUid;
 
     @Column(name = "name")
     private String name;
@@ -25,18 +28,15 @@ public class TcVersion {
     @Column(name = "description")
     private String description;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
+    @Column(name = "author")
+    private String author;
 
-    @Column(name = "batch_id")
-    private Long batchId;
-
-    @Column(name = "context")
-    private String context;
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    @Column(name = "raw_data_context_id")
+    private Long rawDataContextId;
 
     @Column(name = "match_notice_id")
     private Long matchNoticeId;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 }

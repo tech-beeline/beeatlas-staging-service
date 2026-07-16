@@ -149,6 +149,15 @@ public class PipelineRunService {
     public ArtifactBatch createBatch(String artifactUid, String artifactType,
                                      Long runId, Long rawDataRefId,
                                      int biStepsCount, int interfacesCount, int operationsCount) {
+        return createBatch(artifactUid, artifactType, runId, rawDataRefId,
+                biStepsCount, interfacesCount, operationsCount, 0, 0);
+    }
+
+    @Transactional
+    public ArtifactBatch createBatch(String artifactUid, String artifactType,
+                                     Long runId, Long rawDataRefId,
+                                     int biStepsCount, int interfacesCount, int operationsCount,
+                                     int productsCount, int containersCount) {
         batchRepository.clearCurrentFlag(artifactUid, artifactType);
 
         ArtifactBatch batch = new ArtifactBatch();
@@ -159,12 +168,14 @@ public class PipelineRunService {
         batch.setBiStepsCount(biStepsCount);
         batch.setInterfacesCount(interfacesCount);
         batch.setOperationsCount(operationsCount);
+        batch.setProductsCount(productsCount);
+        batch.setContainersCount(containersCount);
         batch.setCurrent(true);
         batch.setCreatedAt(LocalDateTime.now());
 
         ArtifactBatch saved = batchRepository.save(batch);
-        log.info("Created artifact batch id={} for uid={} type={} (biSteps={}, ifaces={}, ops={})",
-                saved.getId(), artifactUid, artifactType, biStepsCount, interfacesCount, operationsCount);
+        log.info("Created artifact batch id={} for uid={} type={} (biSteps={}, ifaces={}, ops={}, products={}, containers={})",
+                saved.getId(), artifactUid, artifactType, biStepsCount, interfacesCount, operationsCount, productsCount, containersCount);
         return saved;
     }
 
