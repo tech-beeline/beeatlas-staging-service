@@ -20,21 +20,10 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Maps a Structurizr workspace export's views.dynamicViews onto the canonical Tc/Sequence model, per
- * structurizr-sequence-extract.md: each dynamicView is a Sequence, its ordered relationships[] form a
- * linear call chain (Structurizr dynamicViews number steps 1..N — there's no nesting/recursion the way
- * Sparx e2e messages have), and response=true relationships are return messages, not calls.
- */
 @Component
 @RequiredArgsConstructor
 public class StructurizrDynamicViewDecomposer {
 
-    // Authoring convention (see "Сценарии использования" vision doc): relationship description is
-    // multi-line — first line is a human-readable message, last line is the real endpoint that
-    // becomes the operation's identity ("GET /index.html"), and an optional middle line names the
-    // TC of the external system being called ("BC-012345"). A single-line description (no \n at
-    // all) is treated as the endpoint itself — some authors skip the descriptive first line.
     private static final Pattern HTTP_METHOD_PATTERN = Pattern.compile("^(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\\b", Pattern.CASE_INSENSITIVE);
 
     private final ObjectMapper objectMapper;
@@ -70,8 +59,6 @@ public class StructurizrDynamicViewDecomposer {
 
             String key = textOrNull(dynamicView, "key");
             if (key == null || key.isBlank()) {
-                // Per-item skip, not a whole-artifact failure — same reasoning as the validator's
-                // downgrade of this exact case (see StructurizrSequenceValidator).
                 notices.add(mapFailed("warning", details("missing_required_field", "field", "key"), pointer));
                 continue;
             }
@@ -163,10 +150,6 @@ public class StructurizrDynamicViewDecomposer {
         }
     }
 
-    // ------------------------------------------------------------------
-    // model.* indexing — people/softwareSystems(+containers+components)/deploymentNodes, recursively
-    // ------------------------------------------------------------------
-
     private void indexModel(JsonNode model, Map<String, ElementInfo> elementsById, Map<String, RelationshipInfo> relationshipsById) {
         for (JsonNode person : model.path("people")) {
             indexElement(person, "person", elementsById, relationshipsById);
@@ -217,10 +200,6 @@ public class StructurizrDynamicViewDecomposer {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
-
     private ArtifactNotice mapFailed(String level, Map<String, Object> details, String pointer) {
         return notice("structurizr-sequence.transform.map_failed", level, details, pointer);
     }
@@ -267,7 +246,6 @@ public class StructurizrDynamicViewDecomposer {
         for (int i = 0; i < lines.length; i++) lines[i] = lines[i].trim();
 
         if (lines.length == 1) {
-            // No separate message line — treat the single line as the endpoint itself.
             return new RelationshipText(null, null, lines[0]);
         }
         String message  = lines[0];

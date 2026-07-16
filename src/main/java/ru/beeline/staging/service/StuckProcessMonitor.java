@@ -4,9 +4,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.camunda.bpm.engine.ExternalTaskService;
 import org.camunda.bpm.engine.HistoryService;
+import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.externaltask.ExternalTask;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
+import org.camunda.bpm.engine.runtime.Incident;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.event.EventListener;
@@ -17,6 +19,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -26,12 +30,18 @@ public class StuckProcessMonitor {
     private final ExternalTaskService externalTaskService;
     private final RuntimeService      runtimeService;
     private final HistoryService      historyService;
+    private final ManagementService   managementService;
 
     @Value("${staging.recovery.stuck-threshold-minutes:30}")
     private int stuckThresholdMinutes;
 
     @Value("${staging.recovery.auto-retry-count:3}")
     private int autoRetryCount;
+
+    @Value("${staging.recovery.max-incident-auto-retries:2}")
+    private int maxIncidentAutoRetries;
+
+    private final Map<String, Integer> incidentRetryAttempts = new ConcurrentHashMap<>();
 
     @EventListener(ApplicationStartedEvent.class)
     public void logResumedOnStartup() {
@@ -59,17 +69,55 @@ public class StuckProcessMonitor {
                 .lockExpirationBefore(threshold)
                 .list();
         resetRetries(lockedStuck, "locked > " + stuckThresholdMinutes + " min");
+    }
 
-        // A task with retries=0 is a Camunda incident, not a lock waiting to fire — fetchAndLock will
-        // never pick it up again on its own (unlike the lockExpirationBefore case above), so an
-        // external error (e.g. the 5xx an adapter's HTTP call got back) can otherwise wedge that one
-        // artifact's iteration forever. Since BPMN multi-instance is isSequential=false, this no
-        // longer blocks sibling artifacts in the same scan — but the stuck iteration itself still
-        // needs its retries reset before it will run again.
+    @Scheduled(fixedDelayString = "${staging.recovery.incident-retry-interval-ms:30000}")
+    public void healIncidents() {
+        healExternalTaskIncidents();
+        healJobIncidents();
+    }
+
+    private void healExternalTaskIncidents() {
         List<ExternalTask> exhausted = externalTaskService.createExternalTaskQuery()
                 .noRetriesLeft()
                 .list();
-        resetRetries(exhausted, "retries exhausted (incident)");
+        for (ExternalTask task : exhausted) {
+            healOnce("externalTask", task.getId(), task.getTopicName(), task.getProcessInstanceId(),
+                    () -> externalTaskService.setRetries(task.getId(), 1));
+        }
+    }
+
+    private void healJobIncidents() {
+        List<Incident> failedJobs = runtimeService.createIncidentQuery()
+                .incidentType(Incident.FAILED_JOB_HANDLER_TYPE)
+                .list();
+        for (Incident incident : failedJobs) {
+            String jobId = incident.getConfiguration();
+            healOnce("job", jobId, incident.getActivityId(), incident.getProcessInstanceId(),
+                    () -> managementService.setJobRetries(jobId, 1));
+        }
+    }
+
+    private void healOnce(String kind, String id, String topicOrActivity, String processInstanceId, Runnable resetRetries) {
+        int attempts = incidentRetryAttempts.getOrDefault(id, 0);
+        if (attempts >= maxIncidentAutoRetries) {
+            return;
+        }
+
+        attempts++;
+        incidentRetryAttempts.put(id, attempts);
+        log.warn("Auto-healing {} incident id={} topic/activity={} processInstance={} (attempt {}/{})",
+                kind, id, topicOrActivity, processInstanceId, attempts, maxIncidentAutoRetries);
+        try {
+            resetRetries.run();
+        } catch (Exception e) {
+            log.error("Failed to reset retries for {} {}", kind, id, e);
+        }
+
+        if (attempts == maxIncidentAutoRetries) {
+            log.warn("{} id={} won't be auto-retried again if it fails once more — left as a permanent incident needing manual retry",
+                    kind, id);
+        }
     }
 
     private void resetRetries(List<ExternalTask> tasks, String reason) {

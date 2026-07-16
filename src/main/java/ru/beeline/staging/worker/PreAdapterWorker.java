@@ -56,12 +56,6 @@ public class PreAdapterWorker extends AbstractWorker {
         return List.of("configurationId", "artifactType");
     }
 
-    /** artifactRefs must be visible to the multi-instance's camunda:collection expression at the
-     *  process scope — pre-adapter runs once per scan (no concurrent writers), so there's nothing
-     *  to race with, unlike Adapter/Validator/Transformer/Saver's per-iteration output. */
-    @Override
-    protected boolean useLocalVariables() { return false; }
-
     @Override
     protected Map<String, Object> process(LockedExternalTask task) {
         Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();

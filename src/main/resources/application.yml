@@ -4,13 +4,6 @@ server:
 spring:
   application:
     name: staging-service
-  task:
-    scheduling:
-      pool:
-        size: 8               # one thread per @Scheduled task (PipelineTickScheduler, StuckProcessMonitor,
-                               # 5 pipeline workers) + spare — default pool size is 1, which serializes
-                               # every artifactType's workers onto a single shared thread
-      thread-name-prefix: staging-sched-
   datasource:
     camunda:
       driver-class-name: ${SPRING_DATASOURCE_CAMUNDA_DRIVER_CLASS_NAME:org.postgresql.Driver}
@@ -58,12 +51,13 @@ staging:
       password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
   worker:
     poll-interval-ms: 500
-    lock-duration-ms: 30000
-    pool-size: 10                  # pipelineWorkerExecutor — shared by all 5 pipeline workers (see WorkerExecutorConfig)
+    lock-duration-ms: 120000
   recovery:
     check-interval-ms: 300000      # 5 min
     stuck-threshold-minutes: 30
     auto-retry-count: 3
+    incident-retry-interval-ms: 30000
+    max-incident-auto-retries: 2
   camunda:
     schema: ${STAGING_CAMUNDA_SCHEMA:staging_camunda}
   scheduler:

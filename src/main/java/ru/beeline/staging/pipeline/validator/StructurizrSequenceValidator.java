@@ -14,11 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Structural validation of a Structurizr workspace export, per SQ.01-SQ.02 in
- * structurizr-sequence-extract.md. Deeper semantic checks (dangling relationship refs, unresolved
- * elements) happen in the transformer, where they can be pinned to the exact dynamicView/relationship.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -41,11 +36,6 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
 
         JsonNode dynamicViews = root.path("views").path("dynamicViews");
         if (!dynamicViews.isArray()) {
-            // Not an anomaly: most products only model C4 containers/components in Structurizr and
-            // never draw a single Dynamic View — the pre-adapter scans every product with a
-            // structurizrApiUrl, not just ones known to have sequence diagrams. Nothing to load this
-            // time, not a validation failure — see the artifact-level error path below for what
-            // actually deserves that.
             notices.add(info("structurizr-sequence.validation.no_dynamic_views", "views.dynamicViews is missing or not an array — product has no sequence diagrams modeled",
                     Map.of("field", "views.dynamicViews")));
             log.info("structurizr-sequence: no dynamicViews for uid={}", artifactUid);
@@ -58,9 +48,6 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
             String pointer = "/views/dynamicViews/" + idx;
             String key = textOrNull(dynamicView, "key");
             if (key == null || key.isBlank()) {
-                // Not an artifact-level error: the transformer already skips a dynamicView with no key
-                // on its own (see StructurizrDynamicViewDecomposer) without losing the rest of the
-                // snapshot, so this must not fail the whole run the way ValidatorWorker treats "error".
                 notices.add(warning("structurizr-sequence.validation.missing_dynamic_view_key", "dynamicView.key is missing",
                         Map.of("pointer", pointer)));
             } else if (!seenKeys.add(key)) {

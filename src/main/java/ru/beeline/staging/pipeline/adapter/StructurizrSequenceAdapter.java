@@ -15,12 +15,6 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Downloads one product's Structurizr workspace export. artifactUid is the product alias (as found
- * by StructurizrSequencePreAdapter) — per AdapterWorker, metadata found by the pre-adapter is never
- * forwarded here, so structurizrApiUrl is re-resolved from fdm-products by alias, same as
- * SparxE2EAdapter re-resolves its scenario by uid alone.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -50,7 +44,13 @@ public class StructurizrSequenceAdapter implements ArtifactAdapter {
         }
 
         String jsonUrl = (structurizrApiUrl.endsWith("/") ? structurizrApiUrl.substring(0, structurizrApiUrl.length() - 1) : structurizrApiUrl) + "/json";
-        String rawJson = restTemplate.getForObject(jsonUrl, String.class);
+        log.info("Fetching Structurizr workspace export: alias={} url={}", artifactUid, jsonUrl);
+        String rawJson;
+        try {
+            rawJson = restTemplate.getForObject(jsonUrl, String.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fetch Structurizr workspace: alias=" + artifactUid + " url=" + jsonUrl + " — " + e.getMessage(), e);
+        }
         if (rawJson == null || rawJson.isBlank()) {
             throw new IllegalStateException("Structurizr returned empty workspace export for alias=" + artifactUid + " url=" + jsonUrl);
         }

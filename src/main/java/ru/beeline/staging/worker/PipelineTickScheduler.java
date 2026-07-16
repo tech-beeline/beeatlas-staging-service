@@ -53,7 +53,7 @@ public class PipelineTickScheduler {
         return pi;
     }
 
-    private boolean isAlreadyRunning(Configuration config) {
+    public boolean isAlreadyRunning(Configuration config) {
         return runtimeService.createProcessInstanceQuery()
                 .processDefinitionKey("artifact-pipeline-process")
                 .variableValueEquals("configurationId", config.getId())
