@@ -3,9 +3,12 @@ package ru.beeline.staging.worker;
 import jakarta.annotation.PostConstruct;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
+import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.pipeline.adapter.ArtifactAdapter;
+import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
+import ru.beeline.staging.service.SourceArtefactService;
 
 import java.util.HashMap;
 import java.util.List;
@@ -18,13 +21,18 @@ public class AdapterWorker extends AbstractWorker {
     private final List<ArtifactAdapter> adapters;
     private final ModuleResolver        moduleResolver;
     private final PipelineRunService    pipelineRunService;
+    private final ConfigurationRepository configurationRepository;
+    private final SourceArtefactService   sourceArtefactService;
     private Map<String, ArtifactAdapter> registry;
 
     public AdapterWorker(List<ArtifactAdapter> adapters, ModuleResolver moduleResolver,
-                          PipelineRunService pipelineRunService) {
+                          PipelineRunService pipelineRunService, ConfigurationRepository configurationRepository,
+                          SourceArtefactService sourceArtefactService) {
         this.adapters = adapters;
         this.moduleResolver = moduleResolver;
         this.pipelineRunService = pipelineRunService;
+        this.configurationRepository = configurationRepository;
+        this.sourceArtefactService = sourceArtefactService;
     }
 
     @PostConstruct
@@ -76,7 +84,10 @@ public class AdapterWorker extends AbstractWorker {
             Map<String, Object> result = adapter.load(uid, sourceId, null);
 
             if (result != null && result.get("rawDataRefId") != null) {
-                pipelineRunService.setRawDataRefId(runId, ((Number) result.get("rawDataRefId")).longValue());
+                Long rawDataRefId = ((Number) result.get("rawDataRefId")).longValue();
+                pipelineRunService.setRawDataRefId(runId, rawDataRefId);
+                configurationRepository.findById(configurationId)
+                        .ifPresent(config -> sourceArtefactService.recordLoaded(config, uid, rawDataRefId));
             }
             String outputSummary = result != null ? "rawDataRefId=" + result.get("rawDataRefId") : null;
             pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(result));

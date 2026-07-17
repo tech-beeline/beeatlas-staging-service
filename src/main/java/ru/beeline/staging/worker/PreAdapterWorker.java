@@ -89,9 +89,9 @@ public class PreAdapterWorker extends AbstractWorker {
 
         List<String> artifactRefs = new ArrayList<>();
         for (ArtifactPreAdapter.FoundArtifact item : found) {
-            sourceArtefactService.recordSeen(config, item.uid(), scan.getId());
             PipelineRun run = pipelineRunService.createRun(
                     item.uid(), artifactType, configurationId, task.getProcessInstanceId(), scan.getId());
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), run.getId());
             artifactRefs.add(run.getId() + "|" + item.uid());
         }
         return Map.of("artifactRefs", artifactRefs);

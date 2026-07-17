@@ -26,14 +26,44 @@ public class SourceArtefactService {
     private final SourceArtefactRepository     artefactRepository;
 
     @Transactional
-    public void recordSeen(Configuration config, String extUid, Long scanRunId) {
+    public void recordSeen(Configuration config, String extUid, Long scanRunId, Long runId) {
+        SourceArtefactType type = resolveType(config, extUid);
+        if (type == null) return;
+
+        SourceArtefact artefact = artefactRepository
+                .findBySourceArtefactTypeIdAndExtUid(type.getId(), extUid)
+                .orElseGet(SourceArtefact::new);
+        artefact.setSourceArtefactTypeId(type.getId());
+        artefact.setExtUid(extUid);
+        artefact.setStatus("active");
+        artefact.setLastRunId(runId);
+        artefact.setLastSeenScanRunId(scanRunId);
+        artefact.setUpdatedAt(LocalDateTime.now());
+        artefactRepository.save(artefact);
+    }
+
+    /** Called once the Adapter stage has actually persisted a raw_data_refs row for this artifact. */
+    @Transactional
+    public void recordLoaded(Configuration config, String extUid, Long rawDataRefId) {
+        SourceArtefactType type = resolveType(config, extUid);
+        if (type == null) return;
+
+        artefactRepository.findBySourceArtefactTypeIdAndExtUid(type.getId(), extUid)
+                .ifPresentOrElse(artefact -> {
+                    artefact.setLastLoadedRefId(rawDataRefId);
+                    artefact.setUpdatedAt(LocalDateTime.now());
+                    artefactRepository.save(artefact);
+                }, () -> log.warn("No source_artifacts row for extUid={} (type={}) — recordSeen should have run first",
+                        extUid, type.getId()));
+    }
+
+    private SourceArtefactType resolveType(Configuration config, String extUid) {
         if (config.getSourceSystemId() == null) {
             log.warn("Configuration {} has no sourceSystemId — skipping source_artefacts bookkeeping for extUid={}",
                     config.getId(), extUid);
-            return;
+            return null;
         }
-
-        SourceArtefactType type = typeRepository
+        return typeRepository
                 .findByDataTypeIdAndSourceSystemId(config.getDataTypeId(), config.getSourceSystemId())
                 .orElseGet(() -> {
                     SourceArtefactType t = new SourceArtefactType();
@@ -42,15 +72,5 @@ public class SourceArtefactService {
                     t.setName(config.getArtifactType());
                     return typeRepository.save(t);
                 });
-
-        SourceArtefact artefact = artefactRepository
-                .findBySourceArtefactTypeIdAndExtUid(type.getId(), extUid)
-                .orElseGet(SourceArtefact::new);
-        artefact.setSourceArtefactTypeId(type.getId());
-        artefact.setExtUid(extUid);
-        artefact.setStatus("active");
-        artefact.setLastSeenScanRunId(scanRunId);
-        artefact.setUpdatedAt(LocalDateTime.now());
-        artefactRepository.save(artefact);
     }
 }

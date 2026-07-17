@@ -16,9 +16,6 @@ public class BiStep {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "ref_id")
-    private Integer refId;
-
     @Column(name = "uid")
     private String uid;
 
