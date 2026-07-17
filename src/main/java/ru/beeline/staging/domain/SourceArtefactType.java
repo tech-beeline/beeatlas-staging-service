@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "source_artefact_types", schema = "staging")
+@Table(name = "source_artifact_types", schema = "staging")
 public class SourceArtefactType {
 
     @Id

@@ -11,14 +11,14 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "source_artefacts", schema = "staging")
+@Table(name = "source_artifacts", schema = "staging")
 public class SourceArtefact {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "source_artefact_type_id", nullable = false)
+    @Column(name = "source_artifact_type_id", nullable = false)
     private Long sourceArtefactTypeId;
 
     @Column(name = "ext_uid", nullable = false)
@@ -29,6 +29,10 @@ public class SourceArtefact {
 
     @Column(name = "last_loaded_ref_id")
     private Long lastLoadedRefId;
+
+    /** The last pipeline_runs row (artifact-level, not scan) executed for this extUid. */
+    @Column(name = "last_run_id")
+    private Long lastRunId;
 
     /** The pre-adapter scan (pipeline_runs row with artifactUid == null) that most recently found this extUid. */
     @Column(name = "last_seen_scan_run_id")
