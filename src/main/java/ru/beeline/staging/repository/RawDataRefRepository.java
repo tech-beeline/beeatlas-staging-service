@@ -18,8 +18,8 @@ public interface RawDataRefRepository extends JpaRepository<RawDataRef, Long> {
      */
     @Query(value = """
             INSERT INTO staging.raw_data_refs
-                (artifact_uid, artifact_type, source_id, raw_content, content_hash, size_bytes, loaded_at, updated_at)
-            VALUES (:artifactUid, :artifactType, :sourceId, :rawContent, :contentHash, :sizeBytes, now(), now())
+                (artifact_uid, artifact_type, source_id, format, raw_content, content_hash, size_bytes, loaded_at, updated_at)
+            VALUES (:artifactUid, :artifactType, :sourceId, :format, :rawContent, :contentHash, :sizeBytes, now(), now())
             ON CONFLICT (artifact_uid, artifact_type, content_hash)
             DO UPDATE SET updated_at = now()
             RETURNING id, (xmax = 0) AS inserted
@@ -27,6 +27,7 @@ public interface RawDataRefRepository extends JpaRepository<RawDataRef, Long> {
     UpsertResult upsertByContentHash(@Param("artifactUid") String artifactUid,
                                       @Param("artifactType") String artifactType,
                                       @Param("sourceId") String sourceId,
+                                      @Param("format") String format,
                                       @Param("rawContent") byte[] rawContent,
                                       @Param("contentHash") String contentHash,
                                       @Param("sizeBytes") long sizeBytes);

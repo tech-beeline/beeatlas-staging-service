@@ -38,7 +38,7 @@ public class SparxE2EAdapter implements ArtifactAdapter {
         String contentHash = sha256(content);
 
         RawDataRefRepository.UpsertResult result = rawDataRefRepository.upsertByContentHash(
-                artifactUid, TYPE, sourceId, content, contentHash, content.length);
+                artifactUid, TYPE, sourceId, "json", content, contentHash, content.length);
 
         long refId = result.getId();
         if (Boolean.TRUE.equals(result.getInserted())) {
