@@ -40,7 +40,7 @@ preAdapter → adapter → validator → transformer → saver
    )
    ```
 
-4. **Строка в БД.** Добавь строку в `staging.configurations` (`artifact_type`, `data_type_id`, `schedule_interval_seconds`, `is_active`) — она отвечает только за расписание/активность, не за то, какие модули запускать (это теперь решает `PipelineDefinitions`).
+4. **Строка в БД.** Добавь строку в `staging.configurations` (`artifact_type`, `data_type_id`, `schedule_interval_seconds`, `is_active`) — она отвечает только за расписание/активность, не за то, какие модули запускать (это теперь решает `PipelineDefinitions`). **Это единственный шаг, который не самосинхронизируется с кодом** — `data_types`/`source_systems`/`configurations` никто не создаёт автоматически (в отличие от `module_catalog`/`pipeline_definitions`, которые `ModuleCatalogPublisher` пересобирает на каждом старте): без активной строки в `configurations` `PipelineTickScheduler` находит ноль кандидатов и пайплайн не запускается вообще, без единой ошибки в логе. Пример seed-миграции — `V0005__seed_pipeline_configurations.sql`.
 
 Готово — воркеры, BPMN-процессы и `ModuleResolver` трогать не нужно.
 
