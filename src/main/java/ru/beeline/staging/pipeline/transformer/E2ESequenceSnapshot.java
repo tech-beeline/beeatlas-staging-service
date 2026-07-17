@@ -8,11 +8,22 @@ import java.util.List;
 @Data
 public class E2ESequenceSnapshot {
 
+    private E2eScenarioDraft             e2eScenario;
     private List<InterfaceDraft>         interfaces         = new ArrayList<>();
     private List<OperationDraft>         operations         = new ArrayList<>();
     private List<BiStepDraft>            biSteps            = new ArrayList<>();
-    private List<BiStepRelationDraft>    biStepRelations    = new ArrayList<>();
     private List<OperationRelationDraft> operationRelations = new ArrayList<>();
+
+    @Data
+    public static class E2eScenarioDraft {
+        private String uid;         // entrance_diagram_uid
+        private String extUid;      // entrance_diagram_uid
+        private String name;        // root diagram name
+        private String description; // "step_id={bi_step ext_uid}", null if step_id is missing
+        private String biStepUid;   // links to BiStepDraft.uid (step_id), null if step_id is missing
+
+        private String context;
+    }
 
     @Data
     public static class InterfaceDraft {
@@ -46,18 +57,9 @@ public class E2ESequenceSnapshot {
 
         private String context;
 
-        private String externalGuid;
+        private String extUid;
 
         private String sourceId;
-    }
-
-    @Data
-    public static class BiStepRelationDraft {
-        private String  biStepUid;
-        private String  operationExtUid;
-        private Integer callOrder;
-        private String  stereotype;
-        private String  context;
     }
 
     @Data

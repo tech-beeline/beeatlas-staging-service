@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.PipelineRun;
-import ru.beeline.staging.domain.canonical.BiStepRelationVersion;
 import ru.beeline.staging.domain.canonical.BiStepVersion;
+import ru.beeline.staging.domain.canonical.E2eScenarioVersion;
 import ru.beeline.staging.domain.canonical.InterfaceVersion;
 import ru.beeline.staging.domain.canonical.OperationRelationVersion;
 import ru.beeline.staging.domain.canonical.OperationVersion;
@@ -18,7 +18,6 @@ import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
-import ru.beeline.staging.repository.canonical.BiStepRelationVersionRepository;
 import ru.beeline.staging.repository.canonical.OperationRelationVersionRepository;
 import ru.beeline.staging.service.PipelineRunService;
 
@@ -33,9 +32,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
     public static final String MODULE_CODE = "e2e-canonical-saver";
 
-    private final BiStepRelationVersionRepository    biStepRelationVersionRepository;
     private final OperationRelationVersionRepository operationRelationVersionRepository;
     private final BiStepMatchService                 biStepMatchService;
+    private final E2eScenarioMatchService            e2eScenarioMatchService;
     private final InterfaceMatchService              interfaceMatchService;
     private final OperationMatchService               operationMatchService;
     private final PipelineRunService                 pipelineRunService;
@@ -104,38 +103,34 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         for (E2ESequenceSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
             BiStepVersion version = biStepMatchService.matchOrCreate(
                     draft.getUid(), draft.getName(), draft.getRps(), draft.getLatency(), draft.getErrorRate(),
-                    draft.getExternalGuid(), sourceCode, draft.getContext(), rawDataRefId, batchId);
+                    draft.getExtUid(), sourceCode, draft.getContext(), rawDataRefId, batchId);
             biStepVersionsByUid.put(draft.getUid(), version);
         }
 
-        int relationsSaved = 0;
-        for (E2ESequenceSnapshot.BiStepRelationDraft draft : snapshot.getBiStepRelations()) {
-            BiStepVersion step = biStepVersionsByUid.get(draft.getBiStepUid());
-            OperationVersion op = operationVersionsByExtUid.get(draft.getOperationExtUid());
-            if (step == null || op == null) {
-                log.warn("Skipping bi_step_relation: missing step={} or operation={}", draft.getBiStepUid(), draft.getOperationExtUid());
-                continue;
-            }
-            BiStepRelationVersion relation = new BiStepRelationVersion();
-            relation.setBiStepVersionId(step.getId());
-            relation.setOperationVersionId(op.getId());
-            relation.setCallOrder(draft.getCallOrder());
-            relation.setStereotype(draft.getStereotype());
-            relation.setCreatedAt(now);
-            biStepRelationVersionRepository.save(relation);
-            relationsSaved++;
+        E2ESequenceSnapshot.E2eScenarioDraft scenarioDraft = snapshot.getE2eScenario();
+        if (scenarioDraft == null) {
+            throw new IllegalStateException("Snapshot for uid=" + artifactUid + " has no e2e_scenario — validator/transformer should have rejected this earlier");
         }
+        BiStepVersion linkedBiStep = scenarioDraft.getBiStepUid() != null ? biStepVersionsByUid.get(scenarioDraft.getBiStepUid()) : null;
+        E2eScenarioVersion scenarioVersion = e2eScenarioMatchService.matchOrCreate(
+                scenarioDraft.getUid(), scenarioDraft.getExtUid(), scenarioDraft.getName(), scenarioDraft.getDescription(),
+                linkedBiStep != null ? linkedBiStep.getId() : null,
+                scenarioDraft.getContext(), rawDataRefId, batchId);
 
         int operationRelationsSaved = 0;
         for (E2ESequenceSnapshot.OperationRelationDraft draft : snapshot.getOperationRelations()) {
-            OperationVersion caller = operationVersionsByExtUid.get(draft.getCallerOperationExtUid());
             OperationVersion callee = operationVersionsByExtUid.get(draft.getCalleeOperationExtUid());
-            if (caller == null || callee == null) {
-                log.warn("Skipping operation_relation: missing caller={} or callee={}", draft.getCallerOperationExtUid(), draft.getCalleeOperationExtUid());
+            if (callee == null) {
+                log.warn("Skipping operation_relation: missing callee={}", draft.getCalleeOperationExtUid());
                 continue;
             }
+            // Root-level calls carry no caller operation (operation_version_id stays NULL).
+            OperationVersion caller = draft.getCallerOperationExtUid() != null
+                    ? operationVersionsByExtUid.get(draft.getCallerOperationExtUid())
+                    : null;
+
             OperationRelationVersion relation = new OperationRelationVersion();
-            relation.setOperationVersionId(caller.getId());
+            relation.setOperationVersionId(caller != null ? caller.getId() : null);
             relation.setRelatedOperationVersionId(callee.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
@@ -149,7 +144,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         stats.setInterfacesSaved(interfaceVersionsByUid.size());
         stats.setOperationsSaved(operationVersionsByExtUid.size());
         stats.setBiStepsSaved(biStepVersionsByUid.size());
-        stats.setBiStepRelationsSaved(relationsSaved);
+        stats.setE2eScenarioId(scenarioVersion.getE2eScenarioId());
         stats.setOperationRelationsSaved(operationRelationsSaved);
         return stats;
     }
@@ -171,14 +166,14 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         private int  interfacesSaved;
         private int  operationsSaved;
         private int  biStepsSaved;
-        private int  biStepRelationsSaved;
+        private Long e2eScenarioId;
         private int  operationRelationsSaved;
 
         @Override
         public String toString() {
-            return "batchId=" + batchId + " biSteps=" + biStepsSaved
+            return "batchId=" + batchId + " biSteps=" + biStepsSaved + " e2eScenarioId=" + e2eScenarioId
                     + " ifaces=" + interfacesSaved + " ops=" + operationsSaved
-                    + " biRelations=" + biStepRelationsSaved + " opRelations=" + operationRelationsSaved;
+                    + " opRelations=" + operationRelationsSaved;
         }
     }
 }

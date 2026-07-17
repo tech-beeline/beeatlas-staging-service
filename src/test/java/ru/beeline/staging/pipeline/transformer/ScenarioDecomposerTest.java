@@ -87,13 +87,17 @@ class ScenarioDecomposerTest {
                 .extracting(E2ESequenceSnapshot.InterfaceDraft::getSource)
                 .containsExactly("structurizr");
 
-        assertThat(snapshot.getBiStepRelations()).hasSize(1);
-        assertThat(snapshot.getBiStepRelations().get(0).getOperationExtUid()).isEqualTo("OP1");
-
+        // Root-level call (M1 -> OP1): no caller operation, stored with operation_version_id = NULL.
+        assertThat(snapshot.getOperationRelations())
+                .anyMatch(r -> r.getCallerOperationExtUid() == null && "OP1".equals(r.getCalleeOperationExtUid()));
         assertThat(snapshot.getOperationRelations())
                 .anyMatch(r -> "OP1".equals(r.getCallerOperationExtUid()) && "OP2".equals(r.getCalleeOperationExtUid()));
         assertThat(snapshot.getOperationRelations())
                 .noneMatch(r -> "OP3".equals(r.getCalleeOperationExtUid()));
+
+        assertThat(snapshot.getE2eScenario().getUid()).isEqualTo("D1");
+        assertThat(snapshot.getE2eScenario().getBiStepUid()).isEqualTo("Step.01.00.00.00");
+        assertThat(snapshot.getE2eScenario().getDescription()).isEqualTo("step_id=Step.01.00.00.00");
 
         List<ArtifactNotice> notices = result.notices();
 
@@ -136,7 +140,7 @@ class ScenarioDecomposerTest {
     }
 
     @Test
-    void abortsWithErrorNoticeWhenRootDiagramHasNoStepId() throws Exception {
+    void createsScenarioWithoutBiStepWhenRootDiagramHasNoStepId() throws Exception {
         String json = """
             {
               "entrance_diagram_uid": "D1",
@@ -148,8 +152,11 @@ class ScenarioDecomposerTest {
         ScenarioDecomposer.Result result = decomposer.decompose(objectMapper.readTree(json), "scenario-2");
 
         assertThat(result.snapshot().getBiSteps()).isEmpty();
+        assertThat(result.snapshot().getE2eScenario().getUid()).isEqualTo("D1");
+        assertThat(result.snapshot().getE2eScenario().getBiStepUid()).isNull();
+        assertThat(result.snapshot().getE2eScenario().getDescription()).isNull();
         assertThat(result.notices()).anyMatch(n ->
-                "transform.map_failed".equals(n.code()) && "error".equals(n.level()));
+                "transform.map_failed".equals(n.code()) && "warning".equals(n.level()));
     }
 
     private void assertHasNotice(List<ArtifactNotice> notices, String code, String messageUid, String expectedReason) {

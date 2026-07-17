@@ -29,9 +29,9 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
         ScenarioDecomposer.Result result = decomposer.decompose(root, artifactUid);
         E2ESequenceSnapshot snapshot = result.snapshot();
 
-        log.info("Transformed e2e-sequence uid={}: interfaces={}, operations={}, biSteps={}, biStepRelations={}, operationRelations={}, notices={}",
+        log.info("Transformed e2e-sequence uid={}: interfaces={}, operations={}, biSteps={}, operationRelations={}, notices={}",
                 artifactUid, snapshot.getInterfaces().size(), snapshot.getOperations().size(),
-                snapshot.getBiSteps().size(), snapshot.getBiStepRelations().size(), snapshot.getOperationRelations().size(),
+                snapshot.getBiSteps().size(), snapshot.getOperationRelations().size(),
                 result.notices().size());
 
         return TransformResult.of(snapshot, result.notices());

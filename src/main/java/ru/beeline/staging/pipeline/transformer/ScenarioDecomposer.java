@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.BiStepDraft;
-import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.BiStepRelationDraft;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.InterfaceDraft;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.OperationDraft;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot.OperationRelationDraft;
@@ -59,9 +58,8 @@ public class ScenarioDecomposer {
 
         String stepId = parseStepId(textOrNull(rootDiagram, "notes"));
         if (stepId == null) {
-            notices.add(mapFailed("error", details("missing_required_field", "field", "step_id",
+            notices.add(mapFailed("warning", details("missing_required_field", "field", "step_id",
                     "diagram_uid", entranceDiagramUid), rootDiagramPointer + "/notes"));
-            return new Result(snapshot, notices, null);
         }
 
         // Step 3: per-diagram local call trees (seqno order, is_ret/use/self-call dropped)
@@ -87,14 +85,32 @@ public class ScenarioDecomposer {
         List<CallNode> finalSequence = collapse(rootWrapper, notices);
 
         // Step 6/7: decompose the surviving tree into canonical drafts
-        // bi_steps.uid is the business key (step_id, e.g. "Step.01.00.00.00") — external_guid keeps
-        // the Sparx diagram GUID (entrance_diagram_uid) as the technical/source-side reference.
-        BiStepDraft biStep = new BiStepDraft();
-        biStep.setUid(stepId);
-        biStep.setName(textOrNull(rootDiagram, "name"));
-        biStep.setExternalGuid(entranceDiagramUid);
-        biStep.setContext(rootDiagramPointer);
-        snapshot.getBiSteps().add(biStep);
+        // bi_steps.uid/ext_uid is the business key (step_id, e.g. "Step.01.00.00.00"); the Sparx
+        // diagram GUID (entrance_diagram_uid) is now the e2e_scenario's own identity, linked to the
+        // bi_step via e2e_scenario_versions.bi_step_version_id instead of the other way around.
+        if (stepId != null) {
+            BiStepDraft biStep = new BiStepDraft();
+            biStep.setUid(stepId);
+            biStep.setName(textOrNull(rootDiagram, "name"));
+            biStep.setExtUid(stepId);
+            biStep.setContext(rootDiagramPointer);
+            snapshot.getBiSteps().add(biStep);
+        }
+
+        E2ESequenceSnapshot.E2eScenarioDraft scenario = new E2ESequenceSnapshot.E2eScenarioDraft();
+        scenario.setUid(entranceDiagramUid);
+        scenario.setExtUid(entranceDiagramUid);
+        scenario.setName(textOrNull(rootDiagram, "name"));
+        scenario.setContext(rootDiagramPointer);
+        if (stepId != null) {
+            scenario.setBiStepUid(stepId);
+            scenario.setDescription("step_id=" + stepId);
+            notices.add(notice("transform.implicit_cast", "info",
+                    Map.of("field", "description", "action", "constructed", "value", "step_id=" + stepId,
+                            "source", "diagrams[root].notes -> step_id"),
+                    rootDiagramPointer));
+        }
+        snapshot.setE2eScenario(scenario);
 
         Map<String, OperationDraft> operationDrafts = new LinkedHashMap<>();
         Set<String> registeredInterfaces = new LinkedHashSet<>();
@@ -108,13 +124,14 @@ public class ScenarioDecomposer {
             registerOperationAndInterface(node, operationsByUid, interfacesById, operationArrayIndexByUid,
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
 
-            BiStepRelationDraft rel = new BiStepRelationDraft();
-            rel.setBiStepUid(stepId);
-            rel.setOperationExtUid(node.operationGuid);
+            // Root-level call: no caller operation (operation_version_id = NULL in operation_relation_versions).
+            OperationRelationDraft rel = new OperationRelationDraft();
+            rel.setCallerOperationExtUid(null);
+            rel.setCalleeOperationExtUid(node.operationGuid);
             rel.setCallOrder(callOrder++);
             rel.setStereotype(node.stereotype);
             rel.setContext(node.pointer);
-            snapshot.getBiStepRelations().add(rel);
+            snapshot.getOperationRelations().add(rel);
 
             decomposeChildren(node, operationsByUid, interfacesById, operationArrayIndexByUid,
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
