@@ -53,7 +53,7 @@ public final class StructurizrParsingUtils {
         return textOrNull(root.path("model").path("properties"), "workspace_cmdb");
     }
 
-    /** softwareSystem whose properties."structurizr.dsl.identifier" equals the given cmdb. */
+    /** softwareSystem whose properties.cmdb equals the given cmdb. */
     public static JsonNode targetSoftwareSystem(JsonNode root, String cmdb) {
         IndexedNode found = targetSoftwareSystemEntry(root, cmdb);
         return found != null ? found.node() : null;
@@ -61,13 +61,19 @@ public final class StructurizrParsingUtils {
 
     public record IndexedNode(JsonNode node, int index) {}
 
-    /** Same lookup as {@link #targetSoftwareSystem}, but also returns its index for building precise JSON pointers. */
+    /**
+     * Same lookup as {@link #targetSoftwareSystem}, but also returns its index for building precise
+     * JSON pointers. Matched by properties.cmdb — NOT properties."structurizr.dsl.identifier", which
+     * is just the DSL variable name the architect happened to pick (e.g. "my_system", or a
+     * hierarchical GUID for deployment-node workspaces) and only coincidentally equals cmdb sometimes.
+     */
     public static IndexedNode targetSoftwareSystemEntry(JsonNode root, String cmdb) {
         if (cmdb == null) return null;
         int idx = 0;
         for (JsonNode system : root.path("model").path("softwareSystems")) {
-            String identifier = textOrNull(system.path("properties"), "structurizr.dsl.identifier");
-            if (cmdb.equals(identifier)) return new IndexedNode(system, idx);
+            JsonNode properties = system.path("properties");
+            String matchKey = firstNonBlank(textOrNull(properties, "cmdb"), textOrNull(properties, "structurizr.dsl.identifier"));
+            if (cmdb.equals(matchKey)) return new IndexedNode(system, idx);
             idx++;
         }
         return null;
