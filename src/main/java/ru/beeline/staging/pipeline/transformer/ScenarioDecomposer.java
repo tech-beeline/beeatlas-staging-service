@@ -47,6 +47,25 @@ public class ScenarioDecomposer {
         Map<Integer, Integer> interfaceArrayIndexById = arrayIndexByIntField(root.path("interfaces"), "id");
         Map<String, Integer> operationArrayIndexByUid = arrayIndexByStringField(root.path("operations"), "uid");
 
+        // Product (systems[] -> products/product_versions, per transform-spec §4.2)
+        int systemIdx = 0;
+        for (JsonNode system : root.path("systems")) {
+            String pointer = "/systems/" + systemIdx;
+            systemIdx++;
+            String code = textOrNull(system, "code");
+            if (code == null || code.isBlank()) {
+                notices.add(mapFailed("warning", details("missing_required_field", "field", "code",
+                        "system_id", String.valueOf(intOrNull(system, "id"))), pointer));
+                continue;
+            }
+            E2ESequenceSnapshot.ProductDraft product = new E2ESequenceSnapshot.ProductDraft();
+            product.setUid(code);
+            product.setExtUid(code);
+            product.setName(textOrNull(system, "name"));
+            product.setContext(pointer);
+            snapshot.getProducts().add(product);
+        }
+
         JsonNode rootDiagram = entranceDiagramUid != null ? diagramsByUid.get(entranceDiagramUid) : null;
         if (rootDiagram == null) {
             notices.add(mapFailed("error", details("missing_reference", "field", "entrance_diagram_uid",

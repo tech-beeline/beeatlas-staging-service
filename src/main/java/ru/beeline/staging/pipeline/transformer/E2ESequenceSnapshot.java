@@ -9,10 +9,19 @@ import java.util.List;
 public class E2ESequenceSnapshot {
 
     private E2eScenarioDraft             e2eScenario;
+    private List<ProductDraft>           products           = new ArrayList<>();
     private List<InterfaceDraft>         interfaces         = new ArrayList<>();
     private List<OperationDraft>         operations         = new ArrayList<>();
     private List<BiStepDraft>            biSteps            = new ArrayList<>();
     private List<OperationRelationDraft> operationRelations = new ArrayList<>();
+
+    @Data
+    public static class ProductDraft {
+        private String uid;    // systems[].code
+        private String extUid; // systems[].code
+        private String name;   // systems[].name
+        private String context;
+    }
 
     @Data
     public static class E2eScenarioDraft {

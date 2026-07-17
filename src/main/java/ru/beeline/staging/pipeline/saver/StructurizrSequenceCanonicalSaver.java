@@ -19,6 +19,7 @@ import ru.beeline.staging.pipeline.transformer.StructurizrSequenceSnapshot;
 import ru.beeline.staging.repository.canonical.OperationRelationVersionRepository;
 import ru.beeline.staging.repository.canonical.SequenceRelationVersionRepository;
 import ru.beeline.staging.service.PipelineRunService;
+import ru.beeline.staging.service.RawDataContextService;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -47,6 +48,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
     private final SequenceRelationVersionRepository  sequenceRelationVersionRepository;
     private final OperationRelationVersionRepository operationRelationVersionRepository;
     private final PipelineRunService         pipelineRunService;
+    private final RawDataContextService      rawDataContextService;
     private final ObjectMapper               objectMapper;
 
     @Override
@@ -152,6 +154,9 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             relation.setOperationVersionId(operation != null ? operation.getId() : null);
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
+            if (draft.getContext() != null) {
+                relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
+            }
             relation.setCreatedAt(now);
             sequenceRelationVersionRepository.save(relation);
             sequenceRelationsSaved++;
@@ -171,6 +176,9 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             relation.setRelatedOperationVersionId(related.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
+            if (draft.getContext() != null) {
+                relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
+            }
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
             operationRelationsSaved++;

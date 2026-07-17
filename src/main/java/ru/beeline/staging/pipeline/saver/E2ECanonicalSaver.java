@@ -13,6 +13,7 @@ import ru.beeline.staging.domain.canonical.E2eScenarioVersion;
 import ru.beeline.staging.domain.canonical.InterfaceVersion;
 import ru.beeline.staging.domain.canonical.OperationRelationVersion;
 import ru.beeline.staging.domain.canonical.OperationVersion;
+import ru.beeline.staging.domain.canonical.ProductVersion;
 import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
 import ru.beeline.staging.repository.ConfigurationRepository;
@@ -20,6 +21,7 @@ import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.repository.canonical.OperationRelationVersionRepository;
 import ru.beeline.staging.service.PipelineRunService;
+import ru.beeline.staging.service.RawDataContextService;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -35,12 +37,14 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     private final OperationRelationVersionRepository operationRelationVersionRepository;
     private final BiStepMatchService                 biStepMatchService;
     private final E2eScenarioMatchService            e2eScenarioMatchService;
+    private final ProductMatchService                productMatchService;
     private final InterfaceMatchService              interfaceMatchService;
     private final OperationMatchService               operationMatchService;
     private final PipelineRunService                 pipelineRunService;
     private final PipelineRunRepository              pipelineRunRepository;
     private final ConfigurationRepository             configurationRepository;
     private final SourceSystemRepository              sourceSystemRepository;
+    private final RawDataContextService               rawDataContextService;
     private final ObjectMapper                         objectMapper;
 
     @Override
@@ -74,8 +78,18 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                 artifactUid, artifactType, runId, rawDataRefId,
                 snapshot.getBiSteps().size(),
                 snapshot.getInterfaces().size(),
-                snapshot.getOperations().size());
+                snapshot.getOperations().size(),
+                snapshot.getProducts().size(),
+                0);
         Long batchId = batch.getId();
+
+        Map<String, ProductVersion> productVersionsByUid = new HashMap<>();
+        for (E2ESequenceSnapshot.ProductDraft draft : snapshot.getProducts()) {
+            ProductVersion version = productMatchService.matchOrCreate(
+                    draft.getUid(), draft.getExtUid(), draft.getName(), null, null,
+                    draft.getContext(), rawDataRefId, batchId);
+            productVersionsByUid.put(draft.getUid(), version);
+        }
 
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
@@ -134,6 +148,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             relation.setRelatedOperationVersionId(callee.getId());
             relation.setCallOrder(draft.getCallOrder());
             relation.setStereotype(draft.getStereotype());
+            if (draft.getContext() != null) {
+                relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
+            }
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
             operationRelationsSaved++;
@@ -141,6 +158,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
         SaveStats stats = new SaveStats();
         stats.setBatchId(batchId);
+        stats.setProductsSaved(productVersionsByUid.size());
         stats.setInterfacesSaved(interfaceVersionsByUid.size());
         stats.setOperationsSaved(operationVersionsByExtUid.size());
         stats.setBiStepsSaved(biStepVersionsByUid.size());
@@ -163,6 +181,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     @Data
     private static class SaveStats {
         private Long batchId;
+        private int  productsSaved;
         private int  interfacesSaved;
         private int  operationsSaved;
         private int  biStepsSaved;
@@ -171,8 +190,8 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
         @Override
         public String toString() {
-            return "batchId=" + batchId + " biSteps=" + biStepsSaved + " e2eScenarioId=" + e2eScenarioId
-                    + " ifaces=" + interfacesSaved + " ops=" + operationsSaved
+            return "batchId=" + batchId + " products=" + productsSaved + " biSteps=" + biStepsSaved
+                    + " e2eScenarioId=" + e2eScenarioId + " ifaces=" + interfacesSaved + " ops=" + operationsSaved
                     + " opRelations=" + operationRelationsSaved;
         }
     }
