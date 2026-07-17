@@ -6,6 +6,13 @@
 -- finds zero active candidates and the pipeline never fires, silently.
 -- ============================================================
 
+-- Unique constraint backing RawDataRefRepository.upsertByContentHash(): if the latest raw content
+-- for an artifact hasn't changed, only updated_at is refreshed on the existing row — no new row is
+-- created. SparxE2EAdapter/StructurizrSequenceAdapter rely on a single INSERT ... ON CONFLICT DO
+-- UPDATE to make that case atomic, which requires this constraint to exist.
+ALTER TABLE staging.raw_data_refs
+    ADD CONSTRAINT uq_raw_data_refs_artifact_hash UNIQUE (artifact_uid, artifact_type, content_hash);
+
 INSERT INTO staging.data_types (code, description)
 VALUES
     ('structurizr-sequence', 'Sequence diagrams (Dynamic Views) exported from Structurizr workspace.json'),
