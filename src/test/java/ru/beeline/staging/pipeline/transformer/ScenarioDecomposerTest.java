@@ -80,9 +80,10 @@ class ScenarioDecomposerTest {
 
         assertThat(snapshot.getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
                 .contains("iface.b", "iface.c");
+        // ext_uid = code (same as uid), not the raw Sparx id — per transform-spec §4.2.
         assertThat(snapshot.getInterfaces()).filteredOn(i -> "iface.b".equals(i.getUid()))
                 .extracting(E2ESequenceSnapshot.InterfaceDraft::getExtUid)
-                .containsExactly("10");
+                .containsExactly("iface.b");
         assertThat(snapshot.getInterfaces()).filteredOn(i -> "iface.c".equals(i.getUid()))
                 .extracting(E2ESequenceSnapshot.InterfaceDraft::getSource)
                 .containsExactly("structurizr");

@@ -89,7 +89,8 @@ public class ScenarioDecomposer {
             }
             E2ESequenceSnapshot.ContainerDraft containerDraft = new E2ESequenceSnapshot.ContainerDraft();
             containerDraft.setUid(code);
-            containerDraft.setExtUid(String.valueOf(intOrNull(container, "id")));
+            // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
+            containerDraft.setExtUid(code);
             containerDraft.setName(textOrNull(container, "name"));
             containerDraft.setProductUid(productUid);
             containerDraft.setContext(pointer);
@@ -473,7 +474,8 @@ public class ScenarioDecomposer {
             if (ifaceUid != null && registeredInterfaces.add(ifaceUid)) {
                 InterfaceDraft ifaceDraft = new InterfaceDraft();
                 ifaceDraft.setUid(ifaceUid);
-                ifaceDraft.setExtUid(String.valueOf(ifaceId));
+                // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
+                ifaceDraft.setExtUid(ifaceUid);
                 ifaceDraft.setProtocol(tagsOf(iface).get("protocol"));
                 ifaceDraft.setName(textOrNull(iface, "name"));
                 ifaceDraft.setSource(textOrNull(iface, "source"));
