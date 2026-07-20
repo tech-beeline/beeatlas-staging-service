@@ -68,7 +68,10 @@ public class ScenarioDecomposer {
         }
 
         // Container (containers[] -> containers/container_versions, per transform-spec §4.2.1),
-        // linked to its owning product via containers[].system_id -> systems[].code.
+        // linked to its owning product via containers[].system_code — denormalized directly onto the
+        // container row in SQL, since containers[].system_id doesn't reliably resolve against systems[]
+        // (systems[] is scoped to systems that appear as diagram objects; a container's owning system
+        // may never appear on the diagram itself even though its interface does).
         int containerIdx = 0;
         for (JsonNode container : root.path("containers")) {
             String pointer = "/containers/" + containerIdx;
@@ -79,12 +82,10 @@ public class ScenarioDecomposer {
                         "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
                 continue;
             }
-            Integer systemId = intOrNull(container, "system_id");
-            JsonNode system = systemId != null ? systemsById.get(systemId) : null;
-            String productUid = system != null ? textOrNull(system, "code") : null;
-            if (systemId != null && system == null) {
-                notices.add(mapFailed("warning", details("missing_reference", "field", "system_id",
-                        "value", String.valueOf(systemId), "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
+            String productUid = textOrNull(container, "system_code");
+            if (productUid == null) {
+                notices.add(mapFailed("warning", details("missing_reference", "field", "system_code",
+                        "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
             }
             E2ESequenceSnapshot.ContainerDraft containerDraft = new E2ESequenceSnapshot.ContainerDraft();
             containerDraft.setUid(code);

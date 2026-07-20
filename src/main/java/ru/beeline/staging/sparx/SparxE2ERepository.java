@@ -46,7 +46,8 @@ public class SparxE2ERepository {
                     		cn.object_id AS container_id,
                     		cn.alias AS container_code,
                     		api.object_id AS api_id,
-                    		api.alias AS code
+                    		api.alias AS code,
+                    		'structurizr' AS source
                     	FROM t_object sys
                     		JOIN t_connector r ON r.start_object_id=sys.object_id AND r.connector_type='Realisation'
                     		JOIN t_object cn ON cn.object_id=r.end_object_id\s
@@ -63,7 +64,8 @@ public class SparxE2ERepository {
                     		p.object_id AS container_id,
                     		'provided.'::varchar || LOWER(app.alias),
                     		i.object_id AS api_id,
-                    		'manual.provided.'::varchar || LOWER(app.alias) AS code
+                    		'manual.provided.'::varchar || LOWER(app.alias) AS code,
+                    		'manual'
                     	FROM t_object app
                     		JOIN t_object p ON p.parentid=app.object_id AND p.object_type='ProvidedInterface'
                     		JOIN t_object i ON i.object_id=p.classifier
@@ -181,16 +183,13 @@ public class SparxE2ERepository {
                     		i.version,
                     		api.system_id,
                     		api.container_id,
-                    		CASE\s
-                    			WHEN api.system_id IS NOT NULL THEN 'structurizr'
-                    			ELSE 'manual'
-                    		END as source,
+                    		api.source,
                     		(
-                    			SELECT jsonb_agg(jsonb_build_object(
+                    			SELECT DISTINCT jsonb_agg(jsonb_build_object(
                     				'property', t.property,
                     				'value', COALESCE( t.notes, t.value)
                     			)) FROM t_objectproperties t
-                    		WHERE t.object_id=api.api_id) AS tags
+                    		WHERE t.object_id=api.api_id OR (t.object_id=api.container_id)) AS tags
                     	FROM cte_operations o
                     		JOIN t_object i ON i.object_id=o.interface_id
                     		LEFT JOIN cte_c4_api api ON api.api_id=o.interface_id
@@ -218,9 +217,12 @@ public class SparxE2ERepository {
                     		s.object_id AS id,
                     		s.name,
                     		o.container_code AS code,
-                    		o.system_id
+                    		o.system_id,
+                    		sys.alias AS system_code
                     	FROM cte_c4_api o
+                    	JOIN cte_interfaces i ON i.id=o.api_id
                     	JOIN t_object s ON s.object_id=o.container_id
+                    	JOIN t_object sys ON sys.object_id=o.system_id
                     )
                     SELECT (jsonb_build_object(
                     	'entrance_diagram_uid', (SELECT uid FROM cte_scenario),

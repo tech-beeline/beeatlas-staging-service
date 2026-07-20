@@ -105,8 +105,6 @@ public class StructurizrDynamicViewDecomposer {
         String author = textOrNull(root.path("model").path("properties"), "architect");
         if (author == null) notices.add(warning("extract.author_missing", "model.properties.architect is missing", "/model/properties/architect"));
         product.setAuthor(author);
-
-        notices.add(info("extract.product_success", "Product extracted: " + cmdb, "/model/properties/workspace_cmdb"));
         return product;
     }
 
@@ -155,8 +153,6 @@ public class StructurizrDynamicViewDecomposer {
             draft.setContext(pointer);
             snapshot.getContainers().add(draft);
             containerRefsByUid.put(uid, new ContainerRef(container, pointer));
-
-            notices.add(info("extract.container_success", "Container extracted: " + uid, pointer));
         }
     }
 
@@ -199,8 +195,6 @@ public class StructurizrDynamicViewDecomposer {
                 draft.setContext(pointer);
                 snapshot.getTechCapabilities().add(draft);
                 tcByUid.put(uid, draft);
-
-                notices.add(info("extract.tc_success", "Tech capability extracted: " + uid, pointer));
             }
         }
         if (!anyFound) {
@@ -262,8 +256,6 @@ public class StructurizrDynamicViewDecomposer {
                 iface.setContainerUid(containerUid);
                 iface.setContext(pointer);
                 snapshot.getInterfaces().add(iface);
-
-                notices.add(info("extract.interface_success", "Interface extracted: " + ifaceUid, pointer));
 
                 extractOperations(properties, ifaceUid, cmdb, tcByUid, snapshot, operationUidByCanonicalKey, pointer, notices);
             }
@@ -331,8 +323,6 @@ public class StructurizrDynamicViewDecomposer {
             operation.setContext(pointer);
             snapshot.getOperations().add(operation);
             operationUidByCanonicalKey.put(canonicalOperationKey(operationName), uid);
-
-            notices.add(info("extract.operation_success", "Operation extracted: " + uid, pointer));
         }
         if (!anyOperation) {
             notices.add(warning("extract.operations_missing", "No operation properties on interface " + interfaceUid, interfacePointer));
@@ -394,7 +384,6 @@ public class StructurizrDynamicViewDecomposer {
             sequence.setTechCapabilityUid(tcUid);
             sequence.setContext(pointer);
             snapshot.getSequences().add(sequence);
-            notices.add(info("extract.sequence_success", "Sequence extracted: " + key, pointer));
 
             extractRelations(dynamicView, key, pointer, relationshipsById, operationUidByCanonicalKey, snapshot, notices);
         }
@@ -453,7 +442,6 @@ public class StructurizrDynamicViewDecomposer {
                 relation.setCallOrder(order);
                 relation.setContext(stepPointer);
                 snapshot.getSequenceRelations().add(relation);
-                if (calleeOperationUid != null) notices.add(info("extract.sequence_relation_success", "Sequence relation extracted for '" + sequenceKey + "'", stepPointer));
             } else {
                 String callerOperationUid = callerId != null ? lastOperationUidByElementId.get(callerId) : null;
                 if (callerOperationUid == null) {
@@ -466,7 +454,6 @@ public class StructurizrDynamicViewDecomposer {
                     relation.setCallOrder(order);
                     relation.setContext(stepPointer);
                     snapshot.getOperationRelations().add(relation);
-                    notices.add(info("extract.operation_relation_success", "Operation relation extracted for '" + sequenceKey + "'", stepPointer));
                 } else {
                     notices.add(warning("extract.operation_relation_callee_not_found", "Could not resolve callee operation for relationship", stepPointer));
                 }
