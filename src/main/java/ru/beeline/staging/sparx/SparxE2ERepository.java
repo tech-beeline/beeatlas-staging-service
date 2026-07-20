@@ -31,11 +31,21 @@ public class SparxE2ERepository {
     // Full raw export of one e2e scenario: entrance_diagram_uid/diagrams/objects/systems/interfaces/operations,
     // no collapsing of internal calls — that happens downstream in ScenarioDecomposer.
     private static final String FETCH_SCENARIO_RAW = """
-            WITH RECURSIVE cte_c4_api AS (
+            WITH RECURSIVE cte_scenario AS (
+                    	SELECT
+                    		diagram_id as diagram_id,
+                    		ea_guid as uid,
+                    		name,
+                    		0 as object_id
+                    	FROM t_diagram WHERE ea_guid=?
+                    ),
+                    cte_c4_api AS (
+                    	-- Two ways an API component can be wired to its owning softwareSystem:
                     	SELECT
                     		sys.object_id as system_id,
                     		cn.object_id AS container_id,
-                    		api.object_id AS api_id
+                    		api.object_id AS api_id,
+                    		api.alias AS code
                     	FROM t_object sys
                     		JOIN t_connector r ON r.start_object_id=sys.object_id AND r.connector_type='Realisation'
                     		JOIN t_object cn ON cn.object_id=r.end_object_id\s
@@ -43,6 +53,18 @@ public class SparxE2ERepository {
                     		LEFT JOIN t_connector r2 ON r2.start_object_id=cn.object_id AND r.connector_type='Realisation'
                     		LEFT JOIN t_object api ON api.object_id=r2.end_object_id
                     	WHERE sys.stereotype='softwareSystem'
+                    	UNION
+                    	-- ...or a ProvidedInterface hanging directly off the softwareSystem, with no C4_Container
+                    	-- in between — synthesize a code since there's no api-side alias to read.
+                    	SELECT
+                    		app.object_id AS system_id,
+                    		p.object_id AS container_id,
+                    		i.object_id AS api_id,
+                    		'manual.provided.'::varchar || LOWER(app.alias) AS code
+                    	FROM t_object app
+                    		JOIN t_object p ON p.parentid=app.object_id AND p.object_type='ProvidedInterface'
+                    		JOIN t_object i ON i.object_id=p.classifier
+                    	WHERE app.stereotype='softwareSystem'
                     ),
                     cte_diagram_link AS
                     (
@@ -64,13 +86,13 @@ public class SparxE2ERepository {
                     	WHERE x.name='DefaultDiagram'
                     ), cte_diagrams AS
                     (
-                    	SELECT\s
-                    		diagram_id as diagram_id,\s
-                    		ea_guid as uid,
+                    	SELECT
+                    		diagram_id,
+                    		uid,
                     		name,
-                    		0 as object_id
-                    	FROM t_diagram WHERE ea_guid=?
-                    	
+                    		object_id
+                    	FROM cte_scenario
+
                     	UNION DISTINCT
                     	SELECT
                     		r.child_diagram_id,\s
@@ -148,7 +170,7 @@ public class SparxE2ERepository {
                     ), cte_interfaces AS (
                     	SELECT DISTINCT\s
                     		i.object_id AS id,\s
-                    		i.alias AS code,\s
+                    		api.code AS code,\s
                     		i.name,
                     		i.createddate AS created_at,
                     		i.modifieddate AS modified_at,
@@ -189,7 +211,7 @@ public class SparxE2ERepository {
                     	JOIN t_object s ON s.object_id=o.system_id
                     )
                     SELECT (jsonb_build_object(
-                    	'entrance_diagram_uid', ?,
+                    	'entrance_diagram_uid', (SELECT uid FROM cte_scenario),
                     	'diagrams', COALESCE((SELECT jsonb_agg(d) FROM cte_diagram_detail d),'[]'::jsonb ),
                     	'objects', COALESCE((SELECT jsonb_agg(o) FROM cte_objects o),'[]'::jsonb),
                     	'systems' ,COALESCE((SELECT jsonb_agg(s) FROM cte_systems s),'[]'::jsonb),
@@ -232,6 +254,6 @@ public class SparxE2ERepository {
             log.warn("Sparx datasource not configured (staging.sparx.datasource.url not set) — cannot fetch uid={}", entranceDiagramUid);
             return null;
         }
-        return sparxJdbcTemplate.queryForObject(FETCH_SCENARIO_RAW, String.class, entranceDiagramUid, entranceDiagramUid);
+        return sparxJdbcTemplate.queryForObject(FETCH_SCENARIO_RAW, String.class, entranceDiagramUid);
     }
 }
