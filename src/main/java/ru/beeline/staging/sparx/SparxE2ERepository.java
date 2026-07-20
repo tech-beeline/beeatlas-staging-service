@@ -28,7 +28,7 @@ public class SparxE2ERepository {
             WHERE p.stereotype = 'e2e_diagram'
             """;
 
-    // Full raw export of one e2e scenario: entrance_diagram_uid/diagrams/objects/systems/interfaces/operations,
+    // Full raw export of one e2e scenario: entrance_diagram_uid/diagrams/objects/systems/containers/interfaces/operations,
     // no collapsing of internal calls — that happens downstream in ScenarioDecomposer.
     private static final String FETCH_SCENARIO_RAW = """
             WITH RECURSIVE cte_scenario AS (
@@ -44,6 +44,7 @@ public class SparxE2ERepository {
                     	SELECT
                     		sys.object_id as system_id,
                     		cn.object_id AS container_id,
+                    		cn.alias AS container_code,
                     		api.object_id AS api_id,
                     		api.alias AS code
                     	FROM t_object sys
@@ -55,10 +56,12 @@ public class SparxE2ERepository {
                     	WHERE sys.stereotype='softwareSystem'
                     	UNION
                     	-- ...or a ProvidedInterface hanging directly off the softwareSystem, with no C4_Container
-                    	-- in between — synthesize a code since there's no api-side alias to read.
+                    	-- in between — synthesize a virtual container + interface code, since there's neither a
+                    	-- real container nor an api-side alias to read.
                     	SELECT
                     		app.object_id AS system_id,
                     		p.object_id AS container_id,
+                    		'provided.'::varchar || LOWER(app.alias),
                     		i.object_id AS api_id,
                     		'manual.provided.'::varchar || LOWER(app.alias) AS code
                     	FROM t_object app
@@ -177,6 +180,7 @@ public class SparxE2ERepository {
                     		i.author,
                     		i.version,
                     		api.system_id,
+                    		api.container_id,
                     		CASE\s
                     			WHEN api.system_id IS NOT NULL THEN 'structurizr'
                     			ELSE 'manual'
@@ -209,12 +213,21 @@ public class SparxE2ERepository {
                     		s.alias AS code
                     	FROM cte_objects o
                     	JOIN t_object s ON s.object_id=o.system_id
+                    ), cte_containers AS (
+                    	SELECT DISTINCT
+                    		s.object_id AS id,
+                    		s.name,
+                    		o.container_code AS code,
+                    		o.system_id
+                    	FROM cte_c4_api o
+                    	JOIN t_object s ON s.object_id=o.container_id
                     )
                     SELECT (jsonb_build_object(
                     	'entrance_diagram_uid', (SELECT uid FROM cte_scenario),
                     	'diagrams', COALESCE((SELECT jsonb_agg(d) FROM cte_diagram_detail d),'[]'::jsonb ),
                     	'objects', COALESCE((SELECT jsonb_agg(o) FROM cte_objects o),'[]'::jsonb),
                     	'systems' ,COALESCE((SELECT jsonb_agg(s) FROM cte_systems s),'[]'::jsonb),
+                    	'containers', COALESCE((SELECT jsonb_agg(c) FROM cte_containers c),'[]'::jsonb),
                     	'interfaces', COALESCE((SELECT jsonb_agg(i) FROM cte_interfaces i),'[]'::jsonb),
                     	'operations', COALESCE((SELECT jsonb_agg(o) FROM cte_operations o),'[]'::jsonb)
                     ))::text
@@ -245,7 +258,7 @@ public class SparxE2ERepository {
     }
 
     /**
-     * Full raw export of one e2e scenario (entrance_diagram_uid/diagrams/objects/systems/interfaces/operations),
+     * Full raw export of one e2e scenario (entrance_diagram_uid/diagrams/objects/systems/containers/interfaces/operations),
      * straight from Sparx EA — no collapsing. Returns the jsonb payload as text (Postgres builds the JSON
      * server-side); {@code null} if the datasource isn't configured.
      */

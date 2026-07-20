@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.canonical.BiStepVersion;
+import ru.beeline.staging.domain.canonical.ContainerVersion;
 import ru.beeline.staging.domain.canonical.E2eScenarioVersion;
 import ru.beeline.staging.domain.canonical.InterfaceVersion;
 import ru.beeline.staging.domain.canonical.OperationRelationVersion;
@@ -38,6 +39,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     private final BiStepMatchService                 biStepMatchService;
     private final E2eScenarioMatchService            e2eScenarioMatchService;
     private final ProductMatchService                productMatchService;
+    private final ContainerMatchService              containerMatchService;
     private final InterfaceMatchService              interfaceMatchService;
     private final OperationMatchService               operationMatchService;
     private final PipelineRunService                 pipelineRunService;
@@ -80,7 +82,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                 snapshot.getInterfaces().size(),
                 snapshot.getOperations().size(),
                 snapshot.getProducts().size(),
-                0);
+                snapshot.getContainers().size());
         Long batchId = batch.getId();
 
         Map<String, ProductVersion> productVersionsByUid = new HashMap<>();
@@ -91,12 +93,28 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             productVersionsByUid.put(draft.getUid(), version);
         }
 
+        Map<String, ContainerVersion> containerVersionsByUid = new HashMap<>();
+        for (E2ESequenceSnapshot.ContainerDraft draft : snapshot.getContainers()) {
+            ProductVersion productVersion = draft.getProductUid() != null
+                    ? productVersionsByUid.get(draft.getProductUid())
+                    : null;
+            ContainerVersion version = containerMatchService.matchOrCreate(
+                    draft.getUid(), draft.getExtUid(), draft.getName(), null, null, null,
+                    productVersion != null ? productVersion.getId() : null,
+                    draft.getContext(), rawDataRefId, batchId);
+            containerVersionsByUid.put(draft.getUid(), version);
+        }
+
         Map<String, InterfaceVersion> interfaceVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.InterfaceDraft draft : snapshot.getInterfaces()) {
+            ContainerVersion containerVersion = draft.getContainerUid() != null
+                    ? containerVersionsByUid.get(draft.getContainerUid())
+                    : null;
             InterfaceVersion version = interfaceMatchService.matchOrCreate(
-                    draft.getUid(), draft.getExtUid(), draft.getProtocol(), null,
+                    draft.getUid(), draft.getExtUid(), draft.getProtocol(), draft.getName(),
                     null, null, null, null,
-                    null, draft.getContext(), rawDataRefId, batchId);
+                    containerVersion != null ? containerVersion.getId() : null,
+                    draft.getContext(), rawDataRefId, batchId);
             interfaceVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -159,6 +177,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         SaveStats stats = new SaveStats();
         stats.setBatchId(batchId);
         stats.setProductsSaved(productVersionsByUid.size());
+        stats.setContainersSaved(containerVersionsByUid.size());
         stats.setInterfacesSaved(interfaceVersionsByUid.size());
         stats.setOperationsSaved(operationVersionsByExtUid.size());
         stats.setBiStepsSaved(biStepVersionsByUid.size());
@@ -182,6 +201,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     private static class SaveStats {
         private Long batchId;
         private int  productsSaved;
+        private int  containersSaved;
         private int  interfacesSaved;
         private int  operationsSaved;
         private int  biStepsSaved;
@@ -190,9 +210,9 @@ public class E2ECanonicalSaver implements ArtifactSaver {
 
         @Override
         public String toString() {
-            return "batchId=" + batchId + " products=" + productsSaved + " biSteps=" + biStepsSaved
-                    + " e2eScenarioId=" + e2eScenarioId + " ifaces=" + interfacesSaved + " ops=" + operationsSaved
-                    + " opRelations=" + operationRelationsSaved;
+            return "batchId=" + batchId + " products=" + productsSaved + " containers=" + containersSaved
+                    + " biSteps=" + biStepsSaved + " e2eScenarioId=" + e2eScenarioId
+                    + " ifaces=" + interfacesSaved + " ops=" + operationsSaved + " opRelations=" + operationRelationsSaved;
         }
     }
 }

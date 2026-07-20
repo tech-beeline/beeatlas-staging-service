@@ -10,6 +10,7 @@ public class E2ESequenceSnapshot {
 
     private E2eScenarioDraft             e2eScenario;
     private List<ProductDraft>           products           = new ArrayList<>();
+    private List<ContainerDraft>         containers         = new ArrayList<>();
     private List<InterfaceDraft>         interfaces         = new ArrayList<>();
     private List<OperationDraft>         operations         = new ArrayList<>();
     private List<BiStepDraft>            biSteps            = new ArrayList<>();
@@ -20,6 +21,15 @@ public class E2ESequenceSnapshot {
         private String uid;    // systems[].code
         private String extUid; // systems[].code
         private String name;   // systems[].name
+        private String context;
+    }
+
+    @Data
+    public static class ContainerDraft {
+        private String uid;        // containers[].code
+        private String extUid;     // containers[].id
+        private String name;       // containers[].name
+        private String productUid; // resolved systems[].code owning this container, via containers[].system_id
         private String context;
     }
 
@@ -39,7 +49,9 @@ public class E2ESequenceSnapshot {
         private String uid;
         private String extUid;
         private String protocol;
+        private String name;
         private String source;
+        private String containerUid; // resolved containers[].code owning this interface, via interfaces[].container_id
         private String context;
     }
 

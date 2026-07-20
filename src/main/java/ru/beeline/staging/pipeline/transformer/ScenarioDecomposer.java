@@ -40,6 +40,7 @@ public class ScenarioDecomposer {
         Map<Integer, JsonNode> objectsById = indexByIntField(root.path("objects"), "id");
         Map<Integer, JsonNode> systemsById = indexByIntField(root.path("systems"), "id");
         Map<Integer, JsonNode> interfacesById = indexByIntField(root.path("interfaces"), "id");
+        Map<Integer, JsonNode> containersById = indexByIntField(root.path("containers"), "id");
         Map<String, JsonNode> operationsByUid = indexByStringField(root.path("operations"), "uid");
         // RFC6901 pointers into root.diagrams[]/interfaces[]/operations[] by array position — stored
         // as the json_path in raw_data_context for bi_step/interface/operation drafts and notices.
@@ -64,6 +65,34 @@ public class ScenarioDecomposer {
             product.setName(textOrNull(system, "name"));
             product.setContext(pointer);
             snapshot.getProducts().add(product);
+        }
+
+        // Container (containers[] -> containers/container_versions, per transform-spec §4.2.1),
+        // linked to its owning product via containers[].system_id -> systems[].code.
+        int containerIdx = 0;
+        for (JsonNode container : root.path("containers")) {
+            String pointer = "/containers/" + containerIdx;
+            containerIdx++;
+            String code = textOrNull(container, "code");
+            if (code == null || code.isBlank()) {
+                notices.add(mapFailed("warning", details("missing_required_field", "field", "code",
+                        "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
+                continue;
+            }
+            Integer systemId = intOrNull(container, "system_id");
+            JsonNode system = systemId != null ? systemsById.get(systemId) : null;
+            String productUid = system != null ? textOrNull(system, "code") : null;
+            if (systemId != null && system == null) {
+                notices.add(mapFailed("warning", details("missing_reference", "field", "system_id",
+                        "value", String.valueOf(systemId), "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
+            }
+            E2ESequenceSnapshot.ContainerDraft containerDraft = new E2ESequenceSnapshot.ContainerDraft();
+            containerDraft.setUid(code);
+            containerDraft.setExtUid(String.valueOf(intOrNull(container, "id")));
+            containerDraft.setName(textOrNull(container, "name"));
+            containerDraft.setProductUid(productUid);
+            containerDraft.setContext(pointer);
+            snapshot.getContainers().add(containerDraft);
         }
 
         JsonNode rootDiagram = entranceDiagramUid != null ? diagramsByUid.get(entranceDiagramUid) : null;
@@ -140,7 +169,7 @@ public class ScenarioDecomposer {
                         "message_name", node.name), node.pointer));
                 continue;
             }
-            registerOperationAndInterface(node, operationsByUid, interfacesById, operationArrayIndexByUid,
+            registerOperationAndInterface(node, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
 
             // Root-level call: no caller operation (operation_version_id = NULL in operation_relation_versions).
@@ -152,7 +181,7 @@ public class ScenarioDecomposer {
             rel.setContext(node.pointer);
             snapshot.getOperationRelations().add(rel);
 
-            decomposeChildren(node, operationsByUid, interfacesById, operationArrayIndexByUid,
+            decomposeChildren(node, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
         }
 
@@ -382,6 +411,7 @@ public class ScenarioDecomposer {
     // ------------------------------------------------------------------
 
     private void decomposeChildren(CallNode parent, Map<String, JsonNode> operationsByUid, Map<Integer, JsonNode> interfacesById,
+                                    Map<Integer, JsonNode> containersById,
                                     Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                                     Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
                                     E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
@@ -392,7 +422,7 @@ public class ScenarioDecomposer {
                         "message_name", child.name), child.pointer));
                 continue;
             }
-            registerOperationAndInterface(child, operationsByUid, interfacesById, operationArrayIndexByUid,
+            registerOperationAndInterface(child, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
 
             OperationRelationDraft rel = new OperationRelationDraft();
@@ -403,12 +433,13 @@ public class ScenarioDecomposer {
             rel.setContext(child.pointer);
             snapshot.getOperationRelations().add(rel);
 
-            decomposeChildren(child, operationsByUid, interfacesById, operationArrayIndexByUid,
+            decomposeChildren(child, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
                     interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
         }
     }
 
     private void registerOperationAndInterface(CallNode node, Map<String, JsonNode> operationsByUid, Map<Integer, JsonNode> interfacesById,
+                                                Map<Integer, JsonNode> containersById,
                                                 Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                                                 Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
                                                 E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
@@ -443,9 +474,20 @@ public class ScenarioDecomposer {
                 ifaceDraft.setUid(ifaceUid);
                 ifaceDraft.setExtUid(String.valueOf(ifaceId));
                 ifaceDraft.setProtocol(tagsOf(iface).get("protocol"));
+                ifaceDraft.setName(textOrNull(iface, "name"));
                 ifaceDraft.setSource(textOrNull(iface, "source"));
                 Integer ifaceIdx = interfaceArrayIndexById.get(ifaceId);
-                ifaceDraft.setContext(ifaceIdx != null ? "/interfaces/" + ifaceIdx : null);
+                String ifacePointer = ifaceIdx != null ? "/interfaces/" + ifaceIdx : null;
+                ifaceDraft.setContext(ifacePointer);
+
+                Integer containerId = intOrNull(iface, "container_id");
+                JsonNode containerNode = containerId != null ? containersById.get(containerId) : null;
+                if (containerNode != null) {
+                    ifaceDraft.setContainerUid(textOrNull(containerNode, "code"));
+                } else if (containerId != null) {
+                    notices.add(mapFailed("warning", details("missing_reference", "field", "container_id",
+                            "value", String.valueOf(containerId)), ifacePointer != null ? ifacePointer : node.pointer));
+                }
                 snapshot.getInterfaces().add(ifaceDraft);
             }
         }
