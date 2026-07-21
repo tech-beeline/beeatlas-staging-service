@@ -17,6 +17,7 @@ import ru.beeline.staging.domain.canonical.OperationVersion;
 import ru.beeline.staging.domain.canonical.ProductVersion;
 import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
+import ru.beeline.staging.product.E2eProductsPublisher;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
@@ -47,6 +48,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
     private final ConfigurationRepository             configurationRepository;
     private final SourceSystemRepository              sourceSystemRepository;
     private final RawDataContextService               rawDataContextService;
+    private final E2eProductsPublisher                e2eProductsPublisher;
     private final ObjectMapper                         objectMapper;
 
     @Override
@@ -67,6 +69,8 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         E2ESequenceSnapshot snapshot = objectMapper.readValue(canonicalSnapshotJson, E2ESequenceSnapshot.class);
         SaveStats stats = saveSnapshot(snapshot, rawDataRefId, runId, artifactUid, artifactType);
         log.info("Saved canonical model for uid={}: {}", artifactUid, stats);
+
+        e2eProductsPublisher.publish(artifactUid);
 
         return SaveResult.of(Map.of("batchId", stats.getBatchId() != null ? stats.getBatchId() : -1L));
     }

@@ -8,6 +8,7 @@ import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -43,5 +44,14 @@ public class StagingDataSourceConfig {
     public PlatformTransactionManager stagingTransactionManager(
             @Qualifier("stagingEntityManagerFactory") EntityManagerFactory entityManagerFactory) {
         return new JpaTransactionManager(entityManagerFactory);
+    }
+
+    // Bound to the same DataSource bean as the JPA EntityManagerFactory above, so when invoked inside a
+    // @Transactional method managed by stagingTransactionManager it shares that transaction's connection
+    // and sees uncommitted writes made via JPA in the same transaction (identity-generated inserts flush
+    // immediately, so this is safe to use right after repository.save() calls).
+    @Bean(name = "stagingJdbcTemplate")
+    public JdbcTemplate stagingJdbcTemplate(@Qualifier("stagingDataSource") DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
     }
 }

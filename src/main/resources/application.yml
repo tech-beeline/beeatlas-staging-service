@@ -44,6 +44,11 @@ camunda:
     webapp:
       index-redirect-enabled: true
 
+integration:
+  e2e-publish:
+    retry-count: ${INTEGRATION_E2E_PUBLISH_RETRY_COUNT:3}
+    retry-delay-ms: ${INTEGRATION_E2E_PUBLISH_RETRY_DELAY_MS:1000}
+
 staging:
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
