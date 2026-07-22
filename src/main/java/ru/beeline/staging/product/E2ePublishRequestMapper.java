@@ -64,7 +64,8 @@ public class E2ePublishRequestMapper {
         dto.setCode(text(node, "code"));
         dto.setName(text(node, "name"));
         dto.setParentContainerCode(text(node, "parent_container_code"));
-        // specLink/version/protocol: not available from staging — always null per save-spec §4.4.
+        dto.setProtocol(text(node, "protocol"));
+        // specLink/version: not available from staging — always null per save-spec §4.4.
         return dto;
     }
 

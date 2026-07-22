@@ -87,7 +87,8 @@ public class ActualE2eScenarioRepository {
                             jsonb_build_object(
                                 'name', c.name,
                                 'code', c.ext_uid,
-                                'parent_container_code', c.container_code ))
+                                'parent_container_code', c.container_code,
+                                'protocol', c.protocol ))
                         FROM cte_api c), '[]'::jsonb),
                     'operations', COALESCE((SELECT        jsonb_agg(
                             jsonb_build_object(
