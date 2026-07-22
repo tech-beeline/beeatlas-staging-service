@@ -9,6 +9,9 @@ import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.product.dto.e2e.E2ePublishRequest;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -56,8 +59,19 @@ public class E2eProductsPublisher {
     // Saved in its own transaction (see ArtifactNoticeService.saveNoticeInNewTransaction) so the notice
     // survives the rollback the caller's @Transactional save method triggers by rethrowing.
     private void recordPublishFailure(String artifactUid, Long rawDataRefId, Exception e) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("uid", artifactUid);
+        details.put("error", e.getMessage());
+        String detailsJson;
+        try {
+            detailsJson = objectMapper.writeValueAsString(details);
+        } catch (Exception jsonEx) {
+            detailsJson = "{}";
+        }
+        // ArtifactNoticeEntity only persists code/level/category (via notice_type) + details + context —
+        // message() is never written, so the useful text has to live in details().
         ArtifactNotice notice = new ArtifactNotice(null, null, "publish.failed", "error", "publish",
-                rawDataRefId, "e2e_scenario", artifactUid, null, e.getMessage(), null, null, null);
+                rawDataRefId, "e2e_scenario", artifactUid, null, "publish.failed", detailsJson, null, null);
         artifactNoticeService.saveNoticeInNewTransaction(rawDataRefId, notice);
     }
 }
