@@ -70,7 +70,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
         SaveStats stats = saveSnapshot(snapshot, rawDataRefId, runId, artifactUid, artifactType);
         log.info("Saved canonical model for uid={}: {}", artifactUid, stats);
 
-        e2eProductsPublisher.publish(artifactUid);
+        e2eProductsPublisher.publish(artifactUid, rawDataRefId);
 
         return SaveResult.of(Map.of("batchId", stats.getBatchId() != null ? stats.getBatchId() : -1L));
     }

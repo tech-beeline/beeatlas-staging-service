@@ -67,6 +67,13 @@ public class ArtifactNoticeService {
         return saved;
     }
 
+    // Runs independently of the caller's transaction, so the notice survives even when the caller's
+    // own work (e.g. a failed external publish) is about to roll back.
+    @Transactional(value = "stagingTransactionManager", propagation = Propagation.REQUIRES_NEW)
+    public void saveNoticeInNewTransaction(Long rawDataRefId, ArtifactNotice notice) {
+        saveNotices(rawDataRefId, List.of(notice));
+    }
+
     @Transactional(value = "stagingTransactionManager", propagation = Propagation.REQUIRES_NEW)
     NoticeTypeEntity resolveOrRegisterType(ArtifactNotice notice) {
         return noticeTypeRepository.findByCode(notice.code()).orElseGet(() -> {
