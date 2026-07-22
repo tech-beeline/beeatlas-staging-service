@@ -212,6 +212,17 @@ public class SparxE2ERepository {
                     		s.alias AS code
                     	FROM cte_objects o
                     	JOIN t_object s ON s.object_id=o.system_id
+                    	UNION
+                    	-- A container's owning system isn't necessarily drawn on the diagram itself (only its
+                    	-- interface/operation is) — pull in every system that backs a used container too, so
+                    	-- containers[].system_code always has a matching entry in systems[].
+                    	SELECT DISTINCT
+                    		sys.object_id AS id,
+                    		sys.name,
+                    		sys.alias AS code
+                    	FROM cte_c4_api api
+                    	JOIN cte_interfaces i ON i.id=api.api_id
+                    	JOIN t_object sys ON sys.object_id=api.system_id
                     ), cte_containers AS (
                     	SELECT DISTINCT
                     		s.object_id AS id,
