@@ -12,8 +12,6 @@ import ru.beeline.staging.product.dto.e2e.E2ePublishRequest;
 import ru.beeline.staging.product.dto.e2e.E2eProductDto;
 
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Maps the staging canonical model (snake_case, per get-actual-e2e-scenario.sql) onto the
@@ -21,8 +19,6 @@ import java.util.regex.Pattern;
  */
 @Component
 public class E2ePublishRequestMapper {
-
-    private static final Pattern HTTP_METHOD_PREFIX = Pattern.compile("^(GET|POST|PUT|PATCH|DELETE)\\s");
 
     public E2ePublishRequest map(JsonNode root) {
         E2ePublishRequest request = new E2ePublishRequest();
@@ -71,10 +67,11 @@ public class E2ePublishRequestMapper {
 
     private E2eOperationDto mapOperation(JsonNode node) {
         E2eOperationDto dto = new E2eOperationDto();
-        String name = text(node, "name");
         dto.setUid(text(node, "uid"));
-        dto.setName(name);
-        dto.setType(extractHttpMethod(name));
+        dto.setName(text(node, "name"));
+        // type is computed at transform time (name/type split + SOAP fallback, transform-spec §4.5 v4)
+        // and persisted on operation_versions.type — read it as-is rather than re-deriving it here.
+        dto.setType(text(node, "type"));
         dto.setParentInterfaceCode(text(node, "interface_code"));
         dto.setSla(mapSla(node.path("sla")));
         return dto;
@@ -98,14 +95,6 @@ public class E2ePublishRequestMapper {
         dto.setOrder(node.hasNonNull("call_order") ? node.get("call_order").asInt() : null);
         dto.setStereoType(text(node, "stereotype"));
         return dto;
-    }
-
-    private String extractHttpMethod(String operationName) {
-        if (operationName == null) {
-            return null;
-        }
-        Matcher matcher = HTTP_METHOD_PREFIX.matcher(operationName);
-        return matcher.find() ? matcher.group(1) : null;
     }
 
     private <T> List<T> mapList(JsonNode arrayNode, java.util.function.Function<JsonNode, T> mapper) {

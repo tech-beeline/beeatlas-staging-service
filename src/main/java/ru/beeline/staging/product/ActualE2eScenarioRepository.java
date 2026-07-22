@@ -94,6 +94,7 @@ public class ActualE2eScenarioRepository {
                             jsonb_build_object(
                                 'name', c.name,
                                 'uid', c.ext_uid,
+                                'type', c.type,
                                 'interface_code', c.interface_code,
                                 'sla', jsonb_build_object(
                                     'rps',c.rps,

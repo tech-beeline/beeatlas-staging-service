@@ -26,6 +26,7 @@ public class ScenarioDecomposer {
 
     private static final Set<String> EXCLUDED_NAMES = Set.of("use", "use()");
     private static final Pattern STEP_ID_PATTERN = Pattern.compile("step_id=([A-Za-z0-9._-]+)");
+    private static final Pattern HTTP_METHOD_PREFIX = Pattern.compile("^(GET|POST|PUT|PATCH|DELETE)\\s");
 
     private final ObjectMapper objectMapper;
 
@@ -450,7 +451,7 @@ public class ScenarioDecomposer {
         JsonNode op = operationsByUid.get(node.operationGuid);
         OperationDraft draft = new OperationDraft();
         draft.setExtUid(node.operationGuid);
-        draft.setName(op != null ? textOrNull(op, "name") : node.name);
+        String rawName = op != null ? textOrNull(op, "name") : node.name;
         // Points at root.operations[N] itself, not the calling message.
         Integer opIdx = operationArrayIndexByUid.get(node.operationGuid);
         draft.setContext(opIdx != null ? "/operations/" + opIdx : node.pointer);
@@ -468,15 +469,20 @@ public class ScenarioDecomposer {
 
         Integer ifaceId = op != null ? intOrNull(op, "interface_id") : null;
         JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
+        String protocol = null;
         if (iface != null) {
             String ifaceUid = textOrNull(iface, "code");
             draft.setInterfaceUid(ifaceUid);
+            String rawProtocol = tagsOf(iface).get("protocol");
+            // Default to REST when the source has no protocol tag at all — per transform-spec §4.4 (v4).
+            protocol = (rawProtocol == null || rawProtocol.isBlank()) ? "REST" : rawProtocol;
+
             if (ifaceUid != null && registeredInterfaces.add(ifaceUid)) {
                 InterfaceDraft ifaceDraft = new InterfaceDraft();
                 ifaceDraft.setUid(ifaceUid);
                 // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
                 ifaceDraft.setExtUid(ifaceUid);
-                ifaceDraft.setProtocol(tagsOf(iface).get("protocol"));
+                ifaceDraft.setProtocol(protocol);
                 ifaceDraft.setName(textOrNull(iface, "name"));
                 ifaceDraft.setSource(textOrNull(iface, "source"));
                 Integer ifaceIdx = interfaceArrayIndexById.get(ifaceId);
@@ -492,10 +498,67 @@ public class ScenarioDecomposer {
                             "value", String.valueOf(containerId)), ifacePointer != null ? ifacePointer : node.pointer));
                 }
                 snapshot.getInterfaces().add(ifaceDraft);
+
+                if (rawProtocol == null || rawProtocol.isBlank()) {
+                    notices.add(protocolDefaultNotice(ifaceUid, ifacePointer != null ? ifacePointer : node.pointer));
+                }
             }
         }
+
+        // name/type — per transform-spec §4.5 (v4): if the raw name has a space, name becomes
+        // everything after the first word and type is the HTTP verb extracted from that first word;
+        // otherwise name is used as-is and type falls back to SOAP when the interface is SOAP.
+        String httpMethod = extractHttpMethod(rawName);
+        String name = rawName;
+        if (rawName != null && rawName.indexOf(' ') >= 0) {
+            name = rawName.substring(rawName.indexOf(' ') + 1);
+            notices.add(nameExtractedNotice(node, rawName, name));
+        }
+        String type = httpMethod;
+        if (type == null && (rawName == null || rawName.indexOf(' ') < 0) && "SOAP".equals(protocol)) {
+            type = "SOAP";
+            notices.add(typeSoapDefaultNotice(node));
+        }
+        draft.setName(name);
+        draft.setType(type);
+
         operationDrafts.put(node.operationGuid, draft);
         snapshot.getOperations().add(draft);
+    }
+
+    private static String extractHttpMethod(String name) {
+        if (name == null) return null;
+        Matcher matcher = HTTP_METHOD_PREFIX.matcher(name);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private ArtifactNotice protocolDefaultNotice(String interfaceUid, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "protocol");
+        d.put("action", "default_value");
+        d.put("value", "REST");
+        d.put("reason", "protocol_tag_not_set");
+        d.put("interface_uid", interfaceUid);
+        return notice("transform.implicit_cast", "info", d, pointer);
+    }
+
+    private ArtifactNotice nameExtractedNotice(CallNode node, String sourceValue, String targetValue) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "name");
+        d.put("action", "extract_after_first_word");
+        d.put("source_value", sourceValue);
+        d.put("target_value", targetValue);
+        return notice("transform.implicit_cast", "info", d, node.pointer);
+    }
+
+    private ArtifactNotice typeSoapDefaultNotice(CallNode node) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "type");
+        d.put("action", "default_value");
+        d.put("value", "SOAP");
+        d.put("reason", "soap_protocol_no_spaces_in_name");
+        d.put("operation_uid", node.operationGuid);
+        return notice("transform.implicit_cast", "info", d, node.pointer);
     }
 
     private ArtifactNotice implicitCastNotice(CallNode node, Map<String, String> tags, Double rps, Double latency, Double errorRate) {
