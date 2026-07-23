@@ -2,12 +2,15 @@ package ru.beeline.staging.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.staging.dto.scan.ScanRun;
+import ru.beeline.staging.repository.PipelineRunDetailsRepository;
 import ru.beeline.staging.repository.ScanRunRepository;
 
 import java.time.LocalDateTime;
@@ -28,6 +31,15 @@ public class PipelineRunsController {
     private static final int DEFAULT_LIMIT = 50;
 
     private final ScanRunRepository scanRunRepository;
+    private final PipelineRunDetailsRepository pipelineRunDetailsRepository;
+
+    @GetMapping("/{runId}/details")
+    public ResponseEntity<?> getRunDetails(@PathVariable Long runId) {
+        return pipelineRunDetailsRepository.findById(runId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Pipeline run not found", "runId", runId)));
+    }
 
     @GetMapping("/scans")
     public ResponseEntity<?> listScans(
