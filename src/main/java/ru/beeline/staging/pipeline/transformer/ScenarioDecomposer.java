@@ -49,6 +49,7 @@ public class ScenarioDecomposer {
         Map<String, Integer> operationArrayIndexByUid = arrayIndexByStringField(root.path("operations"), "uid");
 
         // Product (systems[] -> products/product_versions, per transform-spec §4.2)
+        Set<String> seenProductCodes = new HashSet<>();
         int systemIdx = 0;
         for (JsonNode system : root.path("systems")) {
             String pointer = "/systems/" + systemIdx;
@@ -57,6 +58,10 @@ public class ScenarioDecomposer {
             if (code == null || code.isBlank()) {
                 notices.add(mapFailed("warning", details("missing_required_field", "field", "code",
                         "system_id", String.valueOf(intOrNull(system, "id"))), pointer));
+                continue;
+            }
+            if (!seenProductCodes.add(code)) {
+                notices.add(duplicateKeyNotice("uid", code, "systems", systemIdx - 1, pointer));
                 continue;
             }
             E2ESequenceSnapshot.ProductDraft product = new E2ESequenceSnapshot.ProductDraft();
@@ -72,6 +77,7 @@ public class ScenarioDecomposer {
         // container row in SQL, since containers[].system_id doesn't reliably resolve against systems[]
         // (systems[] is scoped to systems that appear as diagram objects; a container's owning system
         // may never appear on the diagram itself even though its interface does).
+        Set<String> seenContainerCodes = new HashSet<>();
         int containerIdx = 0;
         for (JsonNode container : root.path("containers")) {
             String pointer = "/containers/" + containerIdx;
@@ -80,6 +86,10 @@ public class ScenarioDecomposer {
             if (code == null || code.isBlank()) {
                 notices.add(mapFailed("warning", details("missing_required_field", "field", "code",
                         "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
+                continue;
+            }
+            if (!seenContainerCodes.add(code)) {
+                notices.add(duplicateKeyNotice("uid", code, "containers", containerIdx - 1, pointer));
                 continue;
             }
             String productUid = textOrNull(container, "system_code");
@@ -164,6 +174,7 @@ public class ScenarioDecomposer {
 
         Map<String, OperationDraft> operationDrafts = new LinkedHashMap<>();
         Set<String> registeredInterfaces = new LinkedHashSet<>();
+        Set<String> skippedOperations = new HashSet<>();
         int callOrder = 0;
         for (CallNode node : finalSequence) {
             if (node.operationGuid == null) {
@@ -172,7 +183,11 @@ public class ScenarioDecomposer {
                 continue;
             }
             registerOperationAndInterface(node, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
+                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
+            if (!operationDrafts.containsKey(node.operationGuid)) {
+                // G1: operation had no resolvable interface — dropped, and so is this call + its subtree.
+                continue;
+            }
 
             // Root-level call: no caller operation (operation_version_id = NULL in operation_relation_versions).
             OperationRelationDraft rel = new OperationRelationDraft();
@@ -184,7 +199,7 @@ public class ScenarioDecomposer {
             snapshot.getOperationRelations().add(rel);
 
             decomposeChildren(node, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
+                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
         }
 
         return new Result(snapshot, notices, stepId);
@@ -416,7 +431,7 @@ public class ScenarioDecomposer {
                                     Map<Integer, JsonNode> containersById,
                                     Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                                     Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-                                    E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+                                    Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         int callOrder = 0;
         for (CallNode child : parent.children) {
             if (child.operationGuid == null) {
@@ -425,7 +440,11 @@ public class ScenarioDecomposer {
                 continue;
             }
             registerOperationAndInterface(child, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
+                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
+            if (!operationDrafts.containsKey(child.operationGuid)) {
+                // G1: operation had no resolvable interface — dropped, and so is this call + its subtree.
+                continue;
+            }
 
             OperationRelationDraft rel = new OperationRelationDraft();
             rel.setCallerOperationExtUid(parent.operationGuid);
@@ -436,7 +455,7 @@ public class ScenarioDecomposer {
             snapshot.getOperationRelations().add(rel);
 
             decomposeChildren(child, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, snapshot, notices);
+                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
         }
     }
 
@@ -444,10 +463,22 @@ public class ScenarioDecomposer {
                                                 Map<Integer, JsonNode> containersById,
                                                 Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                                                 Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-                                                E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
-        if (operationDrafts.containsKey(node.operationGuid)) return;
+                                                Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+        if (operationDrafts.containsKey(node.operationGuid) || skippedOperations.contains(node.operationGuid)) return;
 
         JsonNode op = operationsByUid.get(node.operationGuid);
+        Integer ifaceId = op != null ? intOrNull(op, "interface_id") : null;
+        JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
+
+        // G1: an operation whose interface_id doesn't resolve is dropped entirely (not just left with a
+        // null interfaceUid) — per transform-spec §4.5, this is required for the operation to be
+        // publishable (fdm-products rejects operations.parentInterfaceCode == null).
+        if (iface == null) {
+            skippedOperations.add(node.operationGuid);
+            notices.add(missingInterfaceNotice(node.operationGuid, ifaceId, node.pointer));
+            return;
+        }
+
         OperationDraft draft = new OperationDraft();
         draft.setExtUid(node.operationGuid);
         String rawName = op != null ? textOrNull(op, "name") : node.name;
@@ -456,9 +487,9 @@ public class ScenarioDecomposer {
         draft.setContext(opIdx != null ? "/operations/" + opIdx : node.pointer);
 
         Map<String, String> tags = op != null ? tagsOf(op) : Map.of();
-        Double rps = numOrNull(tags.get("rps"));
-        Double latency = numOrNull(tags.get("latency"));
-        Double errorRate = numOrNull(tags.get("error_rate"));
+        Double rps = parseSlaField(tags, "rps", node, notices);
+        Double latency = parseSlaField(tags, "latency", node, notices);
+        Double errorRate = parseSlaField(tags, "error_rate", node, notices);
         draft.setRps(rps);
         draft.setLatency(latency);
         draft.setErrorRate(errorRate);
@@ -466,75 +497,116 @@ public class ScenarioDecomposer {
             notices.add(implicitCastNotice(node, tags, rps, latency, errorRate));
         }
 
-        Integer ifaceId = op != null ? intOrNull(op, "interface_id") : null;
-        JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
-        String protocol = null;
-        if (iface != null) {
-            String ifaceUid = textOrNull(iface, "code");
-            draft.setInterfaceUid(ifaceUid);
-            String rawProtocol = tagsOf(iface).get("protocol");
-            // Default to REST when the source has no protocol tag at all — per transform-spec §4.4 (v4).
-            protocol = (rawProtocol == null || rawProtocol.isBlank()) ? "REST" : rawProtocol;
+        String ifaceUid = textOrNull(iface, "code");
+        draft.setInterfaceUid(ifaceUid);
+        String rawProtocol = tagsOf(iface).get("protocol");
+        // Default to UNKNOWN when the source has no protocol tag at all — per transform-spec §4.4 (v5).
+        String protocol = (rawProtocol == null || rawProtocol.isBlank()) ? "UNKNOWN" : rawProtocol;
 
-            if (ifaceUid != null && registeredInterfaces.add(ifaceUid)) {
-                InterfaceDraft ifaceDraft = new InterfaceDraft();
-                ifaceDraft.setUid(ifaceUid);
-                // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
-                ifaceDraft.setExtUid(ifaceUid);
-                ifaceDraft.setProtocol(protocol);
-                ifaceDraft.setName(textOrNull(iface, "name"));
-                ifaceDraft.setSource(textOrNull(iface, "source"));
-                Integer ifaceIdx = interfaceArrayIndexById.get(ifaceId);
-                String ifacePointer = ifaceIdx != null ? "/interfaces/" + ifaceIdx : null;
-                ifaceDraft.setContext(ifacePointer);
+        if (ifaceUid != null && registeredInterfaces.add(ifaceUid)) {
+            InterfaceDraft ifaceDraft = new InterfaceDraft();
+            ifaceDraft.setUid(ifaceUid);
+            // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
+            ifaceDraft.setExtUid(ifaceUid);
+            ifaceDraft.setProtocol(protocol);
+            ifaceDraft.setName(textOrNull(iface, "name"));
+            ifaceDraft.setSource(textOrNull(iface, "source"));
+            Integer ifaceIdx = interfaceArrayIndexById.get(ifaceId);
+            String ifacePointer = ifaceIdx != null ? "/interfaces/" + ifaceIdx : null;
+            ifaceDraft.setContext(ifacePointer);
 
-                Integer containerId = intOrNull(iface, "container_id");
-                JsonNode containerNode = containerId != null ? containersById.get(containerId) : null;
-                if (containerNode != null) {
-                    ifaceDraft.setContainerUid(textOrNull(containerNode, "code"));
-                } else if (containerId != null) {
-                    notices.add(mapFailed("warning", details("missing_reference", "field", "container_id",
-                            "value", String.valueOf(containerId)), ifacePointer != null ? ifacePointer : node.pointer));
-                }
-                snapshot.getInterfaces().add(ifaceDraft);
+            Integer containerId = intOrNull(iface, "container_id");
+            JsonNode containerNode = containerId != null ? containersById.get(containerId) : null;
+            if (containerNode != null) {
+                ifaceDraft.setContainerUid(textOrNull(containerNode, "code"));
+            } else if (containerId != null) {
+                notices.add(mapFailed("warning", details("missing_reference", "field", "container_id",
+                        "value", String.valueOf(containerId)), ifacePointer != null ? ifacePointer : node.pointer));
+            }
+            snapshot.getInterfaces().add(ifaceDraft);
 
-                if (rawProtocol == null || rawProtocol.isBlank()) {
-                    notices.add(protocolDefaultNotice(ifaceUid, ifacePointer != null ? ifacePointer : node.pointer));
-                }
+            if (rawProtocol == null || rawProtocol.isBlank()) {
+                notices.add(protocolDefaultNotice(ifaceUid, ifacePointer != null ? ifacePointer : node.pointer));
             }
         }
 
-        // name/type — per transform-spec §4.5 (v4): if the raw name has a space, type becomes the
-        // first word (whatever it is, not just GET/POST/PUT/PATCH/DELETE) and name becomes everything
-        // after it; otherwise name is used as-is and type falls back to SOAP when the interface is SOAP.
+        // name — per transform-spec §4.5: if the raw name has a space, name becomes everything after
+        // the first word (regardless of protocol).
         String name = rawName;
-        String type = null;
-        if (rawName != null) {
-            int spaceIdx = rawName.indexOf(' ');
-            if (spaceIdx >= 0) {
-                type = rawName.substring(0, spaceIdx);
-                name = rawName.substring(spaceIdx + 1);
-                notices.add(nameExtractedNotice(node, rawName, name));
-            } else if ("SOAP".equals(protocol)) {
-                type = "SOAP";
-                notices.add(typeSoapDefaultNotice(node));
-            }
+        if (rawName != null && rawName.indexOf(' ') >= 0) {
+            name = rawName.substring(rawName.indexOf(' ') + 1);
+            notices.add(nameExtractedNotice(node, rawName, name));
         }
         draft.setName(name);
+
+        // type — per transform-spec §4.5.1 (v5): REST interfaces derive type from the first word of the
+        // raw name (or UNKNOWN if there's no space); any other protocol just inherits it directly.
+        String type;
+        if ("REST".equalsIgnoreCase(protocol)) {
+            if (rawName != null && rawName.indexOf(' ') >= 0) {
+                type = rawName.substring(0, rawName.indexOf(' '));
+                notices.add(typeExtractedNotice(node, rawName, type, protocol));
+            } else {
+                type = "UNKNOWN";
+                notices.add(typeUnknownNotice(node, rawName, protocol));
+            }
+        } else {
+            type = protocol;
+            notices.add(typeInheritedNotice(node, rawName, protocol));
+        }
         draft.setType(type);
 
         operationDrafts.put(node.operationGuid, draft);
         snapshot.getOperations().add(draft);
     }
 
+    private Double parseSlaField(Map<String, String> tags, String field, CallNode node, List<ArtifactNotice> notices) {
+        String raw = tags.get(field);
+        if (raw == null) return null;
+        Double parsed = numOrNull(raw);
+        if (parsed == null) {
+            notices.add(slaParseFailedNotice(field, raw, node));
+        }
+        return parsed;
+    }
+
+    private ArtifactNotice missingInterfaceNotice(String operationUid, Integer interfaceId, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "missing_interface");
+        d.put("field", "interface_id");
+        d.put("value", interfaceId != null ? String.valueOf(interfaceId) : null);
+        d.put("operation_uid", operationUid);
+        return notice("transform.data_loss", "warning", d, pointer);
+    }
+
+    private ArtifactNotice slaParseFailedNotice(String field, String rawValue, CallNode node) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "sla." + field);
+        d.put("source_value", rawValue);
+        d.put("target_value", null);
+        d.put("reason", "parse_failed");
+        d.put("operation_uid", node.operationGuid);
+        return notice("transform.implicit_cast", "warning", d, node.pointer);
+    }
+
+    private ArtifactNotice duplicateKeyNotice(String field, String value, String block, int duplicateIndex, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "duplicate_key");
+        d.put("field", field);
+        d.put("value", value);
+        d.put("block", block);
+        d.put("duplicate_index", duplicateIndex);
+        return notice("transform.data_loss", "warning", d, pointer);
+    }
+
     private ArtifactNotice protocolDefaultNotice(String interfaceUid, String pointer) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("field", "protocol");
         d.put("action", "default_value");
-        d.put("value", "REST");
+        d.put("value", "UNKNOWN");
         d.put("reason", "protocol_tag_not_set");
         d.put("interface_uid", interfaceUid);
-        return notice("transform.implicit_cast", "info", d, pointer);
+        return notice("transform.implicit_cast", "warning", d, pointer);
     }
 
     private ArtifactNotice nameExtractedNotice(CallNode node, String sourceValue, String targetValue) {
@@ -546,12 +618,35 @@ public class ScenarioDecomposer {
         return notice("transform.implicit_cast", "info", d, node.pointer);
     }
 
-    private ArtifactNotice typeSoapDefaultNotice(CallNode node) {
+    private ArtifactNotice typeExtractedNotice(CallNode node, String sourceValue, String targetValue, String protocol) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("field", "type");
-        d.put("action", "default_value");
-        d.put("value", "SOAP");
-        d.put("reason", "soap_protocol_no_spaces_in_name");
+        d.put("action", "extract_before_first_space");
+        d.put("source_value", sourceValue);
+        d.put("target_value", targetValue);
+        d.put("interface_protocol", protocol);
+        d.put("operation_uid", node.operationGuid);
+        return notice("transform.implicit_cast", "info", d, node.pointer);
+    }
+
+    private ArtifactNotice typeUnknownNotice(CallNode node, String sourceValue, String protocol) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "type");
+        d.put("action", "cannot_extract");
+        d.put("source_value", sourceValue);
+        d.put("target_value", "UNKNOWN");
+        d.put("interface_protocol", protocol);
+        d.put("operation_uid", node.operationGuid);
+        return notice("transform.implicit_cast", "warning", d, node.pointer);
+    }
+
+    private ArtifactNotice typeInheritedNotice(CallNode node, String sourceValue, String protocol) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "type");
+        d.put("action", "inherited_from_interface");
+        d.put("source_value", sourceValue);
+        d.put("target_value", protocol);
+        d.put("interface_protocol", protocol);
         d.put("operation_uid", node.operationGuid);
         return notice("transform.implicit_cast", "info", d, node.pointer);
     }
