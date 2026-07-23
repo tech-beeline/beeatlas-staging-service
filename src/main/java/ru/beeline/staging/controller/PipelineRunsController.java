@@ -9,14 +9,19 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.dto.rundetails.ChildPipelineRun;
 import ru.beeline.staging.dto.scan.ScanRun;
+import ru.beeline.staging.repository.ChildPipelineRunRepository;
 import ru.beeline.staging.repository.PipelineRunDetailsRepository;
+import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.ScanRunRepository;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 @Slf4j
@@ -32,6 +37,8 @@ public class PipelineRunsController {
 
     private final ScanRunRepository scanRunRepository;
     private final PipelineRunDetailsRepository pipelineRunDetailsRepository;
+    private final PipelineRunRepository pipelineRunRepository;
+    private final ChildPipelineRunRepository childPipelineRunRepository;
 
     @GetMapping("/{runId}/details")
     public ResponseEntity<?> getRunDetails(@PathVariable Long runId) {
@@ -39,6 +46,41 @@ public class PipelineRunsController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("error", "Pipeline run not found", "runId", runId)));
+    }
+
+    @GetMapping("/{parentId}/child")
+    public ResponseEntity<?> listChildRuns(
+            @PathVariable Long parentId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String artifactUid,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false, defaultValue = "0") int offset) {
+
+        Optional<PipelineRun> parent = pipelineRunRepository.findById(parentId);
+        if (parent.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Pipeline run not found", "parentId", parentId));
+        }
+        if (parent.get().getParentRunId() != null) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "parentId is not a scan run", "parentId", parentId));
+        }
+        if (status != null && !ALLOWED_STATUSES.contains(status)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid status: " + status));
+        }
+        if (artifactUid != null && artifactUid.length() > 255) {
+            return ResponseEntity.badRequest().body(Map.of("error", "artifactUid must not exceed 255 characters"));
+        }
+        if (limit != null && limit < 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "limit must not be negative"));
+        }
+        if (offset < 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "offset must not be negative"));
+        }
+
+        List<ChildPipelineRun> children = childPipelineRunRepository.findChildRuns(
+                parentId, status, artifactUid, limit != null ? limit : DEFAULT_LIMIT, offset);
+        return ResponseEntity.ok(children);
     }
 
     @GetMapping("/scans")
