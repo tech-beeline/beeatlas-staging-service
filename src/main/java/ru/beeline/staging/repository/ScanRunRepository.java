@@ -31,11 +31,11 @@ public class ScanRunRepository {
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
                 WHERE r.parent_run_id IS NULL
-                    AND (? IS NULL OR r.artifact_type = ?)
-                    AND (? IS NULL OR s.name = ?)
-                    AND (? IS NULL OR r.status = ?)
-                    AND (? IS NULL OR r.started_at >= ?::timestamp)
-                    AND (? IS NULL OR r.started_at <= ?::timestamp)
+                    AND (?::text IS NULL OR r.artifact_type = ?)
+                    AND (?::text IS NULL OR s.name = ?)
+                    AND (?::text IS NULL OR r.status = ?)
+                    AND (?::timestamp IS NULL OR r.started_at >= ?::timestamp)
+                    AND (?::timestamp IS NULL OR r.started_at <= ?::timestamp)
                 ORDER BY started_at DESC
             ), cte_childs AS (
                 SELECT

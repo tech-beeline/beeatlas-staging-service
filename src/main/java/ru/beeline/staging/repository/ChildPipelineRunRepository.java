@@ -30,8 +30,8 @@ public class ChildPipelineRunRepository {
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
             WHERE r.parent_run_id=?
-                AND (? IS NULL OR r.status = ?)
-                AND (? IS NULL OR r.artifact_uid ILIKE '%' || ? || '%')
+                AND (?::text IS NULL OR r.status = ?)
+                AND (?::text IS NULL OR r.artifact_uid ILIKE '%' || ? || '%')
             ORDER BY r.started_at DESC
             LIMIT ?
             OFFSET ?
