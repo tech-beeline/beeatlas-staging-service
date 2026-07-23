@@ -15,8 +15,6 @@ public interface ArtifactBatchRepository extends JpaRepository<ArtifactBatch, Lo
 
     Optional<ArtifactBatch> findByArtifactUidAndArtifactTypeAndCurrentTrue(String uid, String type);
 
-    boolean existsByArtifactUidAndArtifactTypeAndRawDataRefIdAndCurrentTrue(String uid, String type, Long rawDataRefId);
-
     @Modifying
     @Query("UPDATE ArtifactBatch b SET b.current = FALSE WHERE b.artifactUid = :uid AND b.artifactType = :type AND b.current = TRUE")
     void clearCurrentFlag(@Param("uid") String uid, @Param("type") String type);
