@@ -4,6 +4,9 @@ import lombok.Data;
 
 @Data
 public class E2eInterfaceDto {
+    // Local reference ids, valid only within this publish payload — see E2eProductDto.id.
+    private Long id;
+    private Long containerVersionId;
     private String code;
     private String name;
     private String parentContainerCode;

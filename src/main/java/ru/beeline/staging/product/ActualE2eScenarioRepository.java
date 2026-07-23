@@ -74,17 +74,22 @@ public class ActualE2eScenarioRepository {
                     'products', COALESCE((SELECT
                         jsonb_agg(
                             jsonb_build_object(
+                                'id', p.id,
                                 'name', p.name,
                                 'code', p.ext_uid))
                         FROM cte_products p),'[]'::jsonb),
                     'containers', COALESCE((SELECT        jsonb_agg(
                             jsonb_build_object(
+                                'id', c.id,
+                                'product_version_id', c.product_version_id,
                                 'name', c.name,
                                 'code', c.ext_uid,
                                 'parent_product_cmdb', c.product_code))
                         FROM cte_containers c), '[]'::jsonb),
                     'interfaces', COALESCE((SELECT        jsonb_agg(
                             jsonb_build_object(
+                                'id', c.id,
+                                'container_version_id', c.container_version_id,
                                 'name', c.name,
                                 'code', c.ext_uid,
                                 'parent_container_code', c.container_code,
@@ -92,6 +97,8 @@ public class ActualE2eScenarioRepository {
                         FROM cte_api c), '[]'::jsonb),
                     'operations', COALESCE((SELECT        jsonb_agg(
                             jsonb_build_object(
+                                'id', c.id,
+                                'interface_version_id', c.interface_version_id,
                                 'name', c.name,
                                 'uid', c.ext_uid,
                                 'type', c.type,
@@ -103,9 +110,11 @@ public class ActualE2eScenarioRepository {
                         FROM cte_operations c), '[]'::jsonb),
                     'operation_relations', COALESCE((SELECT        jsonb_agg(
                             jsonb_build_object(
+                                'operation_version_id', c.operation_version_id,
                                 'operation_uid', c.operation_uid,
                                 'call_order', c.call_order,
                                 'stereotype', c.stereotype,
+                                'related_operation_version_id', c.related_operation_version_id,
                                 'related_operation_uid', c.related_operation_uid))
                         FROM cte_op_rel c), '[]'::jsonb))::text AS result
             FROM cte_e2e e2e

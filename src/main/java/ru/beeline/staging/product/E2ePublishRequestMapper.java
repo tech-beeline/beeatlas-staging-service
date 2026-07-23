@@ -42,6 +42,7 @@ public class E2ePublishRequestMapper {
 
     private E2eProductDto mapProduct(JsonNode node) {
         E2eProductDto dto = new E2eProductDto();
+        dto.setId(longVal(node, "id"));
         dto.setCmdb(text(node, "code"));
         dto.setName(text(node, "name"));
         return dto;
@@ -49,6 +50,8 @@ public class E2ePublishRequestMapper {
 
     private E2eContainerDto mapContainer(JsonNode node) {
         E2eContainerDto dto = new E2eContainerDto();
+        dto.setId(longVal(node, "id"));
+        dto.setProductVersionId(longVal(node, "product_version_id"));
         dto.setCode(text(node, "code"));
         dto.setName(text(node, "name"));
         dto.setParentProductCmdb(text(node, "parent_product_cmdb"));
@@ -57,6 +60,8 @@ public class E2ePublishRequestMapper {
 
     private E2eInterfaceDto mapInterface(JsonNode node) {
         E2eInterfaceDto dto = new E2eInterfaceDto();
+        dto.setId(longVal(node, "id"));
+        dto.setContainerVersionId(longVal(node, "container_version_id"));
         dto.setCode(text(node, "code"));
         dto.setName(text(node, "name"));
         dto.setParentContainerCode(text(node, "parent_container_code"));
@@ -67,6 +72,8 @@ public class E2ePublishRequestMapper {
 
     private E2eOperationDto mapOperation(JsonNode node) {
         E2eOperationDto dto = new E2eOperationDto();
+        dto.setId(longVal(node, "id"));
+        dto.setInterfaceVersionId(longVal(node, "interface_version_id"));
         dto.setUid(text(node, "uid"));
         dto.setName(text(node, "name"));
         // type is computed at transform time (name/type split + SOAP fallback, transform-spec §4.5 v4)
@@ -90,6 +97,8 @@ public class E2ePublishRequestMapper {
 
     private E2eOperationRelationDto mapOperationRelation(JsonNode node) {
         E2eOperationRelationDto dto = new E2eOperationRelationDto();
+        dto.setOperationVersionId(longVal(node, "operation_version_id"));
+        dto.setRelatedOperationVersionId(longVal(node, "related_operation_version_id"));
         dto.setOperationId(text(node, "operation_uid"));
         dto.setRelatedOperationId(text(node, "related_operation_uid"));
         dto.setOrder(node.hasNonNull("call_order") ? node.get("call_order").asInt() : null);
@@ -114,5 +123,10 @@ public class E2ePublishRequestMapper {
     private Double number(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null || value.isNull() ? null : value.asDouble();
+    }
+
+    private Long longVal(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull() ? null : value.asLong();
     }
 }
