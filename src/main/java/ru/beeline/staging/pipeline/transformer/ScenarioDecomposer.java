@@ -26,7 +26,6 @@ public class ScenarioDecomposer {
 
     private static final Set<String> EXCLUDED_NAMES = Set.of("use", "use()");
     private static final Pattern STEP_ID_PATTERN = Pattern.compile("step_id=([A-Za-z0-9._-]+)");
-    private static final Pattern HTTP_METHOD_PREFIX = Pattern.compile("^(GET|POST|PUT|PATCH|DELETE)\\s");
 
     private final ObjectMapper objectMapper;
 
@@ -505,31 +504,27 @@ public class ScenarioDecomposer {
             }
         }
 
-        // name/type — per transform-spec §4.5 (v4): if the raw name has a space, name becomes
-        // everything after the first word and type is the HTTP verb extracted from that first word;
-        // otherwise name is used as-is and type falls back to SOAP when the interface is SOAP.
-        String httpMethod = extractHttpMethod(rawName);
+        // name/type — per transform-spec §4.5 (v4): if the raw name has a space, type becomes the
+        // first word (whatever it is, not just GET/POST/PUT/PATCH/DELETE) and name becomes everything
+        // after it; otherwise name is used as-is and type falls back to SOAP when the interface is SOAP.
         String name = rawName;
-        if (rawName != null && rawName.indexOf(' ') >= 0) {
-            name = rawName.substring(rawName.indexOf(' ') + 1);
-            notices.add(nameExtractedNotice(node, rawName, name));
-        }
-        String type = httpMethod;
-        if (type == null && (rawName == null || rawName.indexOf(' ') < 0) && "SOAP".equals(protocol)) {
-            type = "SOAP";
-            notices.add(typeSoapDefaultNotice(node));
+        String type = null;
+        if (rawName != null) {
+            int spaceIdx = rawName.indexOf(' ');
+            if (spaceIdx >= 0) {
+                type = rawName.substring(0, spaceIdx);
+                name = rawName.substring(spaceIdx + 1);
+                notices.add(nameExtractedNotice(node, rawName, name));
+            } else if ("SOAP".equals(protocol)) {
+                type = "SOAP";
+                notices.add(typeSoapDefaultNotice(node));
+            }
         }
         draft.setName(name);
         draft.setType(type);
 
         operationDrafts.put(node.operationGuid, draft);
         snapshot.getOperations().add(draft);
-    }
-
-    private static String extractHttpMethod(String name) {
-        if (name == null) return null;
-        Matcher matcher = HTTP_METHOD_PREFIX.matcher(name);
-        return matcher.find() ? matcher.group(1) : null;
     }
 
     private ArtifactNotice protocolDefaultNotice(String interfaceUid, String pointer) {
