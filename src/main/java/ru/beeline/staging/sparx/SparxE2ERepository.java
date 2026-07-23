@@ -64,7 +64,7 @@ public class SparxE2ERepository {
                     		p.object_id AS container_id,
                     		'provided.'::varchar || LOWER(app.alias),
                     		i.object_id AS api_id,
-                    		'manual.provided.'::varchar || LOWER(app.alias) AS code,
+                    		LOWER(i.ea_guid) || '.provided.'::varchar || LOWER(app.alias) AS code,
                     		'manual'
                     	FROM t_object app
                     		JOIN t_object p ON p.parentid=app.object_id AND p.object_type='ProvidedInterface'
@@ -192,7 +192,7 @@ public class SparxE2ERepository {
                     		WHERE t.object_id=api.api_id OR (t.object_id=api.container_id)) AS tags
                     	FROM cte_operations o
                     		JOIN t_object i ON i.object_id=o.interface_id
-                    		LEFT JOIN cte_c4_api api ON api.api_id=o.interface_id
+                    		JOIN cte_c4_api api ON api.api_id=o.interface_id
                     ), cte_diagram_detail AS (
                     	SELECT
                     		d.*,
