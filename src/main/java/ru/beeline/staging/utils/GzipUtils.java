@@ -20,10 +20,19 @@ public final class GzipUtils {
     }
 
     public static String gunzipToString(byte[] gzipBytes) throws IOException {
+        return new String(gunzip(gzipBytes), StandardCharsets.UTF_8);
+    }
+
+    public static byte[] gunzip(byte[] gzipBytes) throws IOException {
         try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(gzipBytes));
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             gis.transferTo(out);
-            return out.toString(StandardCharsets.UTF_8);
+            return out.toByteArray();
         }
+    }
+
+    public static boolean isGzip(byte[] data) {
+        return data != null && data.length >= 2
+                && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B;
     }
 }
