@@ -72,34 +72,52 @@ public class ScenarioDecomposer {
             snapshot.getProducts().add(product);
         }
 
-        // Container (containers[] -> containers/container_versions, per transform-spec §4.2.1),
-        // linked to its owning product via containers[].system_code — denormalized directly onto the
-        // container row in SQL, since containers[].system_id doesn't reliably resolve against systems[]
-        // (systems[] is scoped to systems that appear as diagram objects; a container's owning system
-        // may never appear on the diagram itself even though its interface does).
+        // Container (containers[] -> containers/container_versions, per transform-spec §4.2.1: uid is
+        // containers[].code with the trailing ".<cmdb>" suffix stripped, case-insensitively, where cmdb
+        // is the owning system's code — denormalized onto the container row as system_code, since
+        // containers[].system_id doesn't reliably resolve against systems[] (systems[] is scoped to
+        // systems that appear as diagram objects; a container's owning system may never appear on the
+        // diagram itself even though its interface does). cleanedContainerCodeById is reused below when
+        // resolving an interface's owning container (§4.2.2), so both places agree on the same uid.
         Set<String> seenContainerCodes = new HashSet<>();
+        Map<Integer, String> cleanedContainerCodeById = new LinkedHashMap<>();
         int containerIdx = 0;
         for (JsonNode container : root.path("containers")) {
             String pointer = "/containers/" + containerIdx;
+            Integer containerId = intOrNull(container, "id");
             containerIdx++;
-            String code = textOrNull(container, "code");
-            if (code == null || code.isBlank()) {
+            String rawCode = textOrNull(container, "code");
+            if (rawCode == null || rawCode.isBlank()) {
                 notices.add(mapFailed("warning", details("missing_required_field", "field", "code",
-                        "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
-                continue;
-            }
-            if (!seenContainerCodes.add(code)) {
-                notices.add(duplicateKeyNotice("uid", code, "containers", containerIdx - 1, pointer));
+                        "container_id", String.valueOf(containerId)), pointer));
                 continue;
             }
             String productUid = textOrNull(container, "system_code");
             if (productUid == null) {
                 notices.add(mapFailed("warning", details("missing_reference", "field", "system_code",
-                        "container_id", String.valueOf(intOrNull(container, "id"))), pointer));
+                        "container_id", String.valueOf(containerId)), pointer));
+            }
+
+            String code = rawCode;
+            if (productUid != null) {
+                String cmdbSuffix = "." + productUid;
+                if (endsWithIgnoreCase(rawCode, cmdbSuffix)) {
+                    code = rawCode.substring(0, rawCode.length() - cmdbSuffix.length());
+                } else {
+                    notices.add(cmdbSuffixNotFoundNotice(rawCode, cmdbSuffix, productUid, pointer));
+                }
+            }
+            if (containerId != null) {
+                cleanedContainerCodeById.put(containerId, code);
+            }
+
+            if (!seenContainerCodes.add(code)) {
+                notices.add(duplicateKeyNotice("uid", code, "containers", containerIdx - 1, pointer));
+                continue;
             }
             E2ESequenceSnapshot.ContainerDraft containerDraft = new E2ESequenceSnapshot.ContainerDraft();
             containerDraft.setUid(code);
-            // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
+            // ext_uid = <container_code> (cmdb suffix stripped) — per transform-spec §4.2.1/§4.3.1.
             containerDraft.setExtUid(code);
             containerDraft.setName(textOrNull(container, "name"));
             containerDraft.setProductUid(productUid);
@@ -182,10 +200,11 @@ public class ScenarioDecomposer {
                         "message_name", node.name), node.pointer));
                 continue;
             }
-            registerOperationAndInterface(node, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
+            registerOperationAndInterface(node, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
+                    operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
             if (!operationDrafts.containsKey(node.operationGuid)) {
-                // G1: operation had no resolvable interface — dropped, and so is this call + its subtree.
+                // G1/G13: operation had no resolvable interface (or the interface's uid collapsed to
+                // empty after suffix stripping) — dropped, and so is this call + its subtree.
                 continue;
             }
 
@@ -198,8 +217,8 @@ public class ScenarioDecomposer {
             rel.setContext(node.pointer);
             snapshot.getOperationRelations().add(rel);
 
-            decomposeChildren(node, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
+            decomposeChildren(node, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
+                    operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
         }
 
         return new Result(snapshot, notices, stepId);
@@ -428,7 +447,7 @@ public class ScenarioDecomposer {
     // ------------------------------------------------------------------
 
     private void decomposeChildren(CallNode parent, Map<String, JsonNode> operationsByUid, Map<Integer, JsonNode> interfacesById,
-                                    Map<Integer, JsonNode> containersById,
+                                    Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
                                     Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                                     Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
                                     Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
@@ -439,10 +458,11 @@ public class ScenarioDecomposer {
                         "message_name", child.name), child.pointer));
                 continue;
             }
-            registerOperationAndInterface(child, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
+            registerOperationAndInterface(child, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
+                    operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
             if (!operationDrafts.containsKey(child.operationGuid)) {
-                // G1: operation had no resolvable interface — dropped, and so is this call + its subtree.
+                // G1/G13: operation had no resolvable interface (or the interface's uid collapsed to
+                // empty after suffix stripping) — dropped, and so is this call + its subtree.
                 continue;
             }
 
@@ -454,13 +474,13 @@ public class ScenarioDecomposer {
             rel.setContext(child.pointer);
             snapshot.getOperationRelations().add(rel);
 
-            decomposeChildren(child, operationsByUid, interfacesById, containersById, operationArrayIndexByUid,
-                    interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
+            decomposeChildren(child, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
+                    operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
         }
     }
 
     private void registerOperationAndInterface(CallNode node, Map<String, JsonNode> operationsByUid, Map<Integer, JsonNode> interfacesById,
-                                                Map<Integer, JsonNode> containersById,
+                                                Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
                                                 Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                                                 Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
                                                 Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
@@ -497,16 +517,44 @@ public class ScenarioDecomposer {
             notices.add(implicitCastNotice(node, tags, rps, latency, errorRate));
         }
 
-        String ifaceUid = textOrNull(iface, "code");
+        Integer containerId = intOrNull(iface, "container_id");
+        JsonNode containerNode = containerId != null ? containersById.get(containerId) : null;
+        String cleanedContainerUid = containerId != null ? cleanedContainerCodeById.get(containerId) : null;
+
+        // interface uid — per transform-spec §4.2.2 (v6): strip the trailing ".<original container
+        // code>" suffix (case-insensitive) from interfaces[].code. Uses the container's ORIGINAL
+        // (uncleaned) code, since that's what the interface's own code was suffixed with in Sparx.
+        String rawIfaceCode = textOrNull(iface, "code");
+        String ifaceUid = rawIfaceCode;
+        if (rawIfaceCode != null && containerNode != null) {
+            String originalContainerCode = textOrNull(containerNode, "code");
+            if (originalContainerCode != null) {
+                String containerSuffix = "." + originalContainerCode;
+                if (endsWithIgnoreCase(rawIfaceCode, containerSuffix)) {
+                    String extracted = rawIfaceCode.substring(0, rawIfaceCode.length() - containerSuffix.length());
+                    if (extracted.isEmpty()) {
+                        // G13: empty interface_code after suffix strip is fatal for this interface —
+                        // the operation (and its subtree) is dropped, same as G1.
+                        skippedOperations.add(node.operationGuid);
+                        notices.add(emptyInterfaceCodeNotice(rawIfaceCode, containerSuffix, node.pointer));
+                        return;
+                    }
+                    ifaceUid = extracted;
+                } else {
+                    notices.add(containerSuffixNotFoundNotice(rawIfaceCode, containerSuffix, originalContainerCode, node.pointer));
+                }
+            }
+        }
         draft.setInterfaceUid(ifaceUid);
+
         String rawProtocol = tagsOf(iface).get("protocol");
-        // Default to UNKNOWN when the source has no protocol tag at all — per transform-spec §4.4 (v5).
+        // Default to UNKNOWN when the source has no protocol tag at all — per transform-spec §4.4.
         String protocol = (rawProtocol == null || rawProtocol.isBlank()) ? "UNKNOWN" : rawProtocol;
 
         if (ifaceUid != null && registeredInterfaces.add(ifaceUid)) {
             InterfaceDraft ifaceDraft = new InterfaceDraft();
             ifaceDraft.setUid(ifaceUid);
-            // ext_uid = code (not the raw Sparx id, which is an internal PK) — per transform-spec §4.2.
+            // ext_uid = <interface_code> (container suffix stripped) — per transform-spec §4.2.2/§4.4.
             ifaceDraft.setExtUid(ifaceUid);
             ifaceDraft.setProtocol(protocol);
             ifaceDraft.setName(textOrNull(iface, "name"));
@@ -515,10 +563,8 @@ public class ScenarioDecomposer {
             String ifacePointer = ifaceIdx != null ? "/interfaces/" + ifaceIdx : null;
             ifaceDraft.setContext(ifacePointer);
 
-            Integer containerId = intOrNull(iface, "container_id");
-            JsonNode containerNode = containerId != null ? containersById.get(containerId) : null;
-            if (containerNode != null) {
-                ifaceDraft.setContainerUid(textOrNull(containerNode, "code"));
+            if (cleanedContainerUid != null) {
+                ifaceDraft.setContainerUid(cleanedContainerUid);
             } else if (containerId != null) {
                 notices.add(mapFailed("warning", details("missing_reference", "field", "container_id",
                         "value", String.valueOf(containerId)), ifacePointer != null ? ifacePointer : node.pointer));
@@ -539,16 +585,27 @@ public class ScenarioDecomposer {
         }
         draft.setName(name);
 
-        // type — per transform-spec §4.5.1 (v5): REST interfaces derive type from the first word of the
-        // raw name (or UNKNOWN if there's no space); any other protocol just inherits it directly.
+        // type — per transform-spec §4.5.1 (v6): REST derives type from the first word of the raw name
+        // (or UNKNOWN if there's no space, warning). UNKNOWN protocol now attempts the same extraction
+        // (assuming REST, warning either way) instead of just inheriting "UNKNOWN". Any other known
+        // protocol (SOAP, gRPC, ...) is inherited directly.
+        boolean hasSpace = rawName != null && rawName.indexOf(' ') >= 0;
         String type;
         if ("REST".equalsIgnoreCase(protocol)) {
-            if (rawName != null && rawName.indexOf(' ') >= 0) {
+            if (hasSpace) {
                 type = rawName.substring(0, rawName.indexOf(' '));
                 notices.add(typeExtractedNotice(node, rawName, type, protocol));
             } else {
                 type = "UNKNOWN";
-                notices.add(typeUnknownNotice(node, rawName, protocol));
+                notices.add(typeUnknownNotice(node, rawName, protocol, "rest_no_space_in_name"));
+            }
+        } else if ("UNKNOWN".equals(protocol)) {
+            if (hasSpace) {
+                type = rawName.substring(0, rawName.indexOf(' '));
+                notices.add(typeAssumedRestNotice(node, rawName, type));
+            } else {
+                type = "UNKNOWN";
+                notices.add(typeUnknownNotice(node, rawName, protocol, "unknown_protocol_no_space"));
             }
         } else {
             type = protocol;
@@ -587,6 +644,38 @@ public class ScenarioDecomposer {
         d.put("reason", "parse_failed");
         d.put("operation_uid", node.operationGuid);
         return notice("transform.implicit_cast", "warning", d, node.pointer);
+    }
+
+    private ArtifactNotice cmdbSuffixNotFoundNotice(String originalCode, String expectedSuffix, String systemCode, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "cmdb_suffix_not_found");
+        d.put("field", "container_code");
+        d.put("original_code", originalCode);
+        d.put("expected_suffix", expectedSuffix);
+        d.put("system_code", systemCode);
+        d.put("action", "used_original_code");
+        return mapFailed("warning", d, pointer);
+    }
+
+    private ArtifactNotice containerSuffixNotFoundNotice(String originalCode, String expectedSuffix, String containerCode, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "container_suffix_not_found");
+        d.put("field", "interface_code");
+        d.put("original_code", originalCode);
+        d.put("expected_suffix", expectedSuffix);
+        d.put("container_code", containerCode);
+        d.put("action", "used_original_code");
+        return mapFailed("warning", d, pointer);
+    }
+
+    private ArtifactNotice emptyInterfaceCodeNotice(String originalCode, String containerSuffix, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "empty_interface_code_after_suffix_strip");
+        d.put("field", "interface_code");
+        d.put("original_code", originalCode);
+        d.put("container_suffix", containerSuffix);
+        d.put("action", "interface_skipped");
+        return notice("transform.data_loss", "error", d, pointer);
     }
 
     private ArtifactNotice duplicateKeyNotice(String field, String value, String block, int duplicateIndex, String pointer) {
@@ -629,13 +718,26 @@ public class ScenarioDecomposer {
         return notice("transform.implicit_cast", "info", d, node.pointer);
     }
 
-    private ArtifactNotice typeUnknownNotice(CallNode node, String sourceValue, String protocol) {
+    private ArtifactNotice typeUnknownNotice(CallNode node, String sourceValue, String protocol, String reason) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("field", "type");
         d.put("action", "cannot_extract");
         d.put("source_value", sourceValue);
         d.put("target_value", "UNKNOWN");
         d.put("interface_protocol", protocol);
+        d.put("reason", reason);
+        d.put("operation_uid", node.operationGuid);
+        return notice("transform.implicit_cast", "warning", d, node.pointer);
+    }
+
+    private ArtifactNotice typeAssumedRestNotice(CallNode node, String sourceValue, String targetValue) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "type");
+        d.put("action", "extract_before_first_space");
+        d.put("source_value", sourceValue);
+        d.put("target_value", targetValue);
+        d.put("interface_protocol", "UNKNOWN");
+        d.put("reason", "unknown_protocol_assumed_rest");
         d.put("operation_uid", node.operationGuid);
         return notice("transform.implicit_cast", "warning", d, node.pointer);
     }
@@ -766,6 +868,11 @@ public class ScenarioDecomposer {
     private static int intOrZero(JsonNode node, String field) {
         Integer v = intOrNull(node, field);
         return v != null ? v : 0;
+    }
+
+    private static boolean endsWithIgnoreCase(String value, String suffix) {
+        int offset = value.length() - suffix.length();
+        return offset >= 0 && value.regionMatches(true, offset, suffix, 0, suffix.length());
     }
 
     private static Double numOrNull(String value) {
