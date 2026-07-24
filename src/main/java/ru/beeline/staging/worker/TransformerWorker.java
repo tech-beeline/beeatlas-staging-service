@@ -63,6 +63,12 @@ public class TransformerWorker extends AbstractWorker {
 
         Long stageLogId = pipelineRunService.startStage(runId, "transformer", "rawDataRefId=" + rawDataRefId);
         try {
+            if (pipelineRunService.isAlreadyFullyProcessed(uid, artifactType, rawDataRefId)) {
+                log.info("stage=transformer, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping transform", uid, rawDataRefId);
+                pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
+                return Map.of("rawDataRefId", rawDataRefId, "skipped", true);
+            }
+
             String moduleCode = moduleResolver.resolve(artifactType, topic());
             ArtifactTransformer transformer = registry.get(moduleCode);
             if (transformer == null) {

@@ -55,6 +55,12 @@ public class ValidatorWorker extends AbstractWorker {
 
         Long stageLogId = pipelineRunService.startStage(runId, "validator", "rawDataRefId=" + rawDataRefId);
         try {
+            if (pipelineRunService.isAlreadyFullyProcessed(uid, artifactType, rawDataRefId)) {
+                log.info("stage=validator, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping validation", uid, rawDataRefId);
+                pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
+                return Map.of("valid", true, "skipped", true);
+            }
+
             String moduleCode = moduleResolver.resolve(artifactType, topic());
             ArtifactValidator validator = registry.get(moduleCode);
             if (validator == null) {

@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -71,6 +72,20 @@ public class PipelineRunService {
         return runRepository.findById(runId)
                 .map(run -> "completed".equals(run.getStatus()))
                 .orElse(false);
+    }
+
+    // Shared by ValidatorWorker/TransformerWorker/SaverWorker: skip re-processing when this exact
+    // content (rawDataRefId, reused via upsertByContentHash while unchanged) was already fully
+    // processed by a run that reached "completed". A batch merely existing isn't enough — since the
+    // canonical save and fdm-products publish commit independently, a batch can exist for a run that
+    // ultimately failed at the publish step, and that run must be retried, not silently skipped.
+    public boolean isAlreadyFullyProcessed(String artifactUid, String artifactType, long rawDataRefId) {
+        Optional<ArtifactBatch> currentBatch = batchRepository.findByArtifactUidAndArtifactTypeAndCurrentTrue(artifactUid, artifactType);
+        return currentBatch
+                .filter(b -> Long.valueOf(rawDataRefId).equals(b.getRawDataRefId()))
+                .map(ArtifactBatch::getRunId)
+                .filter(this::isAlreadyCompleted)
+                .isPresent();
     }
 
     @Transactional

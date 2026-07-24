@@ -7,18 +7,14 @@ import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.dto.notice.SaveResult;
 import ru.beeline.staging.pipeline.saver.ArtifactSaver;
-import ru.beeline.staging.repository.ArtifactBatchRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
-
-import ru.beeline.staging.domain.ArtifactBatch;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Component
@@ -29,7 +25,6 @@ public class SaverWorker extends AbstractWorker {
     private final ModuleResolver           moduleResolver;
     private final PipelineRunService       pipelineRunService;
     private final RawDataRefRepository     rawDataRefRepository;
-    private final ArtifactBatchRepository  artifactBatchRepository;
 
     private Map<String, ArtifactSaver> registry;
 
@@ -65,7 +60,7 @@ public class SaverWorker extends AbstractWorker {
                 return null;
             }
 
-            if (isAlreadyFullyProcessed(uid, type, rawDataRefId)) {
+            if (pipelineRunService.isAlreadyFullyProcessed(uid, type, rawDataRefId)) {
                 log.info("stage=saver, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping save", uid, rawDataRefId);
                 pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
                 pipelineRunService.completeRun(runId);
@@ -102,18 +97,5 @@ public class SaverWorker extends AbstractWorker {
             pipelineRunService.failStage(stageLogId, runId, "saver", e.getMessage());
             throw e;
         }
-    }
-
-    // A batch existing for this exact content isn't enough on its own: since the canonical save and the
-    // fdm-products publish now commit independently (see E2eCanonicalSnapshotSaver), a batch can exist
-    // for a run that ultimately failed at the publish step. Only skip re-saving when that earlier run
-    // actually completed — otherwise a retry would wrongly report "unchanged" and never retry publish.
-    private boolean isAlreadyFullyProcessed(String uid, String type, long rawDataRefId) {
-        Optional<ArtifactBatch> currentBatch = artifactBatchRepository.findByArtifactUidAndArtifactTypeAndCurrentTrue(uid, type);
-        return currentBatch
-                .filter(b -> Long.valueOf(rawDataRefId).equals(b.getRawDataRefId()))
-                .map(ArtifactBatch::getRunId)
-                .filter(pipelineRunService::isAlreadyCompleted)
-                .isPresent();
     }
 }
