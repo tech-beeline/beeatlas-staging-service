@@ -39,15 +39,17 @@ public class SparxE2ERepository {
                     		0 as object_id
                     	FROM t_diagram WHERE ea_guid=?
                     ),
-                    cte_c4_api AS (
+                    cte_c4_api_raw AS (
                     	-- Two ways an API component can be wired to its owning softwareSystem:
+                    	-- structurizr path has priority over manual path
                     	SELECT
                     		sys.object_id as system_id,
                     		cn.object_id AS container_id,
                     		cn.alias AS container_code,
                     		api.object_id AS api_id,
                     		api.alias AS code,
-                    		'structurizr' AS source
+                    		'structurizr' AS source,
+                    		0 AS source_priority
                     	FROM t_object sys
                     		JOIN t_connector r ON r.start_object_id=sys.object_id AND r.connector_type='Realisation'
                     		JOIN t_object cn ON cn.object_id=r.end_object_id\s
@@ -55,21 +57,30 @@ public class SparxE2ERepository {
                     		LEFT JOIN t_connector r2 ON r2.start_object_id=cn.object_id AND r.connector_type='Realisation'
                     		LEFT JOIN t_object api ON api.object_id=r2.end_object_id
                     	WHERE sys.stereotype='softwareSystem'
-                    	UNION
+                    	UNION ALL
                     	-- ...or a ProvidedInterface hanging directly off the softwareSystem, with no C4_Container
                     	-- in between — synthesize a virtual container + interface code, since there's neither a
                     	-- real container nor an api-side alias to read.
                     	SELECT
                     		app.object_id AS system_id,
                     		p.object_id AS container_id,
-                    		'provided.'::varchar || LOWER(app.alias),
+                    		p.ea_guid || '.' || LOWER(app.alias),
                     		i.object_id AS api_id,
-                    		LOWER(i.ea_guid) || '.provided.'::varchar || LOWER(app.alias) AS code,
-                    		'manual'
+                    		LOWER(i.ea_guid) || '.' || p.ea_guid || '.' || LOWER(app.alias) AS code,
+                    		'manual',
+                    		1 AS source_priority
                     	FROM t_object app
                     		JOIN t_object p ON p.parentid=app.object_id AND p.object_type='ProvidedInterface'
                     		JOIN t_object i ON i.object_id=p.classifier
                     	WHERE app.stereotype='softwareSystem'
+                    ),
+                    cte_c4_api AS (
+                    	-- Deduplicate by container_id: keep structurizr (priority 0) over manual (priority 1)
+                    	SELECT * FROM (
+                    		SELECT *,
+                    			ROW_NUMBER() OVER (PARTITION BY container_id ORDER BY source_priority ASC) AS rn
+                    		FROM cte_c4_api_raw
+                    	) ranked WHERE rn = 1
                     ),
                     cte_diagram_link AS
                     (
@@ -172,10 +183,10 @@ public class SparxE2ERepository {
                     			,'[]'::jsonb) AS tags
                     	FROM t_operation
                     	WHERE ea_guid IN (SELECT DISTINCT operation_guid FROM cte_diagram_messages)
-                    ), cte_interfaces AS (
-                    	SELECT DISTINCT\s
-                    		i.object_id AS id,\s
-                    		api.code AS code,\s
+                    ), cte_interfaces_raw AS (
+                    	SELECT
+                    		i.object_id AS id,
+                    		api.code AS code,
                     		i.name,
                     		i.createddate AS created_at,
                     		i.modifieddate AS modified_at,
@@ -193,6 +204,13 @@ public class SparxE2ERepository {
                     	FROM cte_operations o
                     		JOIN t_object i ON i.object_id=o.interface_id
                     		JOIN cte_c4_api api ON api.api_id=o.interface_id
+                    ), cte_interfaces AS (
+                    	-- Deduplicate interfaces by id (interface_id), keeping first occurrence
+                    	SELECT DISTINCT ON (id)
+                    		id, code, name, created_at, modified_at, author, version,
+                    		system_id, container_id, source, tags
+                    	FROM cte_interfaces_raw
+                    	ORDER BY id
                     ), cte_diagram_detail AS (
                     	SELECT
                     		d.*,
