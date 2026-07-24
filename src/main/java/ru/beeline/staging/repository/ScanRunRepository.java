@@ -31,12 +31,12 @@ public class ScanRunRepository {
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
                 WHERE r.parent_run_id IS NULL
-                    AND (?::text IS NULL OR r.artifact_type = ?)
-                    AND (?::text IS NULL OR s.name = ?)
-                    AND (?::text IS NULL OR r.status = ?)
+                    AND (?::text IS NULL OR LOWER(r.artifact_type) = LOWER(?))
+                    AND (?::text IS NULL OR LOWER(s.name) = LOWER(?))
+                    AND (?::text IS NULL OR LOWER(r.status) = LOWER(?))
                     AND (?::timestamp IS NULL OR r.started_at >= ?::timestamp)
                     AND (?::timestamp IS NULL OR r.started_at <= ?::timestamp)
-                ORDER BY started_at DESC
+                ORDER BY started_at DESC, r.id DESC
             ), cte_childs AS (
                 SELECT
                     s.id, r.status, count(*) as cnt
@@ -55,7 +55,7 @@ public class ScanRunRepository {
                     FROM cte_childs c
                     WHERE c.id=s.id) as child_stats
             FROM cte_scans s
-            ORDER BY started_at DESC
+            ORDER BY started_at DESC, s.id DESC
             LIMIT ?
             OFFSET ?
             """;

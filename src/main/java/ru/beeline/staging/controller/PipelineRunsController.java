@@ -65,7 +65,8 @@ public class PipelineRunsController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "parentId is not a scan run", "parentId", parentId));
         }
-        if (status != null && !ALLOWED_STATUSES.contains(status)) {
+        String normalizedStatus = status != null ? status.toLowerCase() : null;
+        if (normalizedStatus != null && !ALLOWED_STATUSES.contains(normalizedStatus)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid status: " + status));
         }
         if (artifactUid != null && artifactUid.length() > 255) {
@@ -79,7 +80,7 @@ public class PipelineRunsController {
         }
 
         List<ChildPipelineRun> children = childPipelineRunRepository.findChildRuns(
-                parentId, status, artifactUid, limit != null ? limit : DEFAULT_LIMIT, offset);
+                parentId, normalizedStatus, artifactUid, limit != null ? limit : DEFAULT_LIMIT, offset);
         return ResponseEntity.ok(children);
     }
 
@@ -93,7 +94,8 @@ public class PipelineRunsController {
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false, defaultValue = "0") int offset) {
 
-        if (status != null && !ALLOWED_STATUSES.contains(status)) {
+        String normalizedStatus = status != null ? status.toLowerCase() : null;
+        if (normalizedStatus != null && !ALLOWED_STATUSES.contains(normalizedStatus)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid status: " + status));
         }
         if (limit != null && limit < 0) {
@@ -106,27 +108,34 @@ public class PipelineRunsController {
         LocalDateTime from;
         LocalDateTime to;
         try {
-            from = parseDate(dateFrom);
-            to = parseDate(dateTo);
+            from = parseDate(dateFrom, false);
+            to = parseDate(dateTo, true);
         } catch (DateTimeParseException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format: " + e.getParsedString()));
         }
 
         List<ScanRun> scans = scanRunRepository.findScans(
-                artifactType, sourceName, status, from, to,
+                artifactType, sourceName, normalizedStatus, from, to,
                 limit != null ? limit : DEFAULT_LIMIT, offset);
 
         return ResponseEntity.ok(scans);
     }
 
-    private LocalDateTime parseDate(String value) {
+    private LocalDateTime parseDate(String value, boolean endOfDay) {
         if (value == null) {
             return null;
         }
         try {
             return java.time.OffsetDateTime.parse(value).toLocalDateTime();
         } catch (DateTimeParseException e) {
-            return LocalDateTime.parse(value);
+            // fall through to try LocalDateTime / date-only formats
         }
+        try {
+            return LocalDateTime.parse(value);
+        } catch (DateTimeParseException e) {
+            // fall through to try date-only format
+        }
+        java.time.LocalDate date = java.time.LocalDate.parse(value);
+        return endOfDay ? date.atTime(23, 59, 59, 999_999_999) : date.atStartOfDay();
     }
 }
