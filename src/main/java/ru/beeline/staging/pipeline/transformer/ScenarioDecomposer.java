@@ -196,8 +196,14 @@ public class ScenarioDecomposer {
         int callOrder = 0;
         for (CallNode node : finalSequence) {
             if (node.operationGuid == null) {
-                notices.add(mapFailed("warning", details("unresolved_after_filtering", "message_uid", node.uid,
-                        "message_name", node.name), node.pointer));
+                // "operation_guid отсутствует" per transform-spec §6.2.1 — transform.data_loss, not
+                // transform.map_failed (this message survived filtering but was never resolvable to any
+                // operation to begin with — either its own operation_guid was null on the raw message,
+                // or it inherited a null operationGuid via collapse's identity rewrite from a node whose
+                // own operation_guid was null).
+                notices.add(notice("transform.data_loss", "warning",
+                        details("missing_operation", "message_uid", node.uid, "message_name", node.name),
+                        node.pointer));
                 continue;
             }
             registerOperationAndInterface(node, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
@@ -454,8 +460,10 @@ public class ScenarioDecomposer {
         int callOrder = 0;
         for (CallNode child : parent.children) {
             if (child.operationGuid == null) {
-                notices.add(mapFailed("warning", details("unresolved_after_filtering", "message_uid", child.uid,
-                        "message_name", child.name), child.pointer));
+                // See the matching check in decompose() — "operation_guid отсутствует", transform-spec §6.2.1.
+                notices.add(notice("transform.data_loss", "warning",
+                        details("missing_operation", "message_uid", child.uid, "message_name", child.name),
+                        child.pointer));
                 continue;
             }
             registerOperationAndInterface(child, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
@@ -486,15 +494,23 @@ public class ScenarioDecomposer {
                                                 Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         if (operationDrafts.containsKey(node.operationGuid) || skippedOperations.contains(node.operationGuid)) return;
 
+        // G2: operation_guid present on the message but not found in operations[] — distinct from G1
+        // below (operation exists but its interface doesn't); conflating the two under one reason
+        // made root-causing confusing (a bogus operation_guid was being reported as "missing_interface").
         JsonNode op = operationsByUid.get(node.operationGuid);
-        Integer ifaceId = op != null ? intOrNull(op, "interface_id") : null;
+        if (op == null) {
+            skippedOperations.add(node.operationGuid);
+            notices.add(missingOperationNotice(node.operationGuid, node.uid, node.pointer));
+            return;
+        }
+
+        Integer ifaceId = intOrNull(op, "interface_id");
         JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
 
-        // G1: an operation whose interface_id doesn't resolve — or whose interface exists but has no
+        // G1: the operation resolved, but its interface_id doesn't — or the interface exists but has no
         // code (the Sparx extract query LEFT JOINs the api wiring now, so an interface with
-        // unresolvable wiring still appears in interfaces[], just with code=null) — is dropped
-        // entirely, not just left with a null interfaceUid. Per transform-spec §4.5, this is required
-        // for the operation to be publishable (fdm-products rejects operations.parentInterfaceCode == null).
+        // unresolvable wiring still appears in interfaces[], just with code=null). Dropped entirely, not
+        // just left with a null interfaceUid — fdm-products rejects operations.parentInterfaceCode == null.
         if (iface == null || textOrNull(iface, "code") == null) {
             skippedOperations.add(node.operationGuid);
             notices.add(missingInterfaceNotice(node.operationGuid, ifaceId, node.pointer));
@@ -503,12 +519,12 @@ public class ScenarioDecomposer {
 
         OperationDraft draft = new OperationDraft();
         draft.setExtUid(node.operationGuid);
-        String rawName = op != null ? textOrNull(op, "name") : node.name;
+        String rawName = textOrNull(op, "name");
         // Points at root.operations[N] itself, not the calling message.
         Integer opIdx = operationArrayIndexByUid.get(node.operationGuid);
         draft.setContext(opIdx != null ? "/operations/" + opIdx : node.pointer);
 
-        Map<String, String> tags = op != null ? tagsOf(op) : Map.of();
+        Map<String, String> tags = tagsOf(op);
         Double rps = parseSlaField(tags, "rps", node, notices);
         Double latency = parseSlaField(tags, "latency", node, notices);
         Double errorRate = parseSlaField(tags, "error_rate", node, notices);
@@ -635,6 +651,15 @@ public class ScenarioDecomposer {
         d.put("field", "interface_id");
         d.put("value", interfaceId != null ? String.valueOf(interfaceId) : null);
         d.put("operation_uid", operationUid);
+        return notice("transform.data_loss", "warning", d, pointer);
+    }
+
+    private ArtifactNotice missingOperationNotice(String operationGuid, String messageUid, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "missing_operation");
+        d.put("field", "operation_guid");
+        d.put("value", operationGuid);
+        d.put("message_uid", messageUid);
         return notice("transform.data_loss", "warning", d, pointer);
     }
 
