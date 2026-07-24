@@ -227,7 +227,33 @@ public class ScenarioDecomposer {
                     operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces, skippedOperations, snapshot, notices);
         }
 
+        dedupeOperationRelations(snapshot, notices);
+
         return new Result(snapshot, notices, stepId);
+    }
+
+    // A CallNode can end up reachable from more than one parent (linkChildDiagram merges a child
+    // diagram's root children by reference into every calling message that resolves to the same
+    // operation_guid — if that happens more than once, e.g. because of an ambiguous_entry_point match,
+    // the same child gets walked and re-emitted once per parent). Rather than untangle that sharing in
+    // the tree itself, dedupe the flattened relations by (caller, callee, call_order): two genuinely
+    // distinct calls between the same pair never share a call_order, since that's a per-parent
+    // positional index — only true duplicates do.
+    private void dedupeOperationRelations(E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+        Set<String> seen = new HashSet<>();
+        List<OperationRelationDraft> deduped = new ArrayList<>();
+        int idx = 0;
+        for (OperationRelationDraft rel : snapshot.getOperationRelations()) {
+            String key = rel.getCallerOperationExtUid() + "->" + rel.getCalleeOperationExtUid() + "@" + rel.getCallOrder();
+            if (seen.add(key)) {
+                deduped.add(rel);
+            } else {
+                notices.add(duplicateKeyNotice("operation_relation", key, "operation_relations", idx, rel.getContext()));
+            }
+            idx++;
+        }
+        snapshot.getOperationRelations().clear();
+        snapshot.getOperationRelations().addAll(deduped);
     }
 
     // ------------------------------------------------------------------
