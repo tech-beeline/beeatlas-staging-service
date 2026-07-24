@@ -490,10 +490,12 @@ public class ScenarioDecomposer {
         Integer ifaceId = op != null ? intOrNull(op, "interface_id") : null;
         JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
 
-        // G1: an operation whose interface_id doesn't resolve is dropped entirely (not just left with a
-        // null interfaceUid) — per transform-spec §4.5, this is required for the operation to be
-        // publishable (fdm-products rejects operations.parentInterfaceCode == null).
-        if (iface == null) {
+        // G1: an operation whose interface_id doesn't resolve — or whose interface exists but has no
+        // code (the Sparx extract query LEFT JOINs the api wiring now, so an interface with
+        // unresolvable wiring still appears in interfaces[], just with code=null) — is dropped
+        // entirely, not just left with a null interfaceUid. Per transform-spec §4.5, this is required
+        // for the operation to be publishable (fdm-products rejects operations.parentInterfaceCode == null).
+        if (iface == null || textOrNull(iface, "code") == null) {
             skippedOperations.add(node.operationGuid);
             notices.add(missingInterfaceNotice(node.operationGuid, ifaceId, node.pointer));
             return;

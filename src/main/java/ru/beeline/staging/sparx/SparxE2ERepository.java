@@ -75,10 +75,10 @@ public class SparxE2ERepository {
                     	WHERE app.stereotype='softwareSystem'
                     ),
                     cte_c4_api AS (
-                    	-- Deduplicate by container_id: keep structurizr (priority 0) over manual (priority 1)
+                    	-- Deduplicate by api_id: keep structurizr (priority 0) over manual (priority 1)
                     	SELECT * FROM (
                     		SELECT *,
-                    			ROW_NUMBER() OVER (PARTITION BY container_id ORDER BY source_priority ASC) AS rn
+                    			ROW_NUMBER() OVER (PARTITION BY api_id ORDER BY source_priority ASC) AS rn
                     		FROM cte_c4_api_raw
                     	) ranked WHERE rn = 1
                     ),
@@ -203,7 +203,7 @@ public class SparxE2ERepository {
                     		WHERE t.object_id=api.api_id OR (t.object_id=api.container_id)) AS tags
                     	FROM cte_operations o
                     		JOIN t_object i ON i.object_id=o.interface_id
-                    		JOIN cte_c4_api api ON api.api_id=o.interface_id
+                    		LEFT JOIN cte_c4_api api ON api.api_id=o.interface_id
                     ), cte_interfaces AS (
                     	-- Deduplicate interfaces by id (interface_id), keeping first occurrence
                     	SELECT DISTINCT ON (id)
