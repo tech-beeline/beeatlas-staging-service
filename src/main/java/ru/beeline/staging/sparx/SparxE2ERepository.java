@@ -130,7 +130,7 @@ public class SparxE2ERepository {
                         FROM cte_diagrams cd
                         JOIN t_diagram d ON d.diagram_id = cd.diagram_id
                     ), cte_diagram_messages AS (
-                        SELECT
+                        SELECT DISTINCT
                     		c.diagramid AS diagram_id,
                             c.ea_guid AS uid,
                             c.name,
