@@ -37,6 +37,6 @@ VALUES
      'e2e-sequence',
      (SELECT id FROM staging.data_types WHERE code = 'e2e-sequence'),
      (SELECT id FROM staging.source_systems WHERE code = 'sparx'),
-     3600,
+     900,
      true)
 ON CONFLICT (code) DO NOTHING;
