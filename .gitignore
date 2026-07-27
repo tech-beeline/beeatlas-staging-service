@@ -37,3 +37,12 @@ logs/
 
 # Camunda
 h2/
+
+# Generated local truststore (see setup-truststore.cmd / setup-truststore.sh)
+certs/truststore.jks
+
+# Logs
+*.log
+logs/
+setup-truststore.cmd
+setup-truststore.sh

@@ -42,7 +42,7 @@ public class E2ePublishRequestMapper {
 
     private E2eProductDto mapProduct(JsonNode node) {
         E2eProductDto dto = new E2eProductDto();
-        dto.setId(longVal(node, "id"));
+        dto.setProductVersionId(longVal(node, "product_version_id"));
         dto.setCmdb(text(node, "code"));
         dto.setName(text(node, "name"));
         return dto;
@@ -50,7 +50,7 @@ public class E2ePublishRequestMapper {
 
     private E2eContainerDto mapContainer(JsonNode node) {
         E2eContainerDto dto = new E2eContainerDto();
-        dto.setId(longVal(node, "id"));
+        dto.setContainerVersionId(longVal(node, "container_version_id"));
         dto.setProductVersionId(longVal(node, "product_version_id"));
         dto.setCode(text(node, "code"));
         dto.setName(text(node, "name"));
@@ -60,7 +60,7 @@ public class E2ePublishRequestMapper {
 
     private E2eInterfaceDto mapInterface(JsonNode node) {
         E2eInterfaceDto dto = new E2eInterfaceDto();
-        dto.setId(longVal(node, "id"));
+        dto.setInterfaceVersionId(longVal(node, "interface_version_id"));
         dto.setContainerVersionId(longVal(node, "container_version_id"));
         dto.setCode(text(node, "code"));
         dto.setName(text(node, "name"));

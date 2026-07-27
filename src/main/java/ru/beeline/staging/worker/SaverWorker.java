@@ -84,7 +84,6 @@ public class SaverWorker extends AbstractWorker {
             Map<String, Object> output = new HashMap<>(saverResult.summary() != null ? saverResult.summary() : Map.of());
             output.put("saved", true);
 
-            ref.setCanonicalSnapshotJson(null);
             rawDataRefRepository.save(ref);
 
             Object batchId = output.get("batchId");

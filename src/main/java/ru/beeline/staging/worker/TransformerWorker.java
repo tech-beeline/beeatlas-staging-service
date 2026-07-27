@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TransformerWorker extends AbstractWorker {
 
-    private static final int MAX_NOTICES = 2000;
+    private static final int MAX_NOTICES = 200000;
 
     private final List<ArtifactTransformer> transformers;
     private final RawDataRefRepository      rawDataRefRepository;
