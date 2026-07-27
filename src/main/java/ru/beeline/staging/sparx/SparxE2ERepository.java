@@ -26,7 +26,6 @@ public class SparxE2ERepository {
 			             JOIN t_object ref ON ref.object_id = odd.object_id AND ref.object_type = 'InteractionOccurrence'
 			             JOIN t_diagram d ON d.diagram_id::text = ref.pdata1
 			         WHERE p.stereotype = 'e2e_diagram'
-			AND d.ea_guid='{1483F1CC-A69F-4d1b-A926-2CFFC2CC851F}'
 			         """;
 
 	// Full raw export of one e2e scenario:
