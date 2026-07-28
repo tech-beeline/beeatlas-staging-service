@@ -54,9 +54,13 @@ class ScenarioDecomposerTest {
                 {"id":4,"name":"B-internal","alias":"SYS_B"}
               ],
               "systems": [],
+              "containers": [
+                {"id":100,"code":"container.b.SYS_B","name":"Container B","system_code":"SYS_B"},
+                {"id":200,"code":"container.c.SYS_C","name":"Container C","system_code":"SYS_C"}
+              ],
               "interfaces": [
-                {"id":10,"code":"iface.b","name":"Iface B","source":"manual","tags":[{"property":"show_in_e2e","value":"0"},{"property":"app_front","value":"0"},{"property":"protocol","value":"rest"}]},
-                {"id":20,"code":"iface.c","name":"Iface C","source":"structurizr","tags":[{"property":"show_in_e2e","value":"1"},{"property":"app_front","value":"0"}]}
+                {"id":10,"code":"iface.b.container.b.SYS_B","name":"Iface B","source":"manual","container_id":100,"tags":[{"property":"show_in_e2e","value":"0"},{"property":"app_front","value":"0"},{"property":"protocol","value":"rest"}]},
+                {"id":20,"code":"iface.c.container.c.SYS_C","name":"Iface C","source":"structurizr","container_id":200,"tags":[{"property":"show_in_e2e","value":"1"},{"property":"app_front","value":"0"}]}
               ],
               "operations": [
                 {"uid":"OP1","name":"DoB","interface_id":10,"tags":[{"property":"rps","value":"10"},{"property":"latency","value":"20"},{"property":"error_rate","value":"0.1"}]},
