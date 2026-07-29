@@ -18,13 +18,11 @@ public class SparxE2ERepository {
 			             d.ea_guid   AS uid,
 			             d.name      AS name,
 			             d.version   AS version,
-			             p.ea_guid   AS process_uid,
-			             p.name      AS process_name,
 			             d.notes     AS notes
 			         FROM t_diagram p
 			             JOIN t_diagramobjects odd ON odd.diagram_id = p.diagram_id
 			             JOIN t_object ref ON ref.object_id = odd.object_id AND ref.object_type = 'InteractionOccurrence'
-			             JOIN t_diagram d ON d.diagram_id::text = ref.pdata1
+			             JOIN t_diagram d ON CAST(d.diagram_id AS text) = ref.pdata1
 			         WHERE p.stereotype = 'e2e_diagram'
 			         """;
 
@@ -240,6 +238,7 @@ public class SparxE2ERepository {
 					s.alias AS code
 				FROM cte_objects o
 				JOIN t_object s ON s.object_id=o.system_id
+					AND s.stereotype='softwareSystem'
 			), cte_containers AS (
 				SELECT DISTINCT
 					s.object_id AS id,
@@ -275,13 +274,27 @@ public class SparxE2ERepository {
 			log.warn("Sparx datasource not configured (staging.sparx.datasource.url not set) — returning empty list");
 			return List.of();
 		}
+		// DEBUG: log datasource metadata
+		try {
+			var ds = sparxJdbcTemplate.getDataSource();
+			if (ds != null) {
+				try (var conn = ds.getConnection()) {
+					var meta = conn.getMetaData();
+					log.warn("SPARX_DATASOURCE_DIAG: driverName={}, driverVersion={}, url={}, productName={}",
+							meta.getDriverName(), meta.getDriverVersion(),
+							meta.getURL(), meta.getDatabaseProductName());
+				}
+			} else {
+				log.warn("SPARX_DATASOURCE_DIAG: datasource is null");
+			}
+		} catch (Exception e) {
+			log.warn("SPARX_DATASOURCE_DIAG: failed to obtain metadata", e);
+		}
 		return sparxJdbcTemplate.query(FIND_ALL_SCENARIOS, (rs, rowNum) -> {
 			E2EScenarioMeta meta = new E2EScenarioMeta();
 			meta.setUid(rs.getString("uid"));
 			meta.setName(rs.getString("name"));
 			meta.setVersion(rs.getString("version"));
-			meta.setProcessUid(rs.getString("process_uid"));
-			meta.setProcessName(rs.getString("process_name"));
 			meta.setNotes(rs.getString("notes"));
 			return meta;
 		});

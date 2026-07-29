@@ -180,13 +180,6 @@ public class ScenarioDecomposer {
             linkChildDiagram(node, diagramRoots, notices);
         }
 
-        // Step 5: collapse internal calls, starting from the root diagram wrapped in an
-        // app_front=1 context
-        CallNode rootWrapper = new CallNode();
-        rootWrapper.appFront = true;
-        rootWrapper.children = diagramRoots.get(entranceDiagramUid).children;
-        List<CallNode> finalSequence = collapse(rootWrapper, notices);
-
         // Step 6/7: decompose the surviving tree into canonical drafts
         // bi_steps.uid/ext_uid is the business key (step_id, e.g. "Step.01.00.00.00");
         // the Sparx
@@ -221,23 +214,13 @@ public class ScenarioDecomposer {
         Map<String, OperationDraft> operationDrafts = new LinkedHashMap<>();
         Set<String> registeredInterfaces = new LinkedHashSet<>();
         Set<String> skippedOperations = new HashSet<>();
-        int callOrder = 0;
-        for (CallNode node : finalSequence) {
-            if (node.operationGuid == null) {
-                // "operation_guid отсутствует" per transform-spec §6.2.1 — transform.exclude,
-                // not
-                // transform.map_failed (this message survived filtering but was never
-                // resolvable to any
-                // operation to begin with — either its own operation_guid was null on the raw
-                // message,
-                // or it inherited a null operationGuid via collapse's identity rewrite from a
-                // node whose
-                // own operation_guid was null).
-                notices.add(notice("transform.exclude", "warning",
-                        details("operation_guid_is_null", "message_uid", node.uid, "message_name", node.name),
-                        node.pointer));
-                continue;
-            }
+
+        for (CallNode node : diagramRoots.get(entranceDiagramUid).children) {
+
+            CallNode ctx = new CallNode();
+            ctx.children.add(node);
+            ctx.methodAppFront = ctx.appFront = true;
+
             registerOperationAndInterface(node, operationsByUid, interfacesById, containersById,
                     cleanedContainerCodeById,
                     operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces,
@@ -249,24 +232,35 @@ public class ScenarioDecomposer {
                 continue;
             }
 
-            // Root-level call: no caller operation (operation_version_id = NULL in
-            // operation_relation_versions).
-            OperationRelationDraft rel = new OperationRelationDraft();
-            rel.setCallerOperationExtUid(null);
-            rel.setCalleeOperationExtUid(node.operationGuid);
-            rel.setCallOrder(callOrder++);
-            rel.setStereotype(node.stereotype);
-            rel.setContext(node.pointer);
-            snapshot.getOperationRelations().add(rel);
-
-            decomposeChildren(node, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
+            decomposeChildren(ctx, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
                     operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces,
                     skippedOperations, snapshot, notices);
+
+            createRelations(ctx, snapshot);
         }
 
         dedupeOperationRelations(snapshot, notices);
 
         return new Result(snapshot, notices, stepId);
+    }
+
+    void createRelations(CallNode node, E2ESequenceSnapshot snapshot) {
+        int callOrder = 0;
+        for (CallNode child : node.children) {
+
+            child.relation = new OperationRelationDraft();
+            child.relation.setCallerOperationExtUid(node.operationGuid);
+            child.relation.setCalleeOperationExtUid(child.operationGuid);
+            child.relation.setCallOrder(callOrder++);
+            child.relation.setStereotype(child.stereotype);
+            child.relation.setContext(child.pointer);
+
+            snapshot.getOperationRelations().add(child.relation);
+
+            createRelations(child, snapshot);
+
+        }
+
     }
 
     // A CallNode can end up reachable from more than one parent (linkChildDiagram
@@ -322,7 +316,8 @@ public class ScenarioDecomposer {
         if (messages.isEmpty()) {
             String pointer = diagramIdx != null ? "/diagrams/" + diagramIdx : "/diagrams";
             notices.add(
-                    notice("transform.exclude", "warning", details("empty_messages", "diagram_uid", diagramUid), pointer));
+                    notice("transform.exclude", "warning", details("empty_messages", "diagram_uid", diagramUid),
+                            pointer));
         }
         for (int i = 0; i < messages.size(); i++) {
             String msgUid = textOrNull(messages.get(i), "uid");
@@ -497,110 +492,62 @@ public class ScenarioDecomposer {
                             "linked_diagram_uid", node.linkedDiagramUid, "child_message_uid", m.uid,
                             "child_message_name", m.name),
                     node.pointer));
-            node.children.addAll(m.children);
+            node.children.add(m);
         }
-    }
-
-    // ------------------------------------------------------------------
-    // Step 5 — collapse internal calls (mirrors build-call-tree.mjs
-    // removeInternalMessages, 4 rules)
-    // ------------------------------------------------------------------
-
-    private List<CallNode> collapse(CallNode parent, List<ArtifactNotice> notices) {
-        List<CallNode> result = new ArrayList<>();
-        for (CallNode ch : parent.children) {
-            if (parent.appFront && !ch.methodResolved) {
-                ch.appFront = true;
-                skip(parent, ch, result, "app_front_no_method", notices);
-                continue;
-            }
-            if (ch.methodAppFront) {
-                skip(parent, ch, result, "app_front", notices);
-                continue;
-            }
-            if (ch.methodShowInE2e && !Objects.equals(ch.operationGuid, parent.operationGuid)) {
-                keep(parent, ch, result, notices, "show_in_e2e_override");
-                continue;
-            }
-            boolean sameAppCode = ch.serverAppCode != null && ch.serverAppCode.equals(parent.serverAppCode);
-            boolean sameOperationGuid = ch.operationGuid != null && ch.operationGuid.equals(parent.operationGuid);
-            boolean noAppCode = ch.serverAppCode == null;
-            if (sameAppCode || sameOperationGuid || noAppCode) {
-                skip(parent, ch, result,
-                        sameAppCode ? "same_system" : sameOperationGuid ? "self_reference" : "unresolved_system",
-                        notices);
-            } else {
-                keep(parent, ch, result, notices, "external_call");
-            }
-        }
-
-        if (result.isEmpty()) {
-            notices.add(notice("transform.exclude", "warning",
-                    details("internal_call", "type", "empty_child", "message_uid", parent.uid, "message_name",
-                            parent.name),
-                    parent.pointer));
-        }
-        return result;
     }
 
     private void skip(CallNode parent, CallNode ch, List<CallNode> result, String reason,
-            List<ArtifactNotice> notices) {
+            Map<String, JsonNode> operationsByUid,
+            Map<Integer, JsonNode> interfacesById,
+            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         notices.add(notice("transform.exclude", "warning",
                 details("internal_call", "type", reason, "message_uid", ch.uid, "message_name", ch.name,
-                        "caller", parent.serverAppCode, "callee", ch.serverAppCode),
+                        "caller", parent.serverAppCode, "callee", ch.serverAppCode, "diagram_uid", ch.diagramUid),
                 ch.pointer));
 
-        boolean rewriteIdentity = false;
-        if ((ch.serverAppCode != null && ch.serverAppCode.equals(parent.serverAppCode))) {
-            rewriteIdentity = true;
-            notices.add(notice("transform.implicit_cast", "info",
-                    details("internal_call", "type", "server_code==client_code", "message_uid", ch.uid, "message_name",
-                            ch.name,
-                            "caller", parent.serverAppCode, "callee", ch.serverAppCode),
-                    ch.pointer));
-        } else if (ch.operationGuid != null && ch.operationGuid.equals(parent.operationGuid)) {
-            rewriteIdentity = true;
-            notices.add(notice("transform.implicit_cast", "info",
-                    details("internal_call", "type", "server.operation_guid==client.operation_guid", "message_uid",
-                            ch.uid, "message_name",
-                            ch.name,
-                            "caller", parent.serverAppCode, "callee", ch.serverAppCode),
-                    ch.pointer));
-        } else if (ch.serverAppCode == null) {
-            rewriteIdentity = true;
-            notices.add(notice("transform.implicit_cast", "info",
-                    details("internal_call", "type", "server.code==null", "message_uid",
-                            ch.uid, "message_name",
-                            ch.name,
-                            "caller", parent.serverAppCode, "callee", ch.serverAppCode),
-                    ch.pointer));
-        }
-
-        if (rewriteIdentity) {
-            ch.operationGuid = parent.operationGuid;
+        if (!(parent.methodAppFront || parent.appFront)) {
+            if (ch.serverAppCode != null) {
+                ch.operationGuid = parent.operationGuid;
+            }
             ch.serverAppCode = parent.serverAppCode;
-            ch.serverId = parent.serverId;
-            ch.name = parent.name;
-        } else {
-            notices.add(notice("transform.exclude", "warning",
-                    details("internal_call", "type", "no_rewrite_id", "message_uid",
-                            ch.uid, "message_name",
-                            ch.name,
-                            "caller", parent.serverAppCode, "callee", ch.serverAppCode),
-                    ch.pointer));
         }
 
-        result.addAll(collapse(ch, notices));
+        decomposeChildren(ch, operationsByUid,
+                interfacesById,
+                containersById, cleanedContainerCodeById,
+                operationArrayIndexByUid, interfaceArrayIndexById,
+                operationDrafts, registeredInterfaces,
+                skippedOperations, snapshot, notices);
+
+        result.addAll(ch.children);
     }
 
-    private void keep(CallNode parent, CallNode ch, List<CallNode> result, List<ArtifactNotice> notices,
-            String reason) {
-        notices.add(notice("transform.include", "info",
-                details(reason, "message_uid", ch.uid, "message_name", ch.name,
-                        "operation_guid", ch.operationGuid, "callee", ch.serverAppCode, "parent_message_name",
-                        parent.name, "parent_message_uid", parent.uid),
-                ch.pointer));
-        ch.children = collapse(ch, notices);
+    private void keep(CallNode parent, CallNode ch, List<CallNode> result,
+            String reason, Map<String, JsonNode> operationsByUid,
+            Map<Integer, JsonNode> interfacesById,
+            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+        /*
+         * notices.add(notice("transform.include", "info",
+         * details(reason, "message_uid", ch.uid, "message_name", ch.name,
+         * "operation_guid", ch.operationGuid, "callee", ch.serverAppCode,
+         * "parent_message_name",
+         * parent.name, "parent_message_uid", parent.uid),
+         * ch.pointer));
+         */
+
+        decomposeChildren(ch, operationsByUid,
+                interfacesById,
+                containersById, cleanedContainerCodeById,
+                operationArrayIndexByUid, interfaceArrayIndexById,
+                operationDrafts, registeredInterfaces,
+                skippedOperations, snapshot, notices);
+
         result.add(ch);
     }
 
@@ -615,43 +562,95 @@ public class ScenarioDecomposer {
             Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
             Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         int callOrder = 0;
+        List<CallNode> nodes = new ArrayList<>();
+
         for (CallNode child : parent.children) {
-            if (child.operationGuid == null) {
-                // See the matching check in decompose() — "operation_guid отсутствует",
-                // transform-spec §6.2.1.
-                notices.add(notice("transform.exclude", "warning",
-                        details("operation_guid_is_null", "message_uid", child.uid, "message_name", child.name),
-                        child.pointer));
+
+            if (child.appFront || child.methodAppFront) {
+                skip(parent, child, nodes, "app_front", operationsByUid,
+                        interfacesById,
+                        containersById, cleanedContainerCodeById,
+                        operationArrayIndexByUid, interfaceArrayIndexById,
+                        operationDrafts, registeredInterfaces,
+                        skippedOperations, snapshot, notices);
                 continue;
             }
+
             registerOperationAndInterface(child, operationsByUid, interfacesById, containersById,
                     cleanedContainerCodeById,
                     operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces,
                     skippedOperations, snapshot, notices);
 
-            if (!operationDrafts.containsKey(child.operationGuid)) {
-                // G1/G13: operation had no resolvable interface (or the interface's uid
-                // collapsed to
-                // empty after suffix stripping) — dropped, and so is this call + its subtree.
-                notices.add(notice("transform.exclude", "warning",
-                        details("operation_not_found", "operation_uid", child.operationGuid, "message_uid", child.uid,
-                                "message_name", child.name),
-                        child.pointer));
+            boolean hasMethod = operationDrafts.containsKey(child.operationGuid);
+
+            if (!hasMethod) {
+                child.appFront = parent.appFront;
+                child.methodAppFront = parent.methodAppFront;
+
+                skip(parent, child, nodes, "internal_after_app_front", operationsByUid,
+                        interfacesById,
+                        containersById, cleanedContainerCodeById,
+                        operationArrayIndexByUid, interfaceArrayIndexById,
+                        operationDrafts, registeredInterfaces,
+                        skippedOperations, snapshot, notices);
                 continue;
             }
 
-            OperationRelationDraft rel = new OperationRelationDraft();
-            rel.setCallerOperationExtUid(parent.operationGuid);
-            rel.setCalleeOperationExtUid(child.operationGuid);
-            rel.setCallOrder(callOrder++);
-            rel.setStereotype(child.stereotype);
-            rel.setContext(child.pointer);
-            snapshot.getOperationRelations().add(rel);
+            if (child.methodShowInE2e && !Objects.equals(child.operationGuid, parent.operationGuid)
+                    && child.serverAppCode != null) {
 
-            decomposeChildren(child, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
-                    operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces,
+                keep(parent, child, nodes, "show_in_e2e", operationsByUid,
+                        interfacesById,
+                        containersById, cleanedContainerCodeById,
+                        operationArrayIndexByUid, interfaceArrayIndexById,
+                        operationDrafts, registeredInterfaces,
+                        skippedOperations, snapshot, notices);
+                continue;
+            }
+
+            if (Objects.equals(child.operationGuid, parent.operationGuid)) {
+                skip(parent, child, nodes, "child.operation_uig==parent.operation_guid", operationsByUid,
+                        interfacesById,
+                        containersById, cleanedContainerCodeById,
+                        operationArrayIndexByUid, interfaceArrayIndexById,
+                        operationDrafts, registeredInterfaces,
+                        skippedOperations, snapshot, notices);
+                continue;
+            }
+
+            if (child.serverAppCode == null) {
+                skip(parent, child, nodes, "child.app_code_is_null", operationsByUid,
+                        interfacesById,
+                        containersById, cleanedContainerCodeById,
+                        operationArrayIndexByUid, interfaceArrayIndexById,
+                        operationDrafts, registeredInterfaces,
+                        skippedOperations, snapshot, notices);
+                continue;
+            }
+
+            if (Objects.equals(child.serverAppCode, parent.serverAppCode)) {
+                skip(parent, child, nodes, "child.app_code==parent.app_code", operationsByUid,
+                        interfacesById,
+                        containersById, cleanedContainerCodeById,
+                        operationArrayIndexByUid, interfaceArrayIndexById,
+                        operationDrafts, registeredInterfaces,
+                        skippedOperations, snapshot, notices);
+                continue;
+            }
+
+            child.relation = new OperationRelationDraft();
+            if (parent.operationGuid == null) {
+                child.relation = new OperationRelationDraft();
+            }
+
+            keep(parent, child, nodes, "ext_call", operationsByUid,
+                    interfacesById,
+                    containersById, cleanedContainerCodeById,
+                    operationArrayIndexByUid, interfaceArrayIndexById,
+                    operationDrafts, registeredInterfaces,
                     skippedOperations, snapshot, notices);
         }
+        parent.children = nodes;
     }
 
     private void registerOperationAndInterface(CallNode node, Map<String, JsonNode> operationsByUid,
@@ -1172,5 +1171,6 @@ public class ScenarioDecomposer {
         boolean appFront;
         CallNode parentContext;
         List<CallNode> children = new ArrayList<>();
+        OperationRelationDraft relation;
     }
 }

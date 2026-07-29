@@ -37,8 +37,6 @@ public class SparxE2EPreAdapter implements ArtifactPreAdapter {
             Map<String, Object> metadata = new HashMap<>();
             metadata.put("name",        scenario.getName());
             metadata.put("version",     scenario.getVersion());
-            metadata.put("processUid",  scenario.getProcessUid());
-            metadata.put("processName", scenario.getProcessName());
             metadata.put("notes",       scenario.getNotes());
             found.add(new FoundArtifact(scenario.getUid(), metadata));
         }

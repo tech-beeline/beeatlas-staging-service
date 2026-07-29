@@ -75,9 +75,15 @@ public class PreAdapterWorker extends AbstractWorker {
                 throw new IllegalStateException("No ArtifactPreAdapter registered for moduleCode=" + moduleCode);
             }
             found = adapter.scan(config);
-        } catch (Exception e) {
-            log.warn("Pre-adapter failed for configId={}: {}", configurationId, e.getMessage());
-            pipelineRunService.failStage(stageLogId, scan.getId(), "pre-adapter", e.getMessage());
+         } catch (Exception e) {
+            // Log full stacktrace so the actual PostgreSQL root cause is visible
+            Throwable cause = e;
+            while (cause.getCause() != null && cause.getCause() != cause) {
+                cause = cause.getCause();
+            }
+            String rootMsg = cause.getMessage();
+            log.warn("Pre-adapter failed for configId={}. Root cause: {}. Full trace:", configurationId, rootMsg, e);
+            pipelineRunService.failStage(stageLogId, scan.getId(), "pre-adapter", rootMsg);
             throw new RuntimeException(e);
         }
 
