@@ -22,10 +22,14 @@ public class SparxE2EPreAdapter implements ArtifactPreAdapter {
     private final SparxE2ERepository sparxE2ERepository;
 
     @Override
-    public String moduleCode() { return MODULE_CODE; }
+    public String moduleCode() {
+        return MODULE_CODE;
+    }
 
     @Override
-    public String description() { return "Scans Sparx EA for e2e diagrams"; }
+    public String description() {
+        return "Scans Sparx EA for e2e diagrams";
+    }
 
     @Override
     public List<FoundArtifact> scan(Configuration config) {
@@ -35,9 +39,9 @@ public class SparxE2EPreAdapter implements ArtifactPreAdapter {
         List<FoundArtifact> found = new ArrayList<>();
         for (E2EScenarioMeta scenario : scenarios) {
             Map<String, Object> metadata = new HashMap<>();
-            metadata.put("name",        scenario.getName());
-            metadata.put("version",     scenario.getVersion());
-            metadata.put("notes",       scenario.getNotes());
+            metadata.put("name", scenario.getName());
+            metadata.put("version", scenario.getVersion());
+            metadata.put("notes", scenario.getNotes());
             found.add(new FoundArtifact(scenario.getUid(), metadata));
         }
         return found;
