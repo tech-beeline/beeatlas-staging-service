@@ -221,17 +221,6 @@ public class ScenarioDecomposer {
             ctx.children.add(node);
             ctx.methodAppFront = ctx.appFront = true;
 
-            registerOperationAndInterface(node, operationsByUid, interfacesById, containersById,
-                    cleanedContainerCodeById,
-                    operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces,
-                    skippedOperations, snapshot, notices);
-            if (!operationDrafts.containsKey(node.operationGuid)) {
-                // G1/G13: operation had no resolvable interface (or the interface's uid
-                // collapsed to
-                // empty after suffix stripping) — dropped, and so is this call + its subtree.
-                continue;
-            }
-
             decomposeChildren(ctx, operationsByUid, interfacesById, containersById, cleanedContainerCodeById,
                     operationArrayIndexByUid, interfaceArrayIndexById, operationDrafts, registeredInterfaces,
                     skippedOperations, snapshot, notices);
@@ -509,7 +498,7 @@ public class ScenarioDecomposer {
                 ch.pointer));
 
         if (!(parent.methodAppFront || parent.appFront)) {
-            if (ch.serverAppCode != null) {
+            if (ch.serverAppCode != null && parent.operationGuid!= null) {
                 ch.operationGuid = parent.operationGuid;
             }
             ch.serverAppCode = parent.serverAppCode;
