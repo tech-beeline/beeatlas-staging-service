@@ -18,8 +18,11 @@ import java.util.regex.Pattern;
  */
 public final class StructurizrParsingUtils {
 
+    // No leading ^ anchor: real dynamicView relationship descriptions commonly prefix the method
+    // with free-text (e.g. "Получения информации по IP адресу\n GET /city/{ip}"), so the method can
+    // appear anywhere in the text, not just at position 0.
     private static final Pattern HTTP_METHOD_PATTERN =
-            Pattern.compile("^(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\\b", Pattern.CASE_INSENSITIVE);
+            Pattern.compile("\\b(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\\b", Pattern.CASE_INSENSITIVE);
 
     /** Interface (type=api) component property keys that are metadata, not operation names. */
     public static final Set<String> RESERVED_INTERFACE_PROPERTY_KEYS = Set.of(
