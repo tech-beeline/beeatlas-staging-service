@@ -12,6 +12,7 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +35,12 @@ public class ContainerMatchService {
             return containerRepository.save(e);
         });
 
+        ContainerVersion latestVersion = containerVersionRepository.findTopByContainerIdOrderByIdDesc(entity.getId()).orElse(null);
+        if (!created[0] && isUnchanged(latestVersion, productVersionId, extUid, name, version, description, technology)) {
+            saveMatchNotice("match.container.matched_unchanged", rawDataRefId, uid, jsonPointer);
+            return latestVersion;
+        }
+
         String code = created[0] ? "match.container.created" : "match.container.matched_by_uid";
         ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
@@ -49,6 +56,17 @@ public class ContainerMatchService {
         containerVersion.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         containerVersion.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
         return containerVersionRepository.save(containerVersion);
+    }
+
+    private boolean isUnchanged(ContainerVersion latest, Long productVersionId, String extUid, String name,
+                                 String version, String description, String technology) {
+        if (latest == null) return false;
+        return Objects.equals(latest.getProductVersionId(), productVersionId)
+                && Objects.equals(latest.getExtUid(), extUid)
+                && Objects.equals(latest.getName(), name)
+                && Objects.equals(latest.getVersion(), version)
+                && Objects.equals(latest.getDescription(), description)
+                && Objects.equals(latest.getTechnology(), technology);
     }
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {

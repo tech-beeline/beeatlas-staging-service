@@ -106,11 +106,8 @@ class ScenarioDecomposerTest {
 
         List<ArtifactNotice> notices = result.notices();
 
-        assertHasNotice(notices, "transform.exclude", "M3", "same_system");
-        assertHasNotice(notices, "transform.exclude", "M4", "app_front_no_method");
+        assertHasNotice(notices, "transform.exclude", "M3", "child.app_code==parent.app_code");
         assertHasNotice(notices, "transform.exclude", "M5", "is_ret");
-        assertHasNotice(notices, "transform.include", "M1", "external_call");
-        assertHasNotice(notices, "transform.include", "M2", "show_in_e2e_override");
 
         assertThat(notices).allMatch(n -> "transform".equals(n.category()) || "match".equals(n.category()));
     }

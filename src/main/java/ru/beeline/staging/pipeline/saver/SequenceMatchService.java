@@ -12,6 +12,7 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +35,12 @@ public class SequenceMatchService {
             return sequenceRepository.save(e);
         });
 
+        SequenceVersion latestVersion = sequenceVersionRepository.findTopBySequenceIdOrderByIdDesc(entity.getId()).orElse(null);
+        if (!created[0] && isUnchanged(latestVersion, extUid, name, description, techCapabilityVersionId)) {
+            saveMatchNotice("match.sequence.matched_unchanged", rawDataRefId, uid, jsonPointer);
+            return latestVersion;
+        }
+
         String code = created[0] ? "match.sequence.created" : "match.sequence.matched_by_uid";
         ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
@@ -47,6 +54,14 @@ public class SequenceMatchService {
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
         return sequenceVersionRepository.save(version);
+    }
+
+    private boolean isUnchanged(SequenceVersion latest, String extUid, String name, String description, Long techCapabilityVersionId) {
+        if (latest == null) return false;
+        return Objects.equals(latest.getExtUid(), extUid)
+                && Objects.equals(latest.getName(), name)
+                && Objects.equals(latest.getDescription(), description)
+                && Objects.equals(latest.getTechCapabilityVersionId(), techCapabilityVersionId);
     }
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {

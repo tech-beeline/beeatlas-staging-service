@@ -230,6 +230,17 @@ public class ScenarioDecomposer {
 
         dedupeOperationRelations(snapshot, notices);
 
+        Set<String> reachableOperationUids = new LinkedHashSet<>();
+        for (OperationRelationDraft relation : snapshot.getOperationRelations()) {
+            if (relation.getCallerOperationExtUid() != null) reachableOperationUids.add(relation.getCallerOperationExtUid());
+            if (relation.getCalleeOperationExtUid() != null) reachableOperationUids.add(relation.getCalleeOperationExtUid());
+        }
+        for (OperationDraft draft : operationDrafts.values()) {
+            if (reachableOperationUids.contains(draft.getExtUid())) {
+                snapshot.getOperations().add(draft);
+            }
+        }
+
         return new Result(snapshot, notices, stepId);
     }
 
@@ -840,9 +851,11 @@ public class ScenarioDecomposer {
                 details("operation_found", "operation_uid", node.operationGuid, "operation_name", draft.getName()),
                 node.pointer));
 
+        // Not added to snapshot.getOperations() here: registration runs before decomposeChildren's
+        // keep/skip decision, so a call later collapsed as purely-internal (e.g. same app code as its
+        // parent) would otherwise leak its operation into the output as an orphan with no relation
+        // pointing to it. decompose() adds only operations actually reachable via a surviving relation.
         operationDrafts.put(node.operationGuid, draft);
-
-        snapshot.getOperations().add(draft);
     }
 
     private Double parseSlaField(Map<String, String> tags, String field, CallNode node, List<ArtifactNotice> notices) {
