@@ -1,32 +1,38 @@
 package ru.beeline.staging.worker;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.RawDataRef;
-import ru.beeline.staging.pipeline.CanonicalModelSaverService;
-import ru.beeline.staging.pipeline.CanonicalSnapshot;
+import ru.beeline.staging.dto.notice.SaveResult;
+import ru.beeline.staging.pipeline.saver.ArtifactSaver;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
-/**
- * Final pipeline stage: persists the CanonicalSnapshot produced by the Transformer stage
- * into the canonical model (our own representation). Creates an ArtifactBatch grouping all
- * version rows from this run — the batch with is_current=TRUE is the эталон ("наше представление").
- */
 @Component
 @RequiredArgsConstructor
 public class SaverWorker extends AbstractWorker {
 
-    private final CanonicalModelSaverService canonicalModelSaverService;
-    private final PipelineRunService         pipelineRunService;
-    private final RawDataRefRepository       rawDataRefRepository;
-    private final ObjectMapper               objectMapper;
+    private final List<ArtifactSaver>      savers;
+    private final ModuleResolver           moduleResolver;
+    private final PipelineRunService       pipelineRunService;
+    private final RawDataRefRepository     rawDataRefRepository;
+
+    private Map<String, ArtifactSaver> registry;
+
+    @PostConstruct
+    void init() {
+        registry = savers.stream().collect(Collectors.toMap(ArtifactSaver::moduleCode, s -> s));
+        log.info("SaverWorker registry initialized for modules: {}", registry.keySet());
+    }
 
     @Override
     protected String topic() { return "saver"; }
@@ -36,7 +42,7 @@ public class SaverWorker extends AbstractWorker {
 
     @Override
     protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId");
+        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId", "pipelineRunId");
     }
 
     @Override
@@ -44,35 +50,51 @@ public class SaverWorker extends AbstractWorker {
         String type = (String) task.getVariables().get("artifactType");
         String uid  = (String) task.getVariables().get("artifactUid");
         long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        Long runId = task.getVariables().get("pipelineRunId") instanceof Number n ? n.longValue() : null;
+        Long runId = ((Number) task.getVariables().get("pipelineRunId")).longValue();
 
-        log.info("stage=saver, type={}, uid={}", type, uid);
+        Long stageLogId = pipelineRunService.startStage(runId, "saver", "rawDataRefId=" + rawDataRefId);
+        try {
+            if (pipelineRunService.isAlreadyCompleted(runId)) {
+                log.info("Run {} already completed — skipping duplicate save for uid={}", runId, uid);
+                pipelineRunService.completeStage(stageLogId, "skipped: already completed", null);
+                return null;
+            }
 
-        RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
-                .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
-        String snapshotJson = ref.getCanonicalSnapshotJson();
+            if (pipelineRunService.isAlreadyFullyProcessed(uid, type, rawDataRefId)) {
+                log.info("stage=saver, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping save", uid, rawDataRefId);
+                pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
+                pipelineRunService.completeRun(runId);
+                return Map.of("saved", false);
+            }
 
-        if (snapshotJson == null || snapshotJson.isBlank()) {
-            log.warn("No canonicalSnapshotJson present for uid={} — nothing to save", uid);
-            return null;
-        }
+            String moduleCode = moduleResolver.resolve(type, topic());
+            ArtifactSaver saver = registry.get(moduleCode);
+            if (saver == null) {
+                throw new IllegalStateException("No ArtifactSaver registered for moduleCode=" + moduleCode);
+            }
 
-        CanonicalSnapshot snapshot = objectMapper.readValue(snapshotJson, CanonicalSnapshot.class);
-        CanonicalModelSaverService.SaveResult result =
-                canonicalModelSaverService.save(snapshot, rawDataRefId, runId, uid, type);
+            log.info("stage=saver, module={}, uid={}", moduleCode, uid);
 
-        log.info("Saved canonical model for uid={}: {}", uid, result);
+            RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
+                    .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-        // canonical_snapshot_json only existed to ferry Transformer's output to this stage
-        // (instead of an oversized Camunda process variable) — now that it's persisted into
-        // the canonical tables, drop it so raw_data_refs doesn't keep growing indefinitely.
-        ref.setCanonicalSnapshotJson(null);
-        rawDataRefRepository.save(ref);
+            SaveResult saverResult = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
+            // match-notices are saved inside the saver's own transaction; saverResult.notices() is empty
 
-        if (runId != null) {
+            Map<String, Object> output = new HashMap<>(saverResult.summary() != null ? saverResult.summary() : Map.of());
+            output.put("saved", true);
+
+            rawDataRefRepository.save(ref);
+
+            Object batchId = output.get("batchId");
+            String outputSummary = batchId != null ? "batchId=" + batchId : "saved=true";
+            pipelineRunService.completeStage(stageLogId, outputSummary, buildSummary(output));
             pipelineRunService.completeRun(runId);
-        }
 
-        return Map.of("batchId", result.getBatchId() != null ? result.getBatchId() : -1L);
+            return output;
+        } catch (Exception e) {
+            pipelineRunService.failStage(stageLogId, runId, "saver", e.getMessage());
+            throw e;
+        }
     }
 }

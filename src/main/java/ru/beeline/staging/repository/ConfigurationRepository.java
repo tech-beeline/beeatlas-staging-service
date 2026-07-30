@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface ConfigurationRepository extends JpaRepository<Configuration, Long> {
 
-    /** Used by Scheduler: only active configs with a defined repeat interval. */
+    
     List<Configuration> findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
 
     List<Configuration> findByArtifactTypeAndIsActiveTrue(String artifactType);

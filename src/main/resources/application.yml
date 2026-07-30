@@ -1,15 +1,12 @@
 server:
   port: 8080
-
-app:
-  ambassador-auth: true
-
-integration:
-  authsso-server-url: ${INTEGRATION_AUTHSSO_SERVER_URL:http://eafdmmart-develop-ambassador/rabbit-token}
+  shutdown: graceful
 
 spring:
   application:
     name: staging-service
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
   datasource:
     camunda:
       driver-class-name: ${SPRING_DATASOURCE_CAMUNDA_DRIVER_CLASS_NAME:org.postgresql.Driver}
@@ -30,12 +27,6 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
-  rabbitmq:
-    host: ${RABBIT_HOST:rabbitmq}
-    port: ${RABBIT_PORT:5672}
-    username: ${RABBIT_USERNAME:guest}
-    password: ${RABBIT_PASSWORD:guest}
-    virtual-host: ${RABBIT_VIRTUAL_HOST:/}
 
 camunda:
   bpm:
@@ -53,6 +44,11 @@ camunda:
     webapp:
       index-redirect-enabled: true
 
+integration:
+  e2e-publish:
+    retry-count: ${INTEGRATION_E2E_PUBLISH_RETRY_COUNT:3}
+    retry-delay-ms: ${INTEGRATION_E2E_PUBLISH_RETRY_DELAY_MS:1000}
+
 staging:
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
@@ -61,21 +57,19 @@ staging:
       url: ${STAGING_SPARX_DATASOURCE_URL:}
       username: ${STAGING_SPARX_DATASOURCE_USERNAME:}
       password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
-  camunda:
-    timer:
-      pre-adapter-sparx-cycle: R/PT5M
   worker:
     poll-interval-ms: 500
-    lock-duration-ms: 30000
+    lock-duration-ms: 120000
   recovery:
     check-interval-ms: 300000      # 5 min
     stuck-threshold-minutes: 30
     auto-retry-count: 3
+    incident-retry-interval-ms: 30000
+    max-incident-auto-retries: 2
+  camunda:
+    schema: ${STAGING_CAMUNDA_SCHEMA:staging_camunda}
   scheduler:
-    scan-interval-ms: 60000        # used as reference; actual schedule driven by BPMN timer
-    e2e-scan:
-      enabled: false                # opt-in plain Spring scheduler, alternative to the BPMN timer (avoid enabling both)
-      interval-ms: 300000           # 5 min, mirrors staging.camunda.timer.pre-adapter-sparx-cycle
+    tick-interval-ms: 60000        # PipelineTickScheduler: how often due configurations are scanned
 
 management:
   endpoints:

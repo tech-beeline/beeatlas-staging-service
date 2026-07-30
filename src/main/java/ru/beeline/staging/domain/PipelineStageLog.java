@@ -22,6 +22,11 @@ public class PipelineStageLog {
     @Column(name = "run_id", nullable = false)
     private Long runId;
 
+    /** The scan (pipeline_runs row with artifact_uid IS NULL) this stage ultimately belongs to —
+     *  same as runId for the scan's own "pre-adapter" stage, or that run's parentRunId otherwise. */
+    @Column(name = "scan_run_id", nullable = false)
+    private Long scanRunId;
+
     @Column(name = "stage_name", nullable = false)
     private String stageName;
 
@@ -40,4 +45,10 @@ public class PipelineStageLog {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "summary_json", columnDefinition = "jsonb")
     private Map<String, Object> summaryJson;
+
+    @Column(name = "input_data")
+    private String inputData;
+
+    @Column(name = "output_data")
+    private String outputData;
 }

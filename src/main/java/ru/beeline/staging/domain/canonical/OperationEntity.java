@@ -16,17 +16,8 @@ public class OperationEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "ext_uid")
-    private String extUid;
-
-    @Column(name = "interface_id")
-    private Long interfaceId;
-
-    @Column(name = "name")
-    private String name;
-
-    @Column(name = "type")
-    private String type;
+    @Column(name = "uid")
+    private String uid;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

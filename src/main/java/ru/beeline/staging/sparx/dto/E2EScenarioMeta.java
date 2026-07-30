@@ -7,7 +7,5 @@ public class E2EScenarioMeta {
     private String uid;
     private String name;
     private String version;
-    private String processUid;
-    private String processName;
     private String notes;
 }

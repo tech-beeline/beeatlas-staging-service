@@ -20,6 +20,9 @@ public class BiStepVersion {
     @Column(name = "bi_step_id")
     private Long biStepId;
 
+    @Column(name = "ext_uid")
+    private String extUid;
+
     @Column(name = "name")
     private String name;
 
@@ -32,20 +35,14 @@ public class BiStepVersion {
     @Column(name = "error_rate")
     private BigDecimal errorRate;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
-
-    @Column(name = "batch_id")
-    private Long batchId;
-
-    @Column(name = "context")
-    private String context;
-
-    @Column(name = "external_guid")
-    private String externalGuid;
-
     @Column(name = "source_id")
     private String sourceId;
+
+    @Column(name = "raw_data_context_id")
+    private Long rawDataContextId;
+
+    @Column(name = "match_notice_id")
+    private Long matchNoticeId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

@@ -40,7 +40,6 @@ public class ConfigurationController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    /** Manual trigger: publishes staging event → full pipeline → visible in Camunda Cockpit. */
     @PostMapping("/{id}/run")
     public ResponseEntity<Void> run(@PathVariable Long id) {
         pipelineService.run(id);

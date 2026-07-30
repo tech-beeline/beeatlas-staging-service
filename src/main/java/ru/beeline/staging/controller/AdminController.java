@@ -7,10 +7,18 @@ import org.camunda.bpm.engine.HistoryService;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import ru.beeline.staging.service.SparxScanService;
+import ru.beeline.staging.domain.Configuration;
+import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.dto.notice.NoticeType;
+import ru.beeline.staging.repository.ConfigurationRepository;
+import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.service.ArtifactNoticeService;
+import ru.beeline.staging.service.PipelineRunService;
+import ru.beeline.staging.worker.PipelineTickScheduler;
 
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -19,23 +27,32 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminController {
 
-    private final ExternalTaskService externalTaskService;
-    private final HistoryService      historyService;
-    private final SparxScanService    sparxScanService;
+    private final ExternalTaskService     externalTaskService;
+    private final HistoryService          historyService;
+    private final ConfigurationRepository configurationRepository;
+    private final PipelineTickScheduler   pipelineTickScheduler;
+    private final PipelineRunService      pipelineRunService;
+    private final PipelineRunRepository   pipelineRunRepository;
+    private final ArtifactNoticeService   noticeService;
 
-    /**
-     * Manually triggers a Sparx e2e-sequence scan for all active e2e-sequence configurations,
-     * without waiting for the pre-adapter-process timer (R/PT6H by default). Bypasses the
-     * Camunda already-running/interval-elapsed throttling — intended for dev/testing.
-     */
     @PostMapping("/scan/e2e")
     public ResponseEntity<Map<String, Object>> scanE2E() {
-        int published = sparxScanService.scanAllActiveE2EConfigurations();
-        log.info("Manual e2e scan published {} artifact(s)", published);
-        return ResponseEntity.accepted().body(Map.of("publishedCount", published));
+        List<Configuration> configs = configurationRepository.findByArtifactTypeAndIsActiveTrue("e2e-sequence");
+        int started = 0;
+        int skipped = 0;
+        for (Configuration config : configs) {
+            if (pipelineTickScheduler.isAlreadyRunning(config)) {
+                log.info("Skip configId={} — scan already running", config.getId());
+                skipped++;
+                continue;
+            }
+            pipelineTickScheduler.startScan(config);
+            started++;
+        }
+        log.info("Manually started {} scan(s), skipped {} already running", started, skipped);
+        return ResponseEntity.accepted().body(Map.of("startedCount", started, "skippedCount", skipped));
     }
 
-    /** Reset retries on a stuck external task so it re-enters the worker poll cycle. */
     @PostMapping("/external-tasks/{taskId}/retry")
     public ResponseEntity<Void> retryExternalTask(
             @PathVariable String taskId,
@@ -45,7 +62,57 @@ public class AdminController {
         return ResponseEntity.accepted().build();
     }
 
-    /** Last N completed pipeline runs for a given configuration (from Camunda History). */
+    /**
+     * Retries a failed pipeline_runs row. A scan-attempt row (artifactUid == null — pre-adapter
+     * couldn't even reach the source / had no module configured) has no single Camunda task to
+     * reset retries on, so it's just re-run from scratch; an artifact row delegates to
+     * PipelineRunService.retryFailedRun (resets retries on the specific multi-instance
+     * iteration it's stuck at, via executionId).
+     */
+    @PostMapping("/pipeline-runs/{runId}/retry")
+    public ResponseEntity<Map<String, Object>> retryPipelineRun(
+            @PathVariable Long runId,
+            @RequestParam(defaultValue = "3") int retries) {
+        PipelineRun run = pipelineRunRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
+
+        if (run.getArtifactUid() == null) {
+            if (!"failed".equals(run.getStatus())) {
+                throw new IllegalStateException("PipelineRun " + runId + " is not failed (status=" + run.getStatus() + ")");
+            }
+            Configuration config = configurationRepository.findById(run.getConfigurationId())
+                    .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + run.getConfigurationId()));
+            pipelineTickScheduler.startScan(config);
+            log.info("Re-ran scan for pipelineRunId={}", runId);
+            return ResponseEntity.accepted().body(Map.of("restarted", true));
+        }
+
+        int tasksReset = pipelineRunService.retryFailedRun(runId, retries);
+        log.info("Retry requested for pipelineRunId={}: {} task(s) reset", runId, tasksReset);
+        return ResponseEntity.accepted().body(Map.of("tasksReset", tasksReset));
+    }
+
+    @GetMapping("/notice-types")
+    public ResponseEntity<List<NoticeType>> listNoticeTypes(
+            @RequestParam(defaultValue = "pending") String state) {
+        return ResponseEntity.ok(noticeService.listByState(state));
+    }
+
+    @PostMapping("/notice-types/{code}/confirm")
+    public ResponseEntity<NoticeType> confirmNoticeType(
+            @PathVariable String code,
+            @RequestParam String confirmedBy) {
+        return ResponseEntity.ok(noticeService.confirmNoticeType(code, confirmedBy));
+    }
+
+    @PostMapping("/notice-types/{code}/reject")
+    public ResponseEntity<Void> rejectNoticeType(
+            @PathVariable String code,
+            @RequestParam String rejectedBy) {
+        noticeService.rejectNoticeType(code, rejectedBy);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/configurations/{configurationId}/history")
     public ResponseEntity<List<Map<String, Object>>> history(
             @PathVariable Long configurationId,

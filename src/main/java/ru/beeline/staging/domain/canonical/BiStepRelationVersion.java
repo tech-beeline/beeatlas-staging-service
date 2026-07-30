@@ -28,14 +28,11 @@ public class BiStepRelationVersion {
     @Column(name = "stereotype")
     private String stereotype;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
+    @Column(name = "raw_data_context_id")
+    private Long rawDataContextId;
 
-    @Column(name = "batch_id")
-    private Long batchId;
-
-    @Column(name = "context")
-    private String context;
+    @Column(name = "match_notice_id")
+    private Long matchNoticeId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

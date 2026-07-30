@@ -9,63 +9,116 @@
                   exporter="Camunda Modeler"
                   exporterVersion="5.0.0">
 
-  <bpmn:message id="Message_ArtifactReady" name="artifact.ready" />
+  <bpmn:message id="Message_ConfigScanReady" name="config.scan.ready" />
+  <bpmn:error id="Error_ArtifactFailed" name="ArtifactFailed" errorCode="artifact-failed" />
 
   <bpmn:process id="artifact-pipeline-process"
                 name="Artifact Pipeline Process"
                 isExecutable="true"
                 camunda:historyTimeToLive="180">
 
-    <bpmn:startEvent id="StartEvent_Message" name="Artifact&#10;Ready">
-      <bpmn:outgoing>Flow_1</bpmn:outgoing>
-      <bpmn:messageEventDefinition id="MessageEventDefinition_1" messageRef="Message_ArtifactReady" />
+    <bpmn:startEvent id="StartEvent_Message" name="Config&#10;Scan Ready">
+      <bpmn:outgoing>Flow_0</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_1" messageRef="Message_ConfigScanReady" />
     </bpmn:startEvent>
 
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_Message" targetRef="Task_Loader" />
+    <bpmn:sequenceFlow id="Flow_0" sourceRef="StartEvent_Message" targetRef="Task_PreAdapter" />
 
-    <bpmn:serviceTask id="Task_Loader"
-                      name="Loader"
+    <bpmn:serviceTask id="Task_PreAdapter"
+                      name="Pre-Adapter"
                       camunda:type="external"
-                      camunda:topic="loader"
+                      camunda:topic="pre-adapter"
                       camunda:asyncBefore="true">
+      <bpmn:incoming>Flow_0</bpmn:incoming>
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Task_PreAdapter" targetRef="SubProcess_PerArtifact" />
+
+    <bpmn:subProcess id="SubProcess_PerArtifact" name="Per artifact">
       <bpmn:incoming>Flow_1</bpmn:incoming>
-      <bpmn:outgoing>Flow_2</bpmn:outgoing>
-    </bpmn:serviceTask>
-
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Loader" targetRef="Task_Validator" />
-
-    <bpmn:serviceTask id="Task_Validator"
-                      name="Validator"
-                      camunda:type="external"
-                      camunda:topic="validator"
-                      camunda:asyncBefore="true">
-      <bpmn:incoming>Flow_2</bpmn:incoming>
-      <bpmn:outgoing>Flow_3</bpmn:outgoing>
-    </bpmn:serviceTask>
-
-    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_Validator" targetRef="Task_Transformer" />
-
-    <bpmn:serviceTask id="Task_Transformer"
-                      name="Transformer"
-                      camunda:type="external"
-                      camunda:topic="transformer"
-                      camunda:asyncBefore="true">
-      <bpmn:incoming>Flow_3</bpmn:incoming>
-      <bpmn:outgoing>Flow_4</bpmn:outgoing>
-    </bpmn:serviceTask>
-
-    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Transformer" targetRef="Task_Saver" />
-
-    <bpmn:serviceTask id="Task_Saver"
-                      name="Saver"
-                      camunda:type="external"
-                      camunda:topic="saver"
-                      camunda:asyncBefore="true">
-      <bpmn:incoming>Flow_4</bpmn:incoming>
       <bpmn:outgoing>Flow_5</bpmn:outgoing>
-    </bpmn:serviceTask>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true"
+                                             camunda:collection="artifactRefs"
+                                             camunda:elementVariable="artifactRef" />
 
-    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Saver" targetRef="EndEvent_1" />
+      <bpmn:startEvent id="SubStart" name="Item">
+        <bpmn:outgoing>SubFlow_1</bpmn:outgoing>
+      </bpmn:startEvent>
+
+      <bpmn:sequenceFlow id="SubFlow_1" sourceRef="SubStart" targetRef="Task_Adapter" />
+
+      <bpmn:serviceTask id="Task_Adapter"
+                        name="Adapter"
+                        camunda:type="external"
+                        camunda:topic="adapter"
+                        camunda:asyncBefore="true">
+        <bpmn:incoming>SubFlow_1</bpmn:incoming>
+        <bpmn:outgoing>SubFlow_2</bpmn:outgoing>
+      </bpmn:serviceTask>
+
+      <bpmn:sequenceFlow id="SubFlow_2" sourceRef="Task_Adapter" targetRef="Task_Validator" />
+
+      <bpmn:serviceTask id="Task_Validator"
+                        name="Validator"
+                        camunda:type="external"
+                        camunda:topic="validator"
+                        camunda:asyncBefore="true">
+        <bpmn:incoming>SubFlow_2</bpmn:incoming>
+        <bpmn:outgoing>SubFlow_3</bpmn:outgoing>
+      </bpmn:serviceTask>
+
+      <bpmn:boundaryEvent id="BoundaryError_Validator" attachedToRef="Task_Validator" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_ValidatorError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Validator" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_ValidatorError" sourceRef="BoundaryError_Validator" targetRef="SubEnd" />
+
+      <bpmn:sequenceFlow id="SubFlow_3" sourceRef="Task_Validator" targetRef="Task_Transformer" />
+
+      <bpmn:serviceTask id="Task_Transformer"
+                        name="Transformer"
+                        camunda:type="external"
+                        camunda:topic="transformer"
+                        camunda:asyncBefore="true">
+        <bpmn:incoming>SubFlow_3</bpmn:incoming>
+        <bpmn:outgoing>SubFlow_4</bpmn:outgoing>
+      </bpmn:serviceTask>
+
+      <bpmn:boundaryEvent id="BoundaryError_Transformer" attachedToRef="Task_Transformer" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_TransformerError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Transformer" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_TransformerError" sourceRef="BoundaryError_Transformer" targetRef="SubEnd" />
+
+      <bpmn:sequenceFlow id="SubFlow_4" sourceRef="Task_Transformer" targetRef="Task_Saver" />
+
+      <bpmn:serviceTask id="Task_Saver"
+                        name="Saver"
+                        camunda:type="external"
+                        camunda:topic="saver"
+                        camunda:asyncBefore="true">
+        <bpmn:incoming>SubFlow_4</bpmn:incoming>
+        <bpmn:outgoing>SubFlow_5</bpmn:outgoing>
+      </bpmn:serviceTask>
+
+      <bpmn:boundaryEvent id="BoundaryError_Saver" attachedToRef="Task_Saver" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_SaverError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Saver" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_SaverError" sourceRef="BoundaryError_Saver" targetRef="SubEnd" />
+
+      <bpmn:sequenceFlow id="SubFlow_5" sourceRef="Task_Saver" targetRef="SubEnd" />
+
+      <bpmn:endEvent id="SubEnd" name="Item Done">
+        <bpmn:incoming>SubFlow_5</bpmn:incoming>
+        <bpmn:incoming>SubFlow_ValidatorError</bpmn:incoming>
+        <bpmn:incoming>SubFlow_TransformerError</bpmn:incoming>
+        <bpmn:incoming>SubFlow_SaverError</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="SubProcess_PerArtifact" targetRef="EndEvent_1" />
 
     <bpmn:endEvent id="EndEvent_1" name="Done">
       <bpmn:incoming>Flow_5</bpmn:incoming>
@@ -77,43 +130,94 @@
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="artifact-pipeline-process">
       <bpmndi:BPMNShape id="StartEvent_Message_di" bpmnElement="StartEvent_Message">
         <dc:Bounds x="182" y="112" width="36" height="36" />
-        <bpmndi:BPMNLabel><dc:Bounds x="177" y="155" width="46" height="27" /></bpmndi:BPMNLabel>
+        <bpmndi:BPMNLabel><dc:Bounds x="160" y="155" width="80" height="27" /></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Task_Loader_di" bpmnElement="Task_Loader">
+      <bpmndi:BPMNShape id="Task_PreAdapter_di" bpmnElement="Task_PreAdapter">
         <dc:Bounds x="270" y="90" width="100" height="80" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_PerArtifact_di" bpmnElement="SubProcess_PerArtifact" isExpanded="true">
+        <dc:Bounds x="430" y="60" width="700" height="140" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubStart_di" bpmnElement="SubStart">
+        <dc:Bounds x="460" y="110" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Adapter_di" bpmnElement="Task_Adapter">
+        <dc:Bounds x="530" y="88" width="100" height="80" />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_Validator_di" bpmnElement="Task_Validator">
-        <dc:Bounds x="420" y="90" width="100" height="80" />
+        <dc:Bounds x="660" y="88" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_Transformer_di" bpmnElement="Task_Transformer">
-        <dc:Bounds x="570" y="90" width="100" height="80" />
+        <dc:Bounds x="790" y="88" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Task_Saver_di" bpmnElement="Task_Saver">
-        <dc:Bounds x="720" y="90" width="100" height="80" />
+        <dc:Bounds x="920" y="88" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubEnd_di" bpmnElement="SubEnd">
+        <dc:Bounds x="1062" y="110" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Validator_di" bpmnElement="BoundaryError_Validator">
+        <dc:Bounds x="692" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Transformer_di" bpmnElement="BoundaryError_Transformer">
+        <dc:Bounds x="822" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Saver_di" bpmnElement="BoundaryError_Saver">
+        <dc:Bounds x="952" y="150" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="872" y="112" width="36" height="36" />
-        <bpmndi:BPMNLabel><dc:Bounds x="878" y="155" width="24" height="14" /></bpmndi:BPMNLabel>
+        <dc:Bounds x="1192" y="112" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1198" y="155" width="24" height="14" /></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+      <bpmndi:BPMNEdge id="Flow_0_di" bpmnElement="Flow_0">
         <di:waypoint x="218" y="130" />
         <di:waypoint x="270" y="130" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
         <di:waypoint x="370" y="130" />
-        <di:waypoint x="420" y="130" />
+        <di:waypoint x="430" y="130" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
-        <di:waypoint x="520" y="130" />
-        <di:waypoint x="570" y="130" />
+      <bpmndi:BPMNEdge id="SubFlow_1_di" bpmnElement="SubFlow_1">
+        <di:waypoint x="496" y="128" />
+        <di:waypoint x="530" y="128" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
-        <di:waypoint x="670" y="130" />
-        <di:waypoint x="720" y="130" />
+      <bpmndi:BPMNEdge id="SubFlow_2_di" bpmnElement="SubFlow_2">
+        <di:waypoint x="630" y="128" />
+        <di:waypoint x="660" y="128" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_3_di" bpmnElement="SubFlow_3">
+        <di:waypoint x="760" y="128" />
+        <di:waypoint x="790" y="128" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_4_di" bpmnElement="SubFlow_4">
+        <di:waypoint x="890" y="128" />
+        <di:waypoint x="920" y="128" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_5_di" bpmnElement="SubFlow_5">
+        <di:waypoint x="1020" y="128" />
+        <di:waypoint x="1062" y="128" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_ValidatorError_di" bpmnElement="SubFlow_ValidatorError">
+        <di:waypoint x="710" y="186" />
+        <di:waypoint x="710" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_TransformerError_di" bpmnElement="SubFlow_TransformerError">
+        <di:waypoint x="840" y="186" />
+        <di:waypoint x="840" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_SaverError_di" bpmnElement="SubFlow_SaverError">
+        <di:waypoint x="970" y="186" />
+        <di:waypoint x="970" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
-        <di:waypoint x="820" y="130" />
-        <di:waypoint x="872" y="130" />
+        <di:waypoint x="1130" y="130" />
+        <di:waypoint x="1192" y="130" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

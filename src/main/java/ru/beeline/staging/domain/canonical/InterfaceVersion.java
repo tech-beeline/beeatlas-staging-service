@@ -25,14 +25,29 @@ public class InterfaceVersion {
     @Column(name = "protocol")
     private String protocol;
 
-    @Column(name = "raw_data_ref_id")
-    private Long rawDataRefId;
+    @Column(name = "name")
+    private String name;
 
-    @Column(name = "batch_id")
-    private Long batchId;
+    @Column(name = "spec_link")
+    private String specLink;
 
-    @Column(name = "context")
-    private String context;
+    @Column(name = "version")
+    private String version;
+
+    @Column(name = "description")
+    private String description;
+
+    @Column(name = "source_metric")
+    private String sourceMetric;
+
+    @Column(name = "container_version_id")
+    private Long containerVersionId;
+
+    @Column(name = "raw_data_context_id")
+    private Long rawDataContextId;
+
+    @Column(name = "match_notice_id")
+    private Long matchNoticeId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

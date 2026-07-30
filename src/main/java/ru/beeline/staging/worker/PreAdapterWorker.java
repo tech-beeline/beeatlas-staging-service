@@ -1,35 +1,49 @@
 package ru.beeline.staging.worker;
 
-import org.camunda.bpm.engine.HistoryService;
-import org.camunda.bpm.engine.RuntimeService;
+import jakarta.annotation.PostConstruct;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
-import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.Configuration;
+import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.pipeline.preadapter.ArtifactPreAdapter;
 import ru.beeline.staging.repository.ConfigurationRepository;
-import ru.beeline.staging.service.SparxScanService;
+import ru.beeline.staging.service.ModuleResolver;
+import ru.beeline.staging.service.PipelineRunService;
+import ru.beeline.staging.service.SourceArtefactService;
 
-import java.time.Duration;
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
 @Component
 public class PreAdapterWorker extends AbstractWorker {
 
     private final ConfigurationRepository configurationRepository;
-    private final RuntimeService          runtimeService;
-    private final HistoryService          historyService;
-    private final SparxScanService        sparxScanService;
+    private final ModuleResolver          moduleResolver;
+    private final PipelineRunService      pipelineRunService;
+    private final SourceArtefactService   sourceArtefactService;
+    private final List<ArtifactPreAdapter> preAdapters;
+
+    private Map<String, ArtifactPreAdapter> registry;
 
     public PreAdapterWorker(ConfigurationRepository configurationRepository,
-                            RuntimeService runtimeService,
-                            HistoryService historyService,
-                            SparxScanService sparxScanService) {
+                             ModuleResolver moduleResolver,
+                             PipelineRunService pipelineRunService,
+                             SourceArtefactService sourceArtefactService,
+                             List<ArtifactPreAdapter> preAdapters) {
         this.configurationRepository = configurationRepository;
-        this.runtimeService          = runtimeService;
-        this.historyService          = historyService;
-        this.sparxScanService        = sparxScanService;
+        this.moduleResolver          = moduleResolver;
+        this.pipelineRunService      = pipelineRunService;
+        this.sourceArtefactService   = sourceArtefactService;
+        this.preAdapters             = preAdapters;
+    }
+
+    @PostConstruct
+    void init() {
+        registry = preAdapters.stream().collect(Collectors.toMap(ArtifactPreAdapter::moduleCode, p -> p));
+        log.info("PreAdapterWorker registry initialized for modules: {}", registry.keySet());
     }
 
     @Override
@@ -38,70 +52,54 @@ public class PreAdapterWorker extends AbstractWorker {
     protected String workerId() { return "staging-pre-adapter-worker"; }
 
     @Override
+    protected List<String> variablesToFetch() {
+        return List.of("configurationId", "artifactType");
+    }
+
+    @Override
     protected Map<String, Object> process(LockedExternalTask task) {
-        String batchId = task.getProcessInstanceId();
-        log.info("Scheduler tick: batchId={}", batchId);
+        Long configurationId = ((Number) task.getVariables().get("configurationId")).longValue();
+        String artifactType  = (String) task.getVariables().get("artifactType");
+        Configuration config = configurationRepository.findById(configurationId)
+                .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + configurationId));
 
-        List<Configuration> candidates =
-                configurationRepository.findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
+        PipelineRun scan = pipelineRunService.createRun(null, artifactType, configurationId,
+                                                        task.getProcessInstanceId(), null);
+        Long stageLogId = pipelineRunService.startStage(scan.getId(), "pre-adapter", config.getArtifactType());
 
-        log.info("Found {} active scheduled configurations", candidates.size());
-
-        for (Configuration config : candidates) {
-            if (isAlreadyRunning(config)) {
-                log.info("Skip configId={} — process already running", config.getId());
-                continue;
+        List<ArtifactPreAdapter.FoundArtifact> found;
+        try {
+            String moduleCode = moduleResolver.resolve(artifactType, topic());
+            ArtifactPreAdapter adapter = registry.get(moduleCode);
+            if (adapter == null) {
+                throw new IllegalStateException("No ArtifactPreAdapter registered for moduleCode=" + moduleCode);
             }
-            if (!intervalElapsed(config)) {
-                log.info("Skip configId={} — interval not yet elapsed", config.getId());
-                continue;
+            found = adapter.scan(config);
+         } catch (Exception e) {
+            // Log full stacktrace so the actual PostgreSQL root cause is visible
+            Throwable cause = e;
+            while (cause.getCause() != null && cause.getCause() != cause) {
+                cause = cause.getCause();
             }
-            publishEventsForConfig(config, batchId);
-        }
-        return null;
-    }
-
-    // -------------------------------------------------------------------------
-
-    private void publishEventsForConfig(Configuration config, String batchId) {
-        switch (config.getArtifactType()) {
-            case "e2e-sequence"        -> publishE2ESequences(config, batchId);
-            case "business-capability" -> log.warn("Pre-adapter for business-capability not implemented yet, configId={}", config.getId());
-            default                    -> log.warn("Unknown artifact_type='{}' for configId={} — skipping", config.getArtifactType(), config.getId());
-        }
-    }
-
-    private void publishE2ESequences(Configuration config, String batchId) {
-        sparxScanService.scanAndPublishForConfig(config, batchId);
-    }
-
-    // -------------------------------------------------------------------------
-
-    private boolean isAlreadyRunning(Configuration config) {
-        long count = runtimeService.createProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .active()
-                .count();
-        return count > 0;
-    }
-
-    private boolean intervalElapsed(Configuration config) {
-        Duration interval = config.getScheduleInterval().orElse(Duration.ZERO);
-
-        List<HistoricProcessInstance> lastRuns = historyService
-                .createHistoricProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .finished()
-                .orderByProcessInstanceEndTime().desc()
-                .listPage(0, 1);
-
-        if (lastRuns.isEmpty()) {
-            return true;
+            String rootMsg = cause.getMessage();
+            log.warn("Pre-adapter failed for configId={}. Root cause: {}. Full trace:", configurationId, rootMsg, e);
+            pipelineRunService.failStage(stageLogId, scan.getId(), "pre-adapter", rootMsg);
+            throw new RuntimeException(e);
         }
 
-        Instant lastEnd = lastRuns.get(0).getEndTime().toInstant();
-        return Duration.between(lastEnd, Instant.now()).compareTo(interval) >= 0;
+        String foundArtifactUids = found.stream()
+                .map(ArtifactPreAdapter.FoundArtifact::uid)
+                .collect(Collectors.joining(","));
+        pipelineRunService.completeStage(stageLogId, foundArtifactUids, Map.of("foundCount", found.size()));
+        pipelineRunService.completeRun(scan.getId());
+
+        List<String> artifactRefs = new ArrayList<>();
+        for (ArtifactPreAdapter.FoundArtifact item : found) {
+            PipelineRun run = pipelineRunService.createRun(
+                    item.uid(), artifactType, configurationId, task.getProcessInstanceId(), scan.getId());
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), run.getId());
+            artifactRefs.add(run.getId() + "|" + item.uid());
+        }
+        return Map.of("artifactRefs", artifactRefs);
     }
 }
