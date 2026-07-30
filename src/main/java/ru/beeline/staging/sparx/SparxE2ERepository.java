@@ -187,7 +187,8 @@ public class SparxE2ERepository {
 					object_id AS interface_id,
 					COALESCE(
 						(SELECT jsonb_agg(
-							jsonb_build_object('property', tg.property, 'value', COALESCE(tg.notes,tg.value)))
+							jsonb_build_object('property', tg.property, 'value', COALESCE(tg.notes,tg.value))
+							ORDER BY tg.property, tg.value)
 						FROM t_operationtag tg
 						WHERE tg.elementid=operationid AND VALUE IS NOT NULL)
 						,'[]'::jsonb) AS tags
@@ -206,10 +207,10 @@ public class SparxE2ERepository {
 					api.container_id,
 					api.source,
 					(
-						SELECT DISTINCT jsonb_agg(jsonb_build_object(
+						SELECT jsonb_agg(jsonb_build_object(
 							'property', t.property,
 							'value', COALESCE( t.notes, t.value)
-						)) FROM t_objectproperties t
+						) ORDER BY t.property, t.value) FROM t_objectproperties t
 					WHERE t.object_id=api.api_id OR (t.object_id=api.container_id)) AS tags
 				FROM cte_operations o
 					JOIN t_object i ON i.object_id=o.interface_id
@@ -229,7 +230,7 @@ public class SparxE2ERepository {
 					dd.author,
 					(
 						SELECT
-							jsonb_agg(m)
+							jsonb_agg(m ORDER BY m.seqno)
 						FROM cte_diagram_messages m WHERE m.diagram_id=d.diagram_id) AS messages
 				FROM cte_diagrams d
 				JOIN t_diagram dd ON dd.diagram_id=d.diagram_id
@@ -255,12 +256,12 @@ public class SparxE2ERepository {
 			)
 			SELECT jsonb_build_object(
 				'entrance_diagram_uid', (SELECT uid FROM cte_scenario),
-				'diagrams', COALESCE((SELECT jsonb_agg(d) FROM cte_diagram_detail d),'[]'::jsonb ),
-				'objects', COALESCE((SELECT jsonb_agg(o) FROM cte_objects o),'[]'::jsonb),
-				'systems' ,COALESCE((SELECT jsonb_agg(s) FROM cte_systems s),'[]'::jsonb),
-				'containers', COALESCE((SELECT jsonb_agg(i) FROM cte_containers i),'[]'::jsonb),
-				'interfaces', COALESCE((SELECT jsonb_agg(i) FROM cte_interfaces i),'[]'::jsonb),
-				'operations', COALESCE((SELECT jsonb_agg(o) FROM cte_operations o),'[]'::jsonb)
+				'diagrams', COALESCE((SELECT jsonb_agg(d ORDER BY d.diagram_id) FROM cte_diagram_detail d),'[]'::jsonb ),
+				'objects', COALESCE((SELECT jsonb_agg(o ORDER BY o.id) FROM cte_objects o),'[]'::jsonb),
+				'systems' ,COALESCE((SELECT jsonb_agg(s ORDER BY s.id) FROM cte_systems s),'[]'::jsonb),
+				'containers', COALESCE((SELECT jsonb_agg(i ORDER BY i.id) FROM cte_containers i),'[]'::jsonb),
+				'interfaces', COALESCE((SELECT jsonb_agg(i ORDER BY i.id) FROM cte_interfaces i),'[]'::jsonb),
+				'operations', COALESCE((SELECT jsonb_agg(o ORDER BY o.uid) FROM cte_operations o),'[]'::jsonb)
 			)::text
 						            """;
 
