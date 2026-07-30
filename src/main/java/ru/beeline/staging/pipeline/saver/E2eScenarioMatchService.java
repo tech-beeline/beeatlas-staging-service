@@ -12,7 +12,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -34,12 +33,6 @@ public class E2eScenarioMatchService {
             return e2eScenarioRepository.save(e);
         });
 
-        E2eScenarioVersion latestVersion = e2eScenarioVersionRepository.findTopByE2eScenarioIdOrderByIdDesc(entity.getId()).orElse(null);
-        if (!created[0] && isUnchanged(latestVersion, biStepVersionId, extUid, name, description)) {
-            saveMatchNotice("match.e2e_scenario.matched_unchanged", rawDataRefId, uid, jsonPointer);
-            return latestVersion;
-        }
-
         String code = created[0] ? "match.e2e_scenario.created" : "match.e2e_scenario.matched_by_uid";
         ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
@@ -53,14 +46,6 @@ public class E2eScenarioMatchService {
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
         return e2eScenarioVersionRepository.save(version);
-    }
-
-    private boolean isUnchanged(E2eScenarioVersion latest, Long biStepVersionId, String extUid, String name, String description) {
-        if (latest == null) return false;
-        return Objects.equals(latest.getBiStepVersionId(), biStepVersionId)
-                && Objects.equals(latest.getExtUid(), extUid)
-                && Objects.equals(latest.getName(), name)
-                && Objects.equals(latest.getDescription(), description);
     }
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {

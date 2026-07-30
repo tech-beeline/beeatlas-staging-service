@@ -12,7 +12,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -34,12 +33,6 @@ public class ProductMatchService {
             return productRepository.save(e);
         });
 
-        ProductVersion latestVersion = productVersionRepository.findTopByProductIdOrderByIdDesc(entity.getId()).orElse(null);
-        if (!created[0] && isUnchanged(latestVersion, extUid, name, description, author)) {
-            saveMatchNotice("match.product.matched_unchanged", rawDataRefId, uid, jsonPointer);
-            return latestVersion;
-        }
-
         String code = created[0] ? "match.product.created" : "match.product.matched_by_uid";
         ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
@@ -53,14 +46,6 @@ public class ProductMatchService {
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
         return productVersionRepository.save(version);
-    }
-
-    private boolean isUnchanged(ProductVersion latest, String extUid, String name, String description, String author) {
-        if (latest == null) return false;
-        return Objects.equals(latest.getExtUid(), extUid)
-                && Objects.equals(latest.getName(), name)
-                && Objects.equals(latest.getDescription(), description)
-                && Objects.equals(latest.getAuthor(), author);
     }
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {

@@ -12,7 +12,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -35,12 +34,6 @@ public class InterfaceMatchService {
             return interfaceRepository.save(e);
         });
 
-        InterfaceVersion latestVersion = interfaceVersionRepository.findTopByInterfaceIdOrderByIdDesc(entity.getId()).orElse(null);
-        if (!created[0] && isUnchanged(latestVersion, extUid, protocol, name, specLink, version, description, sourceMetric, containerVersionId)) {
-            saveMatchNotice("match.interface.matched_unchanged", rawDataRefId, uid, jsonPointer);
-            return latestVersion;
-        }
-
         String code = created[0] ? "match.interface.created" : "match.interface.matched_by_uid";
         ArtifactNotice matchNotice = saveMatchNotice(code, rawDataRefId, uid, jsonPointer);
 
@@ -58,19 +51,6 @@ public class InterfaceMatchService {
         versionEntity.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         versionEntity.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
         return interfaceVersionRepository.save(versionEntity);
-    }
-
-    private boolean isUnchanged(InterfaceVersion latest, String extUid, String protocol, String name, String specLink,
-                                 String version, String description, String sourceMetric, Long containerVersionId) {
-        if (latest == null) return false;
-        return Objects.equals(latest.getExtUid(), extUid)
-                && Objects.equals(latest.getProtocol(), protocol)
-                && Objects.equals(latest.getName(), name)
-                && Objects.equals(latest.getSpecLink(), specLink)
-                && Objects.equals(latest.getVersion(), version)
-                && Objects.equals(latest.getDescription(), description)
-                && Objects.equals(latest.getSourceMetric(), sourceMetric)
-                && Objects.equals(latest.getContainerVersionId(), containerVersionId);
     }
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
