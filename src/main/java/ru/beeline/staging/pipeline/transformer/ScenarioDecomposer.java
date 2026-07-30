@@ -232,8 +232,10 @@ public class ScenarioDecomposer {
 
         Set<String> reachableOperationUids = new LinkedHashSet<>();
         for (OperationRelationDraft relation : snapshot.getOperationRelations()) {
-            if (relation.getCallerOperationExtUid() != null) reachableOperationUids.add(relation.getCallerOperationExtUid());
-            if (relation.getCalleeOperationExtUid() != null) reachableOperationUids.add(relation.getCalleeOperationExtUid());
+            if (relation.getCallerOperationExtUid() != null)
+                reachableOperationUids.add(relation.getCallerOperationExtUid());
+            if (relation.getCalleeOperationExtUid() != null)
+                reachableOperationUids.add(relation.getCalleeOperationExtUid());
         }
         for (OperationDraft draft : operationDrafts.values()) {
             if (reachableOperationUids.contains(draft.getExtUid())) {
@@ -509,7 +511,7 @@ public class ScenarioDecomposer {
                 ch.pointer));
 
         if (!(parent.methodAppFront || parent.appFront)) {
-            if (ch.serverAppCode != null && parent.operationGuid!= null) {
+            if (ch.serverAppCode != null && parent.operationGuid != null) {
                 ch.operationGuid = parent.operationGuid;
             }
             ch.serverAppCode = parent.serverAppCode;
@@ -628,7 +630,8 @@ public class ScenarioDecomposer {
                 continue;
             }
 
-            if (Objects.equals(child.serverAppCode, parent.serverAppCode)) {
+            if (Objects.equals(child.serverAppCode, parent.serverAppCode) && !parent.appFront
+                    && !parent.methodAppFront) {
                 skip(parent, child, nodes, "child.app_code==parent.app_code", operationsByUid,
                         interfacesById,
                         containersById, cleanedContainerCodeById,
@@ -851,10 +854,14 @@ public class ScenarioDecomposer {
                 details("operation_found", "operation_uid", node.operationGuid, "operation_name", draft.getName()),
                 node.pointer));
 
-        // Not added to snapshot.getOperations() here: registration runs before decomposeChildren's
-        // keep/skip decision, so a call later collapsed as purely-internal (e.g. same app code as its
-        // parent) would otherwise leak its operation into the output as an orphan with no relation
-        // pointing to it. decompose() adds only operations actually reachable via a surviving relation.
+        // Not added to snapshot.getOperations() here: registration runs before
+        // decomposeChildren's
+        // keep/skip decision, so a call later collapsed as purely-internal (e.g. same
+        // app code as its
+        // parent) would otherwise leak its operation into the output as an orphan with
+        // no relation
+        // pointing to it. decompose() adds only operations actually reachable via a
+        // surviving relation.
         operationDrafts.put(node.operationGuid, draft);
     }
 
