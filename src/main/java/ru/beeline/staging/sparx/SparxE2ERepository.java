@@ -280,7 +280,7 @@ public class SparxE2ERepository {
 								s.object_id AS id,
 								s.name,
 								s.alias AS code
-							FROM cte_objects o
+							FROM cte_interfaces o
 							JOIN t_object s ON s.object_id=o.system_id
 								AND s.stereotype='softwareSystem'
 						), cte_containers AS (
