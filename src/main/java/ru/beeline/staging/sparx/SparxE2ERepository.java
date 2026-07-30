@@ -246,8 +246,8 @@ public class SparxE2ERepository {
 									SELECT DISTINCT jsonb_agg(jsonb_build_object(
 										'property', t.property,
 										'value', COALESCE( t.notes, t.value)
-									)) FROM cte_tags t
-								WHERE t.api_id=api.api_id OR (t.container_id=api.container_id) ORDER BY property,value) AS tags
+									) ORDER BY property,value) FROM cte_tags t
+								WHERE t.api_id=api.api_id OR (t.container_id=api.container_id)) AS tags
 							FROM cte_operations o
 								JOIN t_object i ON i.object_id=o.interface_id
 								LEFT JOIN cte_c4_api api ON api.api_id=o.interface_id
