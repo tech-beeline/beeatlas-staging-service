@@ -38,7 +38,7 @@ public class SparxE2ERepository {
 									                    		name,
 									                    		0 as object_id
 									                    	FROM t_diagram WHERE ea_guid=?
-									                   ), cte_api_parent AS
+), cte_api_parent AS
 						(
 							SELECT object_id as child_id, object_id, ea_guid
 								FROM t_object WHERE object_type='Interface'
@@ -47,14 +47,6 @@ public class SparxE2ERepository {
 							FROM cte_api_parent p
 								JOIN t_connector r ON r.end_object_id=p.object_id AND r.connector_type='Generalization'
 								JOIN t_object o ON o.object_id=r.start_object_id
-						),
-						cte_tags AS (
-							SELECT
-								pi.object_id as container_id, i.object_id AS api_id, i.alias as code,  t.*
-							FROM t_object i
-								LEFT JOIN t_object pi ON i.object_id=pi.classifier
-								JOIN t_objectproperties t ON t.object_id=pi.object_id OR t.object_id=i.object_id
-							WHERE pi.object_type='ProvidedInterface'
 						),
 						cte_diagram_link AS
 						(
@@ -230,6 +222,18 @@ public class SparxE2ERepository {
 									,'[]'::jsonb) AS tags
 							FROM t_operation
 							WHERE ea_guid IN (SELECT DISTINCT operation_guid FROM cte_diagram_messages)
+						), cte_tags AS (
+							SELECT
+								pi.object_id as container_id, i.object_id AS api_id,  t.*
+							FROM t_object i
+								LEFT JOIN t_object pi ON i.object_id=pi.classifier 
+								JOIN t_objectproperties t ON t.object_id=pi.object_id OR t.object_id=i.object_id
+							WHERE pi.object_type='ProvidedInterface'
+							UNION DISTINCT
+							SELECT
+								i.id, i.id, t.*
+							FROM cte_objects i
+								JOIN t_objectproperties t ON t.object_id=i.id
 						), cte_interfaces_raw AS (
 							SELECT
 								i.object_id AS id,
@@ -247,7 +251,8 @@ public class SparxE2ERepository {
 										'property', t.property,
 										'value', COALESCE( t.notes, t.value)
 									) ORDER BY property,value) FROM cte_tags t
-								WHERE t.api_id=api.api_id OR (t.container_id=api.container_id)) AS tags
+									WHERE t.api_id=api.api_id OR t.container_id=api.container_id  OR t.api_id=api.system_id
+								) AS tags
 							FROM cte_operations o
 								JOIN t_object i ON i.object_id=o.interface_id
 								LEFT JOIN cte_c4_api api ON api.api_id=o.interface_id
@@ -275,7 +280,7 @@ public class SparxE2ERepository {
 								s.object_id AS id,
 								s.name,
 								s.alias AS code
-							FROM cte_objects o
+							FROM cte_interfaces o
 							JOIN t_object s ON s.object_id=o.system_id
 								AND s.stereotype='softwareSystem'
 						), cte_containers AS (
@@ -289,7 +294,7 @@ public class SparxE2ERepository {
 							JOIN cte_interfaces i ON i.id=o.api_id
 							JOIN t_object s ON s.object_id=o.container_id
 							JOIN t_object sys ON sys.object_id=o.system_id
-						)
+						) 
 						SELECT jsonb_build_object(
 							'entrance_diagram_uid', (SELECT uid FROM cte_scenario),
 							'diagrams', COALESCE((SELECT jsonb_agg(d ORDER BY d.diagram_id) FROM cte_diagram_detail d),'[]'::jsonb ),
