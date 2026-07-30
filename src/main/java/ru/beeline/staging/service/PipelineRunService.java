@@ -88,6 +88,16 @@ public class PipelineRunService {
                 .isPresent();
     }
 
+    // Retrying after a publish failure re-runs the saver from scratch (see isAlreadyFullyProcessed
+    // above — that's intentional, so the publish itself gets retried). But the canonical save for this
+    // exact rawDataRefId already committed on the earlier attempt; re-running it too would insert a
+    // second, fully redundant set of *_versions/notice/context rows. Callers should reuse this batch
+    // instead of calling saveSnapshot again.
+    public Optional<ArtifactBatch> findExistingBatchForRef(String artifactUid, String artifactType, Long rawDataRefId) {
+        return batchRepository.findTopByArtifactUidAndArtifactTypeAndRawDataRefIdOrderByCreatedAtDesc(
+                artifactUid, artifactType, rawDataRefId);
+    }
+
     @Transactional
     public Long startStage(Long runId, String stageName, String inputData) {
         PipelineRun run = runRepository.findById(runId)
