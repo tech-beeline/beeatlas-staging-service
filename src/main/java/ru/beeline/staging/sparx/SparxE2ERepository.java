@@ -24,6 +24,7 @@ public class SparxE2ERepository {
 			             JOIN t_object ref ON ref.object_id = odd.object_id AND ref.object_type = 'InteractionOccurrence'
 			             JOIN t_diagram d ON CAST(d.diagram_id AS text) = ref.pdata1
 			         WHERE p.stereotype = 'e2e_diagram'
+					 AND d.ea_guid='{44CB33B9-37E8-4bd1-8927-17311BCC0E8E}'
 			         """;
 
 	// Full raw export of one e2e scenario:
@@ -38,8 +39,7 @@ public class SparxE2ERepository {
 						                    		name,
 						                    		0 as object_id
 						                    	FROM t_diagram WHERE ea_guid=?
-						                    ),
-											cte_api_parent AS
+						                   ), cte_api_parent AS
 			(
 				SELECT object_id as child_id, object_id, ea_guid
 					FROM t_object WHERE object_type='Interface'
@@ -48,6 +48,14 @@ public class SparxE2ERepository {
 				FROM cte_api_parent p
 					JOIN t_connector r ON r.end_object_id=p.object_id AND r.connector_type='Generalization'
 					JOIN t_object o ON o.object_id=r.start_object_id
+			),
+			cte_tags AS (
+				SELECT
+					pi.object_id as container_id, i.object_id AS api_id, i.alias as code,  t.*
+				FROM t_object i 
+					LEFT JOIN t_object pi ON i.object_id=pi.classifier
+					JOIN t_objectproperties t ON t.object_id=pi.object_id OR t.object_id=i.object_id
+				WHERE pi.object_type='ProvidedInterface'
 			),
 			cte_diagram_link AS
 			(
@@ -155,6 +163,35 @@ public class SparxE2ERepository {
 					JOIN cte_api_parent i ON i.object_id=p.classifier
 					JOIN cte_diagram_messages m ON m.end_object_id=p.object_id
 				WHERE app.stereotype='softwareSystem'
+				UNION ALL
+				SELECT
+					app.object_id AS system_id,
+					p.object_id AS container_id,
+					p.ea_guid || '.' || LOWER(app.alias),
+					i.child_id AS api_id,
+					LOWER(i.ea_guid) || '.' || p.ea_guid || '.' || LOWER(app.alias) AS code,
+					'manual' AS source,
+					2 AS source_priority  -- 1 = lower priority
+				FROM t_object app
+					JOIN t_object p ON p.parentid=app.object_id AND p.object_type='ProvidedInterface'
+					JOIN cte_diagram_messages m ON m.end_object_id=p.object_id
+					JOIN t_operation o ON o.ea_guid= m.operation_guid
+					JOIN cte_api_parent i ON i.object_id=o.object_id
+				WHERE app.stereotype='softwareSystem'
+				UNION ALL
+				SELECT
+					app.object_id AS system_id,
+					app.object_id AS container_id,
+					app.ea_guid || '.' || LOWER(app.alias),
+					i.child_id AS api_id,
+					LOWER(i.ea_guid) || '.' || app.ea_guid || '.' || LOWER(app.alias) AS code,
+					'manual' AS source,
+					3 AS source_priority  -- 1 = lower priority
+				FROM t_object app
+					JOIN cte_diagram_messages m ON m.end_object_id=app.object_id
+					JOIN t_operation o ON o.ea_guid= m.operation_guid
+					JOIN cte_api_parent i ON i.object_id=o.object_id
+				WHERE app.stereotype='softwareSystem'
 			),
 			cte_c4_api AS (
 				-- Deduplicate by api_id: keep structurizr (priority 0) over manual (priority 1)
@@ -209,8 +246,8 @@ public class SparxE2ERepository {
 						SELECT DISTINCT jsonb_agg(jsonb_build_object(
 							'property', t.property,
 							'value', COALESCE( t.notes, t.value)
-						)) FROM t_objectproperties t
-					WHERE t.object_id=api.api_id OR (t.object_id=api.container_id)) AS tags
+						)) FROM cte_tags t
+					WHERE t.api_id=api.api_id OR (t.container_id=api.container_id)) AS tags
 				FROM cte_operations o
 					JOIN t_object i ON i.object_id=o.interface_id
 					LEFT JOIN cte_c4_api api ON api.api_id=o.interface_id
@@ -261,7 +298,9 @@ public class SparxE2ERepository {
 				'containers', COALESCE((SELECT jsonb_agg(i) FROM cte_containers i),'[]'::jsonb),
 				'interfaces', COALESCE((SELECT jsonb_agg(i) FROM cte_interfaces i),'[]'::jsonb),
 				'operations', COALESCE((SELECT jsonb_agg(o) FROM cte_operations o),'[]'::jsonb)
-			)::text
+			)
+
+			::text
 						            """;
 
 	private final JdbcTemplate sparxJdbcTemplate;
