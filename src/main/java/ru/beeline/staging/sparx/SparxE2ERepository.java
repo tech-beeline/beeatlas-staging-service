@@ -119,6 +119,7 @@ public class SparxE2ERepository {
 			    FROM t_connector c
 					JOIN t_diagramobjects so ON so.object_id=c.start_object_id AND so.diagram_id=c.diagramid
 					JOIN t_diagramobjects eo ON eo.object_id=c.end_object_id AND eo.diagram_id=c.diagramid
+					LEFT JOIN cte_diagram_link l ON l.object_id=c.end_object_id
 			    WHERE c.diagramid IN (SELECT diagram_id FROM cte_diagrams)
 			      AND c.connector_type = 'Sequence'
 				 ORDER BY seqno
