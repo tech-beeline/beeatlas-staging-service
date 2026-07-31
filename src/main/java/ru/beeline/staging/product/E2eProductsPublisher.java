@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.product;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,11 +27,6 @@ public class E2eProductsPublisher {
     private final ArtifactNoticeService artifactNoticeService;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Publishes the current saved state of one e2e_scenario to fdm-products (POST /api/v1/e2e), per
-     * ea-e2e-sequence-save-spec.md. Called from the Save stage right after the canonical model has been
-     * persisted, so the "actual state" query below sees this run's writes (same DB transaction/connection).
-     */
     public void publish(String artifactUid, Long rawDataRefId) {
         String actualScenarioJson = actualE2eScenarioRepository.fetchActualScenarioRaw(artifactUid);
         if (actualScenarioJson == null) {
@@ -56,8 +55,6 @@ public class E2eProductsPublisher {
         }
     }
 
-    // Saved in its own transaction (see ArtifactNoticeService.saveNoticeInNewTransaction) so the notice
-    // survives the rollback the caller's @Transactional save method triggers by rethrowing.
     private void recordPublishFailure(String artifactUid, Long rawDataRefId, Exception e) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("uid", artifactUid);
@@ -68,8 +65,6 @@ public class E2eProductsPublisher {
         } catch (Exception jsonEx) {
             detailsJson = "{}";
         }
-        // ArtifactNoticeEntity only persists code/level/category (via notice_type) + details + context —
-        // message() is never written, so the useful text has to live in details().
         ArtifactNotice notice = new ArtifactNotice(null, null, "publish.failed", "error", "publish",
                 rawDataRefId, "e2e_scenario", artifactUid, null, "publish.failed", detailsJson, null, null);
         artifactNoticeService.saveNoticeInNewTransaction(rawDataRefId, notice);

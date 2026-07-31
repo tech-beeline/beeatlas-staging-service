@@ -1,13 +1,14 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.product.dto.e2e;
 
 import lombok.Data;
 
 import java.util.List;
 
-/**
- * Body for fdm-products {@code POST /api/v1/e2e}. Field names/casing mirror the target
- * contract exactly — see ea-e2e-sequence-save-spec.md §2.2.
- */
+
 @Data
 public class E2ePublishRequest {
     private E2eInfoDto e2e;

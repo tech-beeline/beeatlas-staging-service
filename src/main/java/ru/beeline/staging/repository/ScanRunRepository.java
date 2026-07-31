@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,9 +15,6 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Ported from documentation/staging-service/queries/select-scan-runs.sql — keep in sync with that file.
- */
 @Repository
 public class ScanRunRepository {
 

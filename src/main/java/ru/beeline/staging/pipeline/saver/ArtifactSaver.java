@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.pipeline.saver;
 
 import ru.beeline.staging.dto.notice.SaveResult;

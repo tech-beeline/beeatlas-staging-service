@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.product;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -13,10 +17,6 @@ import ru.beeline.staging.product.dto.e2e.E2eProductDto;
 
 import java.util.List;
 
-/**
- * Maps the staging canonical model (snake_case, per get-actual-e2e-scenario.sql) onto the
- * fdm-products POST /api/v1/e2e contract (camelCase). See ea-e2e-sequence-save-spec.md §4 and §6.
- */
 @Component
 public class E2ePublishRequestMapper {
 

@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.pipeline.validator;
 
 import com.fasterxml.jackson.databind.JsonNode;

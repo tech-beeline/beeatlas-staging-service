@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.controller;
 
 import lombok.RequiredArgsConstructor;
@@ -128,12 +132,10 @@ public class PipelineRunsController {
         try {
             return java.time.OffsetDateTime.parse(value).toLocalDateTime();
         } catch (DateTimeParseException e) {
-            // fall through to try LocalDateTime / date-only formats
         }
         try {
             return LocalDateTime.parse(value);
         } catch (DateTimeParseException e) {
-            // fall through to try date-only format
         }
         java.time.LocalDate date = java.time.LocalDate.parse(value);
         return endOfDay ? date.atTime(23, 59, 59, 999_999_999) : date.atStartOfDay();

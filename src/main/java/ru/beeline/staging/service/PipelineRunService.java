@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.service;
 
 import lombok.RequiredArgsConstructor;
@@ -74,11 +78,6 @@ public class PipelineRunService {
                 .orElse(false);
     }
 
-    // Shared by ValidatorWorker/TransformerWorker/SaverWorker: skip re-processing when this exact
-    // content (rawDataRefId, reused via upsertByContentHash while unchanged) was already fully
-    // processed by a run that reached "completed". A batch merely existing isn't enough — since the
-    // canonical save and fdm-products publish commit independently, a batch can exist for a run that
-    // ultimately failed at the publish step, and that run must be retried, not silently skipped.
     public boolean isAlreadyFullyProcessed(String artifactUid, String artifactType, long rawDataRefId) {
         Optional<ArtifactBatch> currentBatch = batchRepository.findByArtifactUidAndArtifactTypeAndCurrentTrue(artifactUid, artifactType);
         return currentBatch
@@ -88,11 +87,6 @@ public class PipelineRunService {
                 .isPresent();
     }
 
-    // Retrying after a publish failure re-runs the saver from scratch (see isAlreadyFullyProcessed
-    // above — that's intentional, so the publish itself gets retried). But the canonical save for this
-    // exact rawDataRefId already committed on the earlier attempt; re-running it too would insert a
-    // second, fully redundant set of *_versions/notice/context rows. Callers should reuse this batch
-    // instead of calling saveSnapshot again.
     public Optional<ArtifactBatch> findExistingBatchForRef(String artifactUid, String artifactType, Long rawDataRefId) {
         return batchRepository.findTopByArtifactUidAndArtifactTypeAndRawDataRefIdOrderByCreatedAtDesc(
                 artifactUid, artifactType, rawDataRefId);
