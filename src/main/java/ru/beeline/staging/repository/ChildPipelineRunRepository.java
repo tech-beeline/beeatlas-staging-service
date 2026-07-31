@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.repository;
 
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -7,11 +11,6 @@ import ru.beeline.staging.dto.rundetails.ChildPipelineRun;
 
 import java.util.List;
 
-/**
- * Ported from documentation/staging-service/queries/select-child-runs.sql — keep in sync with that
- * file. failure_reason/failed_stage are added on top of the reference query: the documented response
- * shape includes them but the reference SELECT didn't.
- */
 @Repository
 public class ChildPipelineRunRepository {
 

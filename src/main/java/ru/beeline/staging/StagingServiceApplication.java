@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging;
 
 import org.camunda.bpm.spring.boot.starter.annotation.EnableProcessApplication;

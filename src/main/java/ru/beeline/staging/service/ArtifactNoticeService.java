@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.service;
 
 import lombok.RequiredArgsConstructor;
@@ -38,9 +42,6 @@ public class ArtifactNoticeService {
                 continue;
             }
 
-            // artifact_notices.raw_data_context_id is NOT NULL: a json_path (starting with "/") in
-            // context() gets materialized with its byte range, everything else falls back to a
-            // free-text context row so the FK is always satisfiable.
             Long rawDataContextId = notice.rawDataContextId();
             String contextText = notice.context();
             if (rawDataContextId == null) {
@@ -67,8 +68,6 @@ public class ArtifactNoticeService {
         return saved;
     }
 
-    // Runs independently of the caller's transaction, so the notice survives even when the caller's
-    // own work (e.g. a failed external publish) is about to roll back.
     @Transactional(value = "stagingTransactionManager", propagation = Propagation.REQUIRES_NEW)
     public void saveNoticeInNewTransaction(Long rawDataRefId, ArtifactNotice notice) {
         saveNotices(rawDataRefId, List.of(notice));

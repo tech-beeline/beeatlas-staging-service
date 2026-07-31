@@ -302,10 +302,10 @@ public class ScenarioDecomposer {
     // ------------------------------------------------------------------
 
     private CallNode buildLocalTree(JsonNode diagram, String diagramUid, Integer diagramIdx,
-            Map<Integer, JsonNode> objectsById,
-            Map<Integer, JsonNode> systemsById, Map<Integer, JsonNode> interfacesById,
-            Map<String, JsonNode> operationsByUid,
-            List<ArtifactNotice> notices) {
+                                    Map<Integer, JsonNode> objectsById,
+                                    Map<Integer, JsonNode> systemsById, Map<Integer, JsonNode> interfacesById,
+                                    Map<String, JsonNode> operationsByUid,
+                                    List<ArtifactNotice> notices) {
         CallNode root = new CallNode();
         root.diagramUid = diagramUid;
         root.serverId = 0;
@@ -382,10 +382,10 @@ public class ScenarioDecomposer {
     }
 
     private CallNode wrapMessage(JsonNode msg, String diagramUid, Integer diagramIdx, int originalIdx,
-            Map<Integer, JsonNode> objectsById,
-            Map<Integer, JsonNode> systemsById, Map<Integer, JsonNode> interfacesById,
-            Map<String, JsonNode> operationsByUid,
-            List<ArtifactNotice> notices) {
+                                 Map<Integer, JsonNode> objectsById,
+                                 Map<Integer, JsonNode> systemsById, Map<Integer, JsonNode> interfacesById,
+                                 Map<String, JsonNode> operationsByUid,
+                                 List<ArtifactNotice> notices) {
         CallNode node = new CallNode();
         node.diagramUid = diagramUid;
         node.pointer = diagramIdx != null ? "/diagrams/" + diagramIdx + "/messages/" + originalIdx
@@ -484,7 +484,7 @@ public class ScenarioDecomposer {
         }
         if (matches.size() > 1) {
             notices.add(mapFailed("warning", details("ambiguous_entry_point", "operation_guid", operationGuid,
-                    "linked_diagram_uid", node.linkedDiagramUid, "matchCount", String.valueOf(matches.size())),
+                            "linked_diagram_uid", node.linkedDiagramUid, "matchCount", String.valueOf(matches.size())),
                     node.pointer));
         }
 
@@ -499,12 +499,12 @@ public class ScenarioDecomposer {
     }
 
     private void skip(CallNode parent, CallNode ch, List<CallNode> result, String reason,
-            Map<String, JsonNode> operationsByUid,
-            Map<Integer, JsonNode> interfacesById,
-            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
-            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
-            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+                      Map<String, JsonNode> operationsByUid,
+                      Map<Integer, JsonNode> interfacesById,
+                      Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+                      Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+                      Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+                      Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         notices.add(notice("transform.exclude", "warning",
                 details("internal_call", "type", reason, "message_uid", ch.uid, "message_name", ch.name,
                         "caller", parent.serverAppCode, "callee", ch.serverAppCode, "diagram_uid", ch.diagramUid),
@@ -528,12 +528,12 @@ public class ScenarioDecomposer {
     }
 
     private void keep(CallNode parent, CallNode ch, List<CallNode> result,
-            String reason, Map<String, JsonNode> operationsByUid,
-            Map<Integer, JsonNode> interfacesById,
-            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
-            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
-            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+                      String reason, Map<String, JsonNode> operationsByUid,
+                      Map<Integer, JsonNode> interfacesById,
+                      Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+                      Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+                      Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+                      Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         /*
          * notices.add(notice("transform.include", "info",
          * details(reason, "message_uid", ch.uid, "message_name", ch.name,
@@ -558,11 +558,11 @@ public class ScenarioDecomposer {
     // ------------------------------------------------------------------
 
     private void decomposeChildren(CallNode parent, Map<String, JsonNode> operationsByUid,
-            Map<Integer, JsonNode> interfacesById,
-            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
-            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
-            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+                                   Map<Integer, JsonNode> interfacesById,
+                                   Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+                                   Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+                                   Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+                                   Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         int callOrder = 0;
         List<CallNode> nodes = new ArrayList<>();
 
@@ -657,11 +657,11 @@ public class ScenarioDecomposer {
     }
 
     private void registerOperationAndInterface(CallNode node, Map<String, JsonNode> operationsByUid,
-            Map<Integer, JsonNode> interfacesById,
-            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
-            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
-            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
+                                               Map<Integer, JsonNode> interfacesById,
+                                               Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+                                               Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+                                               Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+                                               Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         if (operationDrafts.containsKey(node.operationGuid) || skippedOperations.contains(node.operationGuid))
             return;
 
@@ -905,7 +905,7 @@ public class ScenarioDecomposer {
     }
 
     private ArtifactNotice cmdbSuffixNotFoundNotice(String originalCode, String expectedSuffix, String systemCode,
-            String pointer) {
+                                                    String pointer) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("reason", "cmdb_suffix_not_found");
         d.put("field", "container_code");
@@ -917,7 +917,7 @@ public class ScenarioDecomposer {
     }
 
     private ArtifactNotice containerSuffixNotFoundNotice(String originalCode, String expectedSuffix,
-            String containerCode, String pointer) {
+                                                         String containerCode, String pointer) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("reason", "container_suffix_not_found");
         d.put("field", "interface_code");
@@ -939,7 +939,7 @@ public class ScenarioDecomposer {
     }
 
     private ArtifactNotice duplicateKeyNotice(String field, String value, String block, int duplicateIndex,
-            String pointer) {
+                                              String pointer) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("reason", "duplicate_key");
         d.put("field", field);
@@ -1015,7 +1015,7 @@ public class ScenarioDecomposer {
     }
 
     private ArtifactNotice implicitCastNotice(CallNode node, Map<String, String> tags, Double rps, Double latency,
-            Double errorRate) {
+                                              Double errorRate) {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("operation_guid", node.operationGuid);
         if (tags.get("rps") != null)

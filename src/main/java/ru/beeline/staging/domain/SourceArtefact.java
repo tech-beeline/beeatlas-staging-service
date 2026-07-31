@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.domain;
 
 import jakarta.persistence.*;
@@ -6,8 +10,6 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-/** One row per unique artifact instance seen in the source (by extUid) — identity/dedup
- *  bookkeeping, separate from staging.pipeline_runs (which tracks pipeline executions). */
 @Getter
 @Setter
 @Entity

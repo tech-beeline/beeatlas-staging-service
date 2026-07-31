@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.pipeline.saver;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,11 +42,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             log.warn("No canonicalSnapshotJson present for uid={} — nothing to save", artifactUid);
             return SaveResult.of(Map.of());
         }
-
-        // If a previous attempt for this exact rawDataRefId already got as far as committing the
-        // canonical save and only failed later at publish, re-running saveSnapshot here would insert
-        // a fully redundant second copy of every entity it touched (see PipelineRunService.
-        // findExistingBatchForRef). Reuse that batch and retry only the publish.
         Optional<ArtifactBatch> existingBatch = pipelineRunService.findExistingBatchForRef(artifactUid, artifactType, rawDataRefId);
         Long batchId;
         if (existingBatch.isPresent()) {
@@ -51,9 +50,6 @@ public class E2ECanonicalSaver implements ArtifactSaver {
                     artifactUid, rawDataRefId, batchId);
         } else {
             E2ESequenceSnapshot snapshot = objectMapper.readValue(canonicalSnapshotJson, E2ESequenceSnapshot.class);
-
-            // Committed on its own (see E2eCanonicalSnapshotSaver) — a publish failure below must not
-            // roll back canonical data that was already correctly extracted and saved.
             E2eCanonicalSnapshotSaver.SaveStats stats =
                     e2eCanonicalSnapshotSaver.saveSnapshot(snapshot, rawDataRefId, runId, artifactUid, artifactType);
             log.info("Saved canonical model for uid={}: {}", artifactUid, stats);

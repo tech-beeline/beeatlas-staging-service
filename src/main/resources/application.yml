@@ -51,7 +51,7 @@ integration:
 
 staging:
   dashboard:
-    base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:https://dashboard-dev-eafdmmart.apps.yd-m6-kt22.vimpelcom.ru}
+    base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:}
   sparx:
     datasource:
       url: ${STAGING_SPARX_DATASOURCE_URL:}

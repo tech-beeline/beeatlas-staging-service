@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.product.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

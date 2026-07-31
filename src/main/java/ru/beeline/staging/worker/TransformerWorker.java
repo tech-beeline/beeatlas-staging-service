@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.worker;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -82,6 +86,7 @@ public class TransformerWorker extends AbstractWorker {
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             // TransformResult result = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
 

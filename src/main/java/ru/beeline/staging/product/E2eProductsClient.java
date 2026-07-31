@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.product;
 
 import lombok.extern.slf4j.Slf4j;
@@ -29,10 +33,7 @@ public class E2eProductsClient {
         this.retryDelayMs = retryDelayMs;
     }
 
-    /**
-     * POST /api/v1/e2e. Retries on 5xx/connection failures up to retryCount; 409 is logged and swallowed
-     * (version conflicts are fdm-products' concern per save-spec §5.2/§7); any other 4xx is fatal.
-     */
+
     public E2ePublishResponse upsertE2e(E2ePublishRequest request) {
         String url = baseUrl + "/api/v1/e2e";
         String uid = request.getE2e() != null ? request.getE2e().getUid() : null;

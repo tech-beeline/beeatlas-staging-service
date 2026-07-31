@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,11 +15,6 @@ public interface RawDataRefRepository extends JpaRepository<RawDataRef, Long> {
 
     Optional<RawDataRef> findTopByArtifactUidOrderByLoadedAtDesc(String artifactUid);
 
-    /**
-     * Atomic upsert relying on the unique constraint on (artifact_uid, artifact_type, content_hash) —
-     * replaces the old find-then-insert/update pattern, which raced under concurrent adapter runs for
-     * the same artifact and produced duplicate rows for identical content.
-     */
     @Query(value = """
             INSERT INTO staging.raw_data_refs
                 (artifact_uid, artifact_type, source_id, format, raw_content, content_hash, size_bytes, loaded_at, updated_at)

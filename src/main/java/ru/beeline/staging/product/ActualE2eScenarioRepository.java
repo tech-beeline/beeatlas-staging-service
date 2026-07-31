@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.product;
 
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -6,11 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/**
- * Reads back the current ("actual") saved state of one e2e_scenario from the staging canonical model,
- * as it is published to fdm-products. Ported from
- * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file.
- */
+
 @Repository
 public class ActualE2eScenarioRepository {
 

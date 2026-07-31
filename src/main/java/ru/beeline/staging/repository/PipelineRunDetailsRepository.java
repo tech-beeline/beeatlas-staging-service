@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -10,12 +14,7 @@ import ru.beeline.staging.dto.rundetails.PipelineStageLogDto;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Ported from documentation/staging-service/queries/select-pipeline-details.sql — keep in sync with
- * that file. Unlike the reference query, stages is built with explicit camelCase keys (jsonb_build_object)
- * instead of jsonb_agg(l), since a plain row-to-json cast would emit pipeline_stage_logs' snake_case
- * column names, which doesn't match the documented response shape.
- */
+
 @Repository
 public class PipelineRunDetailsRepository {
 

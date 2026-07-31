@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.pipeline.transformer;
 
 import lombok.Data;
@@ -18,28 +22,28 @@ public class E2ESequenceSnapshot {
 
     @Data
     public static class ProductDraft {
-        private String uid;    // systems[].code
-        private String extUid; // systems[].code
-        private String name;   // systems[].name
+        private String uid;
+        private String extUid;
+        private String name;
         private String context;
     }
 
     @Data
     public static class ContainerDraft {
-        private String uid;        // containers[].code
-        private String extUid;     // containers[].id
-        private String name;       // containers[].name
-        private String productUid; // resolved systems[].code owning this container, via containers[].system_id
+        private String uid;
+        private String extUid;
+        private String name;
+        private String productUid;
         private String context;
     }
 
     @Data
     public static class E2eScenarioDraft {
-        private String uid;         // entrance_diagram_uid
-        private String extUid;      // entrance_diagram_uid
-        private String name;        // root diagram name
-        private String description; // "step_id={bi_step ext_uid}", null if step_id is missing
-        private String biStepUid;   // links to BiStepDraft.uid (step_id), null if step_id is missing
+        private String uid;
+        private String extUid;
+        private String name;
+        private String description;
+        private String biStepUid;
 
         private String context;
     }
@@ -51,7 +55,7 @@ public class E2ESequenceSnapshot {
         private String protocol;
         private String name;
         private String source;
-        private String containerUid; // resolved containers[].code owning this interface, via interfaces[].container_id
+        private String containerUid;
         private String context;
     }
 

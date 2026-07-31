@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2024 PJSC VimpelCom
+ */
+
 package ru.beeline.staging.worker;
 
 import jakarta.annotation.PostConstruct;
@@ -76,6 +80,7 @@ public class ValidatorWorker extends AbstractWorker {
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             // ValidateResult result = validator.validate(uid, GzipUtils.gunzipToString(ref.getRawContent()));
+
             ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
 
             List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
