@@ -40,7 +40,7 @@ camunda:
       enabled: true
       lock-time-in-millis: 900000
     history-level: full
-    history-time-to-live: P180D
+    history-time-to-live: P3D
     webapp:
       index-redirect-enabled: true
 
