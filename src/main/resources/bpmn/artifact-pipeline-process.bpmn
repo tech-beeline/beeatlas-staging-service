@@ -15,7 +15,7 @@
   <bpmn:process id="artifact-pipeline-process"
                 name="Artifact Pipeline Process"
                 isExecutable="true"
-                camunda:historyTimeToLive="180">
+                camunda:historyTimeToLive="3">
 
     <bpmn:startEvent id="StartEvent_Message" name="Config&#10;Scan Ready">
       <bpmn:outgoing>Flow_0</bpmn:outgoing>
