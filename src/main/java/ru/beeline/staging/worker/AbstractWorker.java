@@ -19,7 +19,7 @@ import java.util.Set;
 public abstract class AbstractWorker {
 
     private static final String ARTIFACT_FAILED_ERROR_CODE = "artifact-failed";
-    private static final Set<String> BPMN_ERROR_TOPICS = Set.of("validator", "transformer", "saver");
+    private static final Set<String> BPMN_ERROR_TOPICS = Set.of("adapter", "validator", "transformer", "saver");
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
