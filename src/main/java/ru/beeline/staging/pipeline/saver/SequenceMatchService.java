@@ -11,8 +11,15 @@ import ru.beeline.staging.repository.canonical.SequenceVersionRepository;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Find-or-create + versioning for the sequence identity (BLG-004/ADR-011, CMP-03).
+ * Non-primary attribute (description) is serialized into {@code json_data}
+ * via {@link JsonDataValidator} instead of the column setter.
+ */
 @Service
 @RequiredArgsConstructor
 public class SequenceMatchService {
@@ -41,7 +48,12 @@ public class SequenceMatchService {
         version.setSequenceId(entity.getId());
         version.setExtUid(extUid);
         version.setName(name);
-        version.setDescription(description);
+        // CMP-03: serialize non-primary attribute into json_data instead of column setter
+        Map<String, Object> attrs = new HashMap<>();
+        if (description != null) attrs.put("description", description);
+        String jsonData = JsonDataValidator.toJsonData(attrs);
+        JsonDataValidator.validate(jsonData);
+        version.setJsonData(jsonData);
         version.setTechCapabilityVersionId(techCapabilityVersionId);
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);

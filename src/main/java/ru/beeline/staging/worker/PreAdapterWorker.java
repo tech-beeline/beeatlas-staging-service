@@ -97,7 +97,19 @@ public class PreAdapterWorker extends AbstractWorker {
         for (ArtifactPreAdapter.FoundArtifact item : found) {
             PipelineRun run = pipelineRunService.createRun(
                     item.uid(), artifactType, configurationId, task.getProcessInstanceId(), scan.getId());
-            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), run.getId());
+            // Извлекаем имя артефакта из metadata: приоритет "name", затем "productName".
+            Map<String, Object> meta = item.metadata();
+            String artifactName = null;
+            if (meta != null) {
+                Object nameObj = meta.get("name");
+                if (nameObj == null) {
+                    nameObj = meta.get("productName");
+                }
+                if (nameObj != null) {
+                    artifactName = nameObj.toString();
+                }
+            }
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), run.getId(), artifactName);
             artifactRefs.add(run.getId() + "|" + item.uid());
         }
         return Map.of("artifactRefs", artifactRefs);

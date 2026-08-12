@@ -3,6 +3,8 @@ package ru.beeline.staging.domain.canonical;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -22,23 +24,17 @@ public class InterfaceVersion {
     @Column(name = "ext_uid")
     private String extUid;
 
-    @Column(name = "protocol")
-    private String protocol;
-
     @Column(name = "name")
     private String name;
 
-    @Column(name = "spec_link")
-    private String specLink;
-
-    @Column(name = "version")
-    private String version;
-
-    @Column(name = "description")
-    private String description;
-
-    @Column(name = "source_metric")
-    private String sourceMetric;
+    /**
+     * Неосновные атрибуты интерфейса в JSONB-колонке json_data (BLG-004/ADR-011, V0008).
+     * Ключи snake_case: protocol, spec_link, version, description, source_metric.
+     * NULL/{} семантически равны пустому набору (FR-003-22, BR-18).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "json_data", columnDefinition = "jsonb")
+    private String jsonData;
 
     @Column(name = "container_version_id")
     private Long containerVersionId;

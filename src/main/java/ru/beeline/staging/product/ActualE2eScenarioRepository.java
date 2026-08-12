@@ -28,21 +28,27 @@ public class ActualE2eScenarioRepository {
                 FROM cte_artifacts a
                     JOIN staging.raw_data_contexts c ON c.raw_data_ref_id=a.ref_id
             ), cte_e2e AS (
-                SELECT 
-                    DISTINCT v.id as e2e_version_id,v.ext_uid, v.name, v.description, b.ext_uid as bi_step_code
+                SELECT
+                    DISTINCT v.id as e2e_version_id,v.ext_uid, v.name,
+                        v.json_data ->> 'description' AS description, b.ext_uid as bi_step_code
                 FROM cte_contexts c
                     JOIN staging.e2e_scenario_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.bi_step_versions b ON b.id=v.bi_step_version_id
                 
             ), cte_operations AS (
                 SELECT
-                    v.*, i.ext_uid AS interface_code
+                    v.*, i.ext_uid AS interface_code,
+                    v.json_data ->> 'type' AS type,
+                    (v.json_data ->> 'rps')::numeric AS rps,
+                    (v.json_data ->> 'latency')::numeric AS latency,
+                    (v.json_data ->> 'error_rate')::numeric AS error_rate
                 FROM cte_contexts c
                     JOIN staging.operation_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.interface_versions i ON i.id=v.interface_version_id
             ), cte_api AS (
                 SELECT
-                    v.*, cv.ext_uid as container_code
+                    v.*, cv.ext_uid as container_code,
+                    v.json_data ->> 'protocol' AS protocol
                 FROM cte_contexts c
                     JOIN staging.interface_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.container_versions cv ON cv.id=v.container_version_id
@@ -54,10 +60,10 @@ public class ActualE2eScenarioRepository {
                     LEFT JOIN staging.product_versions p ON p.id=v.product_version_id
             ), cte_op_rel AS (
                 SELECT DISTINCT
-                    v.operation_version_id, 
+                    v.operation_version_id,
                     v.related_operation_version_id,
-                    v.call_order,
-                    v.stereotype,
+                    (v.json_data ->> 'call_order')::int AS call_order,
+                    v.json_data ->> 'stereotype' AS stereotype,
                     o.ext_uid AS operation_uid, r.ext_uid AS related_operation_uid
                 FROM cte_contexts c
                     JOIN staging.operation_relation_versions v ON v.raw_data_context_id=c.id

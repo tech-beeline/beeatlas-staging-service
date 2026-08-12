@@ -24,6 +24,12 @@ public class SourceArtefact {
     @Column(name = "ext_uid", nullable = false)
     private String extUid;
 
+    /** Читаемое имя артефакта из преадаптера (FoundArtifact.metadata: name/productName).
+     *  Опционально (BR-13, FR-003-17): отсутствие значения не блокирует обработку;
+     *  fallback для отображения — ext_uid + тип артефакта (FR-003-18). */
+    @Column(name = "name")
+    private String name;
+
     @Column(name = "status", nullable = false)
     private String status = "active";
 

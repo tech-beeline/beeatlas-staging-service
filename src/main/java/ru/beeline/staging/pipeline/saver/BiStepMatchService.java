@@ -12,11 +12,16 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Find-or-create + versioning for the bi_step identity, matched by uid (step_id) — same pattern as
  * InterfaceMatchService/OperationMatchService.
+ * <p>
+ * Non-primary attributes (rps, latency, error_rate, source_id) are serialized into {@code json_data}
+ * via {@link JsonDataValidator} instead of individual column setters (BLG-004/ADR-011, CMP-03).
  */
 @Service
 @RequiredArgsConstructor
@@ -28,8 +33,8 @@ public class BiStepMatchService {
 
     @Transactional
     public BiStepVersion matchOrCreate(String stepId, String name, Double rps, Double latency, Double errorRate,
-                                        String externalGuid, String sourceId, String jsonPointer,
-                                        Long rawDataRefId, Long batchId) {
+                                         String externalGuid, String sourceId, String jsonPointer,
+                                         Long rawDataRefId, Long batchId) {
         boolean[] created = {false};
         BiStep entity = biStepRepository.findByUid(stepId).orElseGet(() -> {
             created[0] = true;
@@ -46,10 +51,18 @@ public class BiStepMatchService {
         version.setBiStepId(entity.getId());
         version.setExtUid(externalGuid);
         version.setName(name);
-        version.setRps(toDecimal(rps));
-        version.setLatency(toDecimal(latency));
-        version.setErrorRate(toDecimal(errorRate));
-        version.setSourceId(sourceId);
+        // CMP-03: serialize non-primary attributes into json_data instead of column setters
+        Map<String, Object> attrs = new HashMap<>();
+        BigDecimal rpsDec = toDecimal(rps);
+        BigDecimal latencyDec = toDecimal(latency);
+        BigDecimal errorRateDec = toDecimal(errorRate);
+        if (rpsDec != null) attrs.put("rps", rpsDec);
+        if (latencyDec != null) attrs.put("latency", latencyDec);
+        if (errorRateDec != null) attrs.put("error_rate", errorRateDec);
+        if (sourceId != null) attrs.put("source_id", sourceId);
+        String jsonData = JsonDataValidator.toJsonData(attrs);
+        JsonDataValidator.validate(jsonData);
+        version.setJsonData(jsonData);
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
