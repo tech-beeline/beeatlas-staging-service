@@ -57,6 +57,12 @@
         <bpmn:outgoing>SubFlow_2</bpmn:outgoing>
       </bpmn:serviceTask>
 
+      <bpmn:boundaryEvent id="BoundaryError_Adapter" attachedToRef="Task_Adapter" cancelActivity="true">
+        <bpmn:outgoing>SubFlow_AdapterError</bpmn:outgoing>
+        <bpmn:errorEventDefinition id="ErrorEventDefinition_Adapter" errorRef="Error_ArtifactFailed" />
+      </bpmn:boundaryEvent>
+      <bpmn:sequenceFlow id="SubFlow_AdapterError" sourceRef="BoundaryError_Adapter" targetRef="SubEnd" />
+
       <bpmn:sequenceFlow id="SubFlow_2" sourceRef="Task_Adapter" targetRef="Task_Validator" />
 
       <bpmn:serviceTask id="Task_Validator"
@@ -112,6 +118,7 @@
 
       <bpmn:endEvent id="SubEnd" name="Item Done">
         <bpmn:incoming>SubFlow_5</bpmn:incoming>
+        <bpmn:incoming>SubFlow_AdapterError</bpmn:incoming>
         <bpmn:incoming>SubFlow_ValidatorError</bpmn:incoming>
         <bpmn:incoming>SubFlow_TransformerError</bpmn:incoming>
         <bpmn:incoming>SubFlow_SaverError</bpmn:incoming>
@@ -156,6 +163,9 @@
       <bpmndi:BPMNShape id="SubEnd_di" bpmnElement="SubEnd">
         <dc:Bounds x="1062" y="110" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryError_Adapter_di" bpmnElement="BoundaryError_Adapter">
+        <dc:Bounds x="562" y="150" width="36" height="36" />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BoundaryError_Validator_di" bpmnElement="BoundaryError_Validator">
         <dc:Bounds x="692" y="150" width="36" height="36" />
       </bpmndi:BPMNShape>
@@ -196,6 +206,12 @@
       <bpmndi:BPMNEdge id="SubFlow_5_di" bpmnElement="SubFlow_5">
         <di:waypoint x="1020" y="128" />
         <di:waypoint x="1062" y="128" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SubFlow_AdapterError_di" bpmnElement="SubFlow_AdapterError">
+        <di:waypoint x="580" y="186" />
+        <di:waypoint x="580" y="195" />
+        <di:waypoint x="1080" y="195" />
+        <di:waypoint x="1080" y="146" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SubFlow_ValidatorError_di" bpmnElement="SubFlow_ValidatorError">
         <di:waypoint x="710" y="186" />
