@@ -12,10 +12,13 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.rundetails.ChildPipelineRun;
 import ru.beeline.staging.dto.scan.ScanRun;
+import ru.beeline.staging.dto.search.PipelineRunSearchPage;
 import ru.beeline.staging.repository.ChildPipelineRunRepository;
 import ru.beeline.staging.repository.PipelineRunDetailsRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.ScanRunRepository;
+import ru.beeline.staging.service.PipelineRunTextSearchService;
+import ru.beeline.staging.service.RawContentDecompressionException;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -34,11 +37,15 @@ public class PipelineRunsController {
             "pending", "loading", "validating", "transforming", "saving", "publishing", "completed", "failed");
 
     private static final int DEFAULT_LIMIT = 50;
+    private static final int MAX_ARTIFACT_TYPE_LENGTH = 100;
+    private static final int MAX_ARTIFACT_UID_LENGTH = 255;
+    private static final int MAX_TEXT_LENGTH = 255;
 
     private final ScanRunRepository scanRunRepository;
     private final PipelineRunDetailsRepository pipelineRunDetailsRepository;
     private final PipelineRunRepository pipelineRunRepository;
     private final ChildPipelineRunRepository childPipelineRunRepository;
+    private final PipelineRunTextSearchService pipelineRunTextSearchService;
 
     @GetMapping("/{runId}/details")
     public ResponseEntity<?> getRunDetails(@PathVariable Long runId) {
@@ -119,6 +126,78 @@ public class PipelineRunsController {
                 limit != null ? limit : DEFAULT_LIMIT, offset);
 
         return ResponseEntity.ok(scans);
+    }
+
+    @GetMapping("/search/{artifactType}/{artifactUid}")
+    public ResponseEntity<?> searchPipelineRuns(
+            @PathVariable String artifactType,
+            @PathVariable String artifactUid,
+            @RequestParam(required = false) String text,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false, defaultValue = "0") int offset) {
+
+        if (text == null || text.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Не передан обязательный query-параметр text"));
+        }
+        if (text.length() > MAX_TEXT_LENGTH) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Длина text превышает " + MAX_TEXT_LENGTH + " символов"));
+        }
+        if (artifactType.length() > MAX_ARTIFACT_TYPE_LENGTH) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Длина artifactType превышает " + MAX_ARTIFACT_TYPE_LENGTH + " символов"));
+        }
+        if (artifactUid.length() > MAX_ARTIFACT_UID_LENGTH) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Длина artifactUid превышает " + MAX_ARTIFACT_UID_LENGTH + " символов"));
+        }
+        String normalizedStatus = status != null ? status.toLowerCase() : null;
+        if (normalizedStatus != null && !ALLOWED_STATUSES.contains(normalizedStatus)) {
+            return ResponseEntity.badRequest().body(Map.of("errorMessage",
+                    "Недопустимое значение параметра status. Допустимые значения: " + String.join(", ", ALLOWED_STATUSES)));
+        }
+        if (limit != null && limit < 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Параметры limit и offset не могут быть отрицательными"));
+        }
+        if (offset < 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Параметры limit и offset не могут быть отрицательными"));
+        }
+
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            from = parseDate(dateFrom, false);
+            to = parseDate(dateTo, true);
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format: " + e.getParsedString()));
+        }
+        if (from != null && to != null && from.isAfter(to)) {
+            return ResponseEntity.badRequest().body(Map.of("errorMessage", "dateFrom не может быть позже dateTo"));
+        }
+
+        if (!pipelineRunTextSearchService.runsExist(artifactType, artifactUid)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "error", "Pipeline runs not found",
+                    "artifactType", artifactType,
+                    "artifactUid", artifactUid));
+        }
+
+        try {
+            PipelineRunSearchPage page = pipelineRunTextSearchService.search(
+                    artifactType, artifactUid, text, normalizedStatus, from, to,
+                    limit != null ? limit : DEFAULT_LIMIT, offset);
+            return ResponseEntity.ok(page);
+        } catch (RawContentDecompressionException e) {
+            log.error("Failed to decompress raw content: rawDataRefId={}", e.getRawDataRefId(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to decompress raw content", "rawDataRefId", e.getRawDataRefId()));
+        }
     }
 
     private LocalDateTime parseDate(String value, boolean endOfDay) {
