@@ -11,6 +11,7 @@ public record PipelineRunDetails(
         String sourceName,
         LocalDateTime startedAt,
         LocalDateTime completedAt,
+        Long rawDataRefId,
         Long batch,
         List<PipelineStageLogDto> stages
 ) {}

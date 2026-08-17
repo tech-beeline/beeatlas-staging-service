@@ -28,6 +28,7 @@ public class PipelineRunDetailsRepository {
                 s.name AS source_name,
                 r.started_at,
                 r.completed_at,
+                r.raw_data_ref_id,
                 b.id AS batch,
                 COALESCE((
                     SELECT jsonb_agg(jsonb_build_object(
@@ -71,6 +72,7 @@ public class PipelineRunDetailsRepository {
                 rs.getString("source_name"),
                 rs.getTimestamp("started_at").toLocalDateTime(),
                 rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
+                (Long) rs.getObject("raw_data_ref_id"),
                 rs.getObject("batch") != null ? rs.getLong("batch") : null,
                 parseStages(rs.getString("stages"))
         ), runId);

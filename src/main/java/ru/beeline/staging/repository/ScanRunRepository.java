@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import ru.beeline.staging.dto.scan.ChildStat;
 import ru.beeline.staging.dto.scan.ScanRun;
+import ru.beeline.staging.dto.scan.ScanRunPage;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -16,6 +17,22 @@ import java.util.List;
  */
 @Repository
 public class ScanRunRepository {
+
+    private static final String SCANS_WHERE_CLAUSE = """
+            WHERE r.parent_run_id IS NULL
+                AND (?::text IS NULL OR LOWER(r.artifact_type) = LOWER(?))
+                AND (?::text IS NULL OR LOWER(s.name) = LOWER(?))
+                AND (?::text IS NULL OR LOWER(r.status) = LOWER(?))
+                AND (?::timestamp IS NULL OR r.started_at >= ?::timestamp)
+                AND (?::timestamp IS NULL OR r.started_at <= ?::timestamp)
+            """;
+
+    private static final String COUNT_SCANS = """
+            SELECT count(*)
+            FROM staging.pipeline_runs r
+            JOIN staging.configurations c ON c.id=r.configuration_id
+            JOIN staging.source_systems s ON s.id=c.source_system_id
+            """ + SCANS_WHERE_CLAUSE;
 
     private static final String SELECT_SCAN_RUNS = """
             WITH cte_scans AS (
@@ -30,13 +47,7 @@ public class ScanRunRepository {
                 FROM staging.pipeline_runs r
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
-                WHERE r.parent_run_id IS NULL
-                    AND (?::text IS NULL OR LOWER(r.artifact_type) = LOWER(?))
-                    AND (?::text IS NULL OR LOWER(s.name) = LOWER(?))
-                    AND (?::text IS NULL OR LOWER(r.status) = LOWER(?))
-                    AND (?::timestamp IS NULL OR r.started_at >= ?::timestamp)
-                    AND (?::timestamp IS NULL OR r.started_at <= ?::timestamp)
-                ORDER BY started_at DESC, r.id DESC
+            """ + SCANS_WHERE_CLAUSE + """
             ), cte_childs AS (
                 SELECT
                     s.id, r.status, count(*) as cnt
@@ -69,13 +80,20 @@ public class ScanRunRepository {
         this.objectMapper = objectMapper;
     }
 
-    public List<ScanRun> findScans(String artifactType, String sourceName, String status,
-                                    LocalDateTime dateFrom, LocalDateTime dateTo,
-                                    int limit, int offset) {
+    public ScanRunPage findScans(String artifactType, String sourceName, String status,
+                                  LocalDateTime dateFrom, LocalDateTime dateTo,
+                                  int limit, int offset) {
         Timestamp from = dateFrom != null ? Timestamp.valueOf(dateFrom) : null;
         Timestamp to = dateTo != null ? Timestamp.valueOf(dateTo) : null;
 
-        return stagingJdbcTemplate.query(SELECT_SCAN_RUNS, (rs, rowNum) -> new ScanRun(
+        Long totalCount = stagingJdbcTemplate.queryForObject(COUNT_SCANS, Long.class,
+                artifactType, artifactType,
+                sourceName, sourceName,
+                status, status,
+                from, from,
+                to, to);
+
+        List<ScanRun> results = stagingJdbcTemplate.query(SELECT_SCAN_RUNS, (rs, rowNum) -> new ScanRun(
                 rs.getLong("id"),
                 rs.getString("code"),
                 rs.getString("artifact_type"),
@@ -90,6 +108,8 @@ public class ScanRunRepository {
                 from, from,
                 to, to,
                 limit, offset);
+
+        return new ScanRunPage(totalCount != null ? totalCount : 0, results);
     }
 
     private List<ChildStat> parseChildStats(String childStatsJson) {

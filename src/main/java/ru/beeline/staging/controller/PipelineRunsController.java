@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.staging.domain.PipelineRun;
-import ru.beeline.staging.dto.rundetails.ChildPipelineRun;
-import ru.beeline.staging.dto.scan.ScanRun;
+import ru.beeline.staging.dto.rundetails.ChildPipelineRunPage;
+import ru.beeline.staging.dto.scan.ScanRunPage;
 import ru.beeline.staging.dto.search.PipelineRunSearchPage;
 import ru.beeline.staging.repository.ChildPipelineRunRepository;
 import ru.beeline.staging.repository.PipelineRunDetailsRepository;
@@ -22,7 +22,6 @@ import ru.beeline.staging.service.RawContentDecompressionException;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -86,7 +85,7 @@ public class PipelineRunsController {
             return ResponseEntity.badRequest().body(Map.of("error", "offset must not be negative"));
         }
 
-        List<ChildPipelineRun> children = childPipelineRunRepository.findChildRuns(
+        ChildPipelineRunPage children = childPipelineRunRepository.findChildRuns(
                 parentId, normalizedStatus, artifactUid, limit != null ? limit : DEFAULT_LIMIT, offset);
         return ResponseEntity.ok(children);
     }
@@ -121,7 +120,7 @@ public class PipelineRunsController {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format: " + e.getParsedString()));
         }
 
-        List<ScanRun> scans = scanRunRepository.findScans(
+        ScanRunPage scans = scanRunRepository.findScans(
                 artifactType, sourceName, normalizedStatus, from, to,
                 limit != null ? limit : DEFAULT_LIMIT, offset);
 

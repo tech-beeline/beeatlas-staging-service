@@ -7,6 +7,7 @@ public record ChildPipelineRun(
         String artifactUid,
         String artifactType,
         String status,
+        Long rawDataRefId,
         String sourceName,
         LocalDateTime startedAt,
         LocalDateTime completedAt,
