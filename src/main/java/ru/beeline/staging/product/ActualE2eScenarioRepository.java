@@ -9,7 +9,9 @@ import java.util.List;
 /**
  * Reads back the current ("actual") saved state of one e2e_scenario from the staging canonical model,
  * as it is published to fdm-products. Ported from
- * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file.
+ * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file,
+ * except for {@code interfaces[].parent_product_cmdb}: added for the fdm-products POST /api/v2/e2e
+ * publish path, not present in the documented reference query.
  */
 @Repository
 public class ActualE2eScenarioRepository {
@@ -47,11 +49,12 @@ public class ActualE2eScenarioRepository {
                     LEFT JOIN staging.interface_versions i ON i.id=v.interface_version_id
             ), cte_api AS (
                 SELECT
-                    v.*, cv.ext_uid as container_code,
+                    v.*, cv.ext_uid as container_code, p.ext_uid as product_code,
                     v.json_data ->> 'protocol' AS protocol
                 FROM cte_contexts c
                     JOIN staging.interface_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.container_versions cv ON cv.id=v.container_version_id
+                    LEFT JOIN staging.product_versions p ON p.id=cv.product_version_id
             ), cte_containers AS (
                 SELECT
                     v.*, p.ext_uid as product_code
@@ -104,7 +107,8 @@ public class ActualE2eScenarioRepository {
                                 'name', c.name,
                                 'code', c.ext_uid,
                                 'protocol', c.protocol,
-                                'parent_container_code', c.container_code )) 
+                                'parent_container_code', c.container_code,
+                                'parent_product_cmdb', c.product_code ))
                         FROM cte_api c), '[]'::jsonb),
                     'operations', COALESCE((SELECT 		jsonb_agg(
                             jsonb_build_object(

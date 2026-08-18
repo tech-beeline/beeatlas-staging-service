@@ -7,8 +7,8 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
-import ru.beeline.staging.product.dto.e2e.E2ePublishRequest;
 import ru.beeline.staging.product.dto.e2e.E2ePublishResponse;
+import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 
 @Slf4j
 @Repository
@@ -30,11 +30,13 @@ public class E2eProductsClient {
     }
 
     /**
-     * POST /api/v1/e2e. Retries on 5xx/connection failures up to retryCount; 409 is logged and swallowed
-     * (version conflicts are fdm-products' concern per save-spec §5.2/§7); any other 4xx is fatal.
+     * POST /api/v2/e2e — Sparx-sourced e2e ingested directly into the product catalog
+     * (discovered_interface/discovered_operation), no containers layer. Retries on 5xx/connection
+     * failures up to retryCount; 409 is logged and swallowed (version conflicts are fdm-products'
+     * concern); any other 4xx is fatal.
      */
-    public E2ePublishResponse upsertE2e(E2ePublishRequest request) {
-        String url = baseUrl + "/api/v1/e2e";
+    public E2ePublishResponse upsertE2e(E2eV2PublishRequest request) {
+        String url = baseUrl + "/api/v2/e2e";
         String uid = request.getE2e() != null ? request.getE2e().getUid() : null;
 
         int attempt = 0;

@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
-import ru.beeline.staging.product.dto.e2e.E2ePublishRequest;
+import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.util.LinkedHashMap;
@@ -18,15 +18,16 @@ import java.util.Map;
 public class E2eProductsPublisher {
 
     private final ActualE2eScenarioRepository actualE2eScenarioRepository;
-    private final E2ePublishRequestMapper e2ePublishRequestMapper;
+    private final E2eV2PublishRequestMapper e2ePublishRequestMapper;
     private final E2eProductsClient e2eProductsClient;
     private final ArtifactNoticeService artifactNoticeService;
     private final ObjectMapper objectMapper;
 
     /**
-     * Publishes the current saved state of one e2e_scenario to fdm-products (POST /api/v1/e2e), per
-     * ea-e2e-sequence-save-spec.md. Called from the Save stage right after the canonical model has been
-     * persisted, so the "actual state" query below sees this run's writes (same DB transaction/connection).
+     * Publishes the current saved state of one e2e_scenario to fdm-products (POST /api/v2/e2e — Sparx
+     * source, no containers layer; see E2eV2PublishRequestMapper). Called from the Save stage right
+     * after the canonical model has been persisted, so the "actual state" query below sees this run's
+     * writes (same DB transaction/connection).
      */
     public void publish(String artifactUid, Long rawDataRefId) {
         String actualScenarioJson = actualE2eScenarioRepository.fetchActualScenarioRaw(artifactUid);
@@ -47,7 +48,7 @@ public class E2eProductsPublisher {
             return;
         }
 
-        E2ePublishRequest request = e2ePublishRequestMapper.map(root);
+        E2eV2PublishRequest request = e2ePublishRequestMapper.map(root);
         try {
             e2eProductsClient.upsertE2e(request);
         } catch (RuntimeException e) {
