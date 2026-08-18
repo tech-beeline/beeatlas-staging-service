@@ -5,15 +5,20 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import ru.beeline.staging.pipeline.adapter.MetricQueriesAdapter;
 import ru.beeline.staging.pipeline.adapter.SparxE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.StructurizrSequenceAdapter;
+import ru.beeline.staging.pipeline.preadapter.MetricQueriesPreAdapter;
 import ru.beeline.staging.pipeline.preadapter.SparxE2EPreAdapter;
 import ru.beeline.staging.pipeline.preadapter.StructurizrSequencePreAdapter;
 import ru.beeline.staging.pipeline.saver.E2ECanonicalSaver;
+import ru.beeline.staging.pipeline.saver.MetricQueriesSaver;
 import ru.beeline.staging.pipeline.saver.StructurizrSequenceCanonicalSaver;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceTransformer;
+import ru.beeline.staging.pipeline.transformer.MetricQueriesTransformer;
 import ru.beeline.staging.pipeline.transformer.StructurizrSequenceTransformer;
 import ru.beeline.staging.pipeline.validator.E2ESequenceValidator;
+import ru.beeline.staging.pipeline.validator.MetricQueriesValidator;
 import ru.beeline.staging.pipeline.validator.StructurizrSequenceValidator;
 
 @Component
@@ -35,7 +40,13 @@ public class PipelineDefinitions {
                                         "adapter", StructurizrSequenceAdapter.MODULE_CODE,
                                         "validator", StructurizrSequenceValidator.MODULE_CODE,
                                         "transformer", StructurizrSequenceTransformer.MODULE_CODE,
-                                        "saver", StructurizrSequenceCanonicalSaver.MODULE_CODE));
+                                        "saver", StructurizrSequenceCanonicalSaver.MODULE_CODE),
+                        "metric-queries", Map.of(
+                                        "pre-adapter", MetricQueriesPreAdapter.MODULE_CODE,
+                                        "adapter", MetricQueriesAdapter.MODULE_CODE,
+                                        "validator", MetricQueriesValidator.MODULE_CODE,
+                                        "transformer", MetricQueriesTransformer.MODULE_CODE,
+                                        "saver", MetricQueriesSaver.MODULE_CODE));
 
         public Map<String, String> moduleMapFor(String artifactType) {
                 return DEFINITIONS.get(artifactType);
