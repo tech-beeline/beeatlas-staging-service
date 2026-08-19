@@ -127,7 +127,8 @@ public class TransformerWorker extends AbstractWorker {
                     first.id(), first.noticeTypeId(), first.code(), first.level(), first.category(),
                     first.rawDataRefId(), first.entityType(), first.entityUid(), first.entityVersionId(),
                     first.message(), withOccurrenceCount(first.details(), group.size()),
-                    first.context(), first.rawDataContextId()));
+                    first.context(), first.rawDataContextId(),
+                    first.artifactUid(), first.artifactName()));
         }
         return result;
     }

@@ -6,11 +6,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import ru.beeline.staging.dto.scan.ChildStat;
 import ru.beeline.staging.dto.scan.ScanRun;
+import ru.beeline.staging.dto.scan.ScanRunDetails;
 import ru.beeline.staging.dto.scan.ScanRunPage;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Ported from documentation/staging-service/queries/select-scan-runs.sql — keep in sync with that file.
@@ -71,6 +73,36 @@ public class ScanRunRepository {
             OFFSET ?
             """;
 
+    private static final String SELECT_SCAN_DETAILS = """
+            SELECT
+                r.id,
+                c.code,
+                r.artifact_type,
+                r.status,
+                s.name as source_name,
+                r.started_at,
+                r.completed_at,
+                (
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'status', child.status,
+                            'count', cnt
+                        )
+                    )
+                    FROM (
+                        SELECT status, count(*) as cnt
+                        FROM staging.pipeline_runs
+                        WHERE parent_run_id = r.id
+                        GROUP BY status
+                    ) child
+                ) as child_stats
+            FROM staging.pipeline_runs r
+            JOIN staging.configurations c ON c.id = r.configuration_id
+            JOIN staging.source_systems s ON s.id = c.source_system_id
+            WHERE r.id = ?
+              AND r.parent_run_id IS NULL
+            """;
+
     private final JdbcTemplate stagingJdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -110,6 +142,27 @@ public class ScanRunRepository {
                 limit, offset);
 
         return new ScanRunPage(totalCount != null ? totalCount : 0, results);
+    }
+
+    /**
+     * Найти детали одного скан-запуска по ID.
+     * Возвращает пустой Optional если scanId не найден или если это не скан (parent_run_id IS NOT NULL).
+     *
+     * Ported from documentation/staging-service/queries/select-scan-details.sql
+     */
+    public Optional<ScanRunDetails> findScanDetails(Long scanId) {
+        List<ScanRunDetails> results = stagingJdbcTemplate.query(SELECT_SCAN_DETAILS, (rs, rowNum) -> new ScanRunDetails(
+                rs.getLong("id"),
+                rs.getString("code"),
+                rs.getString("artifact_type"),
+                rs.getString("status"),
+                rs.getString("source_name"),
+                rs.getTimestamp("started_at").toLocalDateTime(),
+                rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
+                parseChildStats(rs.getString("child_stats"))
+        ), scanId);
+
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
 
     private List<ChildStat> parseChildStats(String childStatsJson) {

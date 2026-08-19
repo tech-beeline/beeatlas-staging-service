@@ -537,7 +537,7 @@ public class StructurizrDynamicViewDecomposer {
 
     private ArtifactNotice notice(String code, String level, String message, String pointer) {
         return new ArtifactNotice(null, null, code, level, "extract", null, null, null, null,
-                message, toJson(Map.of("message", message)), pointer, null);
+                message, toJson(Map.of("message", message)), pointer, null, null, null);
     }
 
     private String toJson(Map<String, Object> value) {

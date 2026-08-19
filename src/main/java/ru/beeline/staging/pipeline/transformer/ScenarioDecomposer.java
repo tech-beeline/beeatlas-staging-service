@@ -1129,7 +1129,7 @@ public class ScenarioDecomposer {
 
     private ArtifactNotice notice(String code, String level, Map<String, Object> details, String pointer) {
         return new ArtifactNotice(null, null, code, level, "transform", null, null, null, null, code, toJson(details),
-                pointer, null);
+                pointer, null, null, null);
     }
 
     private Map<String, Object> details(String reason, Object... kv) {

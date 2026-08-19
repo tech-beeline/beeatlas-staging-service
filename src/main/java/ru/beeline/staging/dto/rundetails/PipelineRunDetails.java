@@ -6,6 +6,7 @@ import java.util.List;
 public record PipelineRunDetails(
         Long id,
         String artifactUid,
+        String artifactName,
         String artifactType,
         String status,
         String sourceName,

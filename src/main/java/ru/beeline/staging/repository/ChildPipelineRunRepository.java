@@ -31,6 +31,7 @@ public class ChildPipelineRunRepository {
             SELECT
                 r.id,
                 r.artifact_uid,
+                sa.name AS artifact_name,
                 r.artifact_type,
                 r.status,
                 r.raw_data_ref_id,
@@ -42,6 +43,10 @@ public class ChildPipelineRunRepository {
             FROM staging.pipeline_runs r
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
+                JOIN staging.data_types t ON t.code=r.artifact_type
+                JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
+                LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
+                    AND sa.source_artifact_type_id=sat.id
             """ + WHERE_CLAUSE + """
             ORDER BY r.started_at DESC, r.id DESC
             LIMIT ?
@@ -62,6 +67,7 @@ public class ChildPipelineRunRepository {
         List<ChildPipelineRun> results = stagingJdbcTemplate.query(SELECT_CHILD_RUNS, (rs, rowNum) -> new ChildPipelineRun(
                 rs.getLong("id"),
                 rs.getString("artifact_uid"),
+                rs.getString("artifact_name"),
                 rs.getString("artifact_type"),
                 rs.getString("status"),
                 (Long) rs.getObject("raw_data_ref_id"),

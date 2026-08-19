@@ -43,11 +43,19 @@ public class PipelineRunTextSearchRepository {
             SELECT
                 r.id,
                 r.artifact_uid,
+                sa.name AS artifact_name,
                 r.artifact_type,
                 r.status,
                 r.started_at,
                 r.raw_data_ref_id
             FROM staging.pipeline_runs r
+                LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
+                    AND sa.source_artifact_type_id = (
+                        SELECT sat.id FROM staging.source_artifact_types sat
+                        JOIN staging.data_types t ON t.id = sat.data_type_id
+                        WHERE t.code = r.artifact_type
+                        LIMIT 1
+                    )
             """ + WHERE_CLAUSE + """
             ORDER BY r.started_at DESC, r.id DESC
             LIMIT ?
@@ -87,6 +95,7 @@ public class PipelineRunTextSearchRepository {
         List<PipelineRunRow> rows = stagingJdbcTemplate.query(FIND_RUNS, (rs, rowNum) -> new PipelineRunRow(
                 rs.getLong("id"),
                 rs.getString("artifact_uid"),
+                rs.getString("artifact_name"),
                 rs.getString("artifact_type"),
                 rs.getString("status"),
                 rs.getTimestamp("started_at").toLocalDateTime(),
@@ -120,8 +129,8 @@ public class PipelineRunTextSearchRepository {
         }
     }
 
-    public record PipelineRunRow(Long id, String artifactUid, String artifactType, String status,
-                                  LocalDateTime startedAt, Long rawDataRefId) {}
+    public record PipelineRunRow(Long id, String artifactUid, String artifactName, String artifactType, String status,
+                                   LocalDateTime startedAt, Long rawDataRefId) {}
 
     public record RunsPage(long totalCount, List<PipelineRunRow> rows) {}
 

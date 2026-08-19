@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.rundetails.ChildPipelineRunPage;
+import ru.beeline.staging.dto.scan.ScanRunDetails;
 import ru.beeline.staging.dto.scan.ScanRunPage;
 import ru.beeline.staging.dto.search.PipelineRunSearchPage;
 import ru.beeline.staging.repository.ChildPipelineRunRepository;
@@ -52,6 +53,14 @@ public class PipelineRunsController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("error", "Pipeline run not found", "runId", runId)));
+    }
+
+    @GetMapping("/{scanId}/scan-details")
+    public ResponseEntity<?> getScanDetails(@PathVariable Long scanId) {
+        Optional<ScanRunDetails> details = scanRunRepository.findScanDetails(scanId);
+        return details.<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Pipeline run not found", "scanId", scanId)));
     }
 
     @GetMapping("/{parentId}/child")

@@ -67,7 +67,7 @@ public class PipelineRunTextSearchService {
         }
 
         return new PipelineRunSearchResult(
-                row.id(), row.artifactUid(), row.artifactType(), row.status(), row.startedAt(),
+                row.id(), row.artifactUid(), row.artifactName(), row.artifactType(), row.status(), row.startedAt(),
                 row.rawDataRefId(), occurrences.size(), hits);
     }
 

@@ -20,9 +20,10 @@ import java.util.Optional;
 public class PipelineRunDetailsRepository {
 
     private static final String SELECT_RUN_DETAILS = """
-            SELECT
+           SELECT
                 r.id,
                 r.artifact_uid,
+                sa.name AS artifact_name,
                 r.artifact_type,
                 r.status,
                 s.name AS source_name,
@@ -50,7 +51,11 @@ public class PipelineRunDetailsRepository {
             FROM staging.pipeline_runs r
                 JOIN staging.configurations c ON c.id = r.configuration_id
                 JOIN staging.source_systems s ON s.id = c.source_system_id
+				JOIN staging.data_types t ON t.code=r.artifact_type
+				JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
                 LEFT JOIN staging.artifact_batches b ON b.run_id = r.id
+                LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
+					AND sa.source_artifact_type_id=sat.id
             WHERE r.id = ?
             """;
 
@@ -67,6 +72,7 @@ public class PipelineRunDetailsRepository {
         List<PipelineRunDetails> rows = stagingJdbcTemplate.query(SELECT_RUN_DETAILS, (rs, rowNum) -> new PipelineRunDetails(
                 rs.getLong("id"),
                 rs.getString("artifact_uid"),
+                rs.getString("artifact_name"),
                 rs.getString("artifact_type"),
                 rs.getString("status"),
                 rs.getString("source_name"),

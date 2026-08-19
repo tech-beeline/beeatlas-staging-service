@@ -72,7 +72,8 @@ public class E2eProductsPublisher {
         // ArtifactNoticeEntity only persists code/level/category (via notice_type) + details + context —
         // message() is never written, so the useful text has to live in details().
         ArtifactNotice notice = new ArtifactNotice(null, null, "publish.failed", "error", "publish",
-                rawDataRefId, "e2e_scenario", artifactUid, null, "publish.failed", detailsJson, null, null);
+                rawDataRefId, "e2e_scenario", artifactUid, null, "publish.failed", detailsJson, null, null,
+                artifactUid, null);
         artifactNoticeService.saveNoticeInNewTransaction(rawDataRefId, notice);
     }
 }

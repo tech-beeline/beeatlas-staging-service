@@ -61,7 +61,8 @@ public class ArtifactNoticeService {
                     rawDataRefId,
                     notice.entityType(), notice.entityUid(), notice.entityVersionId(),
                     notice.message(), notice.details(), contextText,
-                    rawDataContextId
+                    rawDataContextId,
+                    notice.artifactUid(), notice.artifactName()
             ));
         }
         return saved;

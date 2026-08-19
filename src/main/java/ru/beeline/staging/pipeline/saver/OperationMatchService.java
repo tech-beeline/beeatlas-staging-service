@@ -76,7 +76,7 @@ public class OperationMatchService {
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
         ArtifactNotice notice = new ArtifactNotice(null, null, code, "info", "match",
-                rawDataRefId, "operation", entityUid, null, code, null, jsonPointer, null);
+                rawDataRefId, "operation", entityUid, null, code, null, jsonPointer, null, null, null);
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
         return saved.isEmpty() ? null : saved.get(0);
     }
