@@ -357,7 +357,7 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
     // in details (matches E2ESequenceValidator's convention).
     private ArtifactNotice warning(String code, String message, String entityUid, String context) {
         return new ArtifactNotice(null, null, code, "warning", "transform",
-                null, null, entityUid, null, message, toDetailsJson(message), context, null);
+                null, null, entityUid, null, message, toDetailsJson(message), context, null, null, null);
     }
 
     private String toDetailsJson(String message) {

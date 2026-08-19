@@ -106,7 +106,7 @@ public class DashboardServicePublishClient {
             detailsJson = "{}";
         }
         ArtifactNotice notice = new ArtifactNotice(null, null, code, level, "publish",
-                rawDataRefId, "metric_query_template", entityUid, null, message, detailsJson, null, null);
+                rawDataRefId, "metric_query_template", entityUid, null, message, detailsJson, null, null, entityUid, null);
         noticeService.saveNoticeInNewTransaction(rawDataRefId, notice);
     }
 

@@ -64,7 +64,7 @@ public class MetricQueryTemplateMatchService {
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid) {
         ArtifactNotice notice = new ArtifactNotice(null, null, code, "info", "match",
-                rawDataRefId, "metric_query_template", entityUid, null, code, null, null, null);
+                rawDataRefId, "metric_query_template", entityUid, null, code, null, null, null, null, null);
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
         return saved.isEmpty() ? null : saved.get(0);
     }

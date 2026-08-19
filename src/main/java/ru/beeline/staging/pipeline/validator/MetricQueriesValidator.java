@@ -165,12 +165,12 @@ public class MetricQueriesValidator implements ArtifactValidator {
     // in details (matches E2ESequenceValidator's convention).
     private ArtifactNotice error(String code, String message, String entityUid, String context) {
         return new ArtifactNotice(null, null, code, "error", "validation",
-                null, null, entityUid, null, message, toDetailsJson(message), context, null);
+                null, null, entityUid, null, message, toDetailsJson(message), context, null, null, null);
     }
 
     private ArtifactNotice warning(String code, String message, String entityUid, String context) {
         return new ArtifactNotice(null, null, code, "warning", "validation",
-                null, null, entityUid, null, message, toDetailsJson(message), context, null);
+                null, null, entityUid, null, message, toDetailsJson(message), context, null, null, null);
     }
 
     private String toDetailsJson(String message) {
