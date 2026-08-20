@@ -1,5 +1,6 @@
 package ru.beeline.staging.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +26,7 @@ public class ArtifactNoticeService {
     private final NoticeTypeRepository noticeTypeRepository;
     private final ArtifactNoticeRepository artifactNoticeRepository;
     private final RawDataContextService rawDataContextService;
+    private final MeterRegistry meterRegistry;
 
     @Transactional("stagingTransactionManager")
     public List<ArtifactNotice> saveNotices(Long rawDataRefId, List<ArtifactNotice> notices) {
@@ -54,6 +56,7 @@ public class ArtifactNoticeService {
             entity.setDetails(notice.details());
             entity.setRawDataContextId(rawDataContextId);
             ArtifactNoticeEntity persisted = artifactNoticeRepository.save(entity);
+            meterRegistry.counter("staging_notices_total", "level", notice.level(), "notice_type", notice.code()).increment();
 
             saved.add(new ArtifactNotice(
                     persisted.getId(), type.getId(),

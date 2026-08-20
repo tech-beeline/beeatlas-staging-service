@@ -89,6 +89,9 @@ management:
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: staging-service
 
 springdoc:
   swagger-ui:
