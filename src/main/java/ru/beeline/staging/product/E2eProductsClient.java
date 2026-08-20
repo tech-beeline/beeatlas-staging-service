@@ -35,7 +35,7 @@ public class E2eProductsClient {
      * failures up to retryCount; 409 is logged and swallowed (version conflicts are fdm-products'
      * concern); any other 4xx is fatal.
      */
-    public E2ePublishResponse upsertE2e(E2eV2PublishRequest request) {
+    public E2ePublishResponse upsertE2e(E2eV2PublishRequest request, Long relationId, Long pipelineRunId) {
         String url = baseUrl + "/api/v2/e2e";
         String uid = request.getE2e() != null ? request.getE2e().getUid() : null;
 
@@ -44,21 +44,25 @@ public class E2eProductsClient {
             attempt++;
             try {
                 E2ePublishResponse response = restTemplate.postForObject(url, request, E2ePublishResponse.class);
-                log.info("Published e2e uid={} to fdm-products: response={}", uid, response);
+                log.info("Published e2e uid={}, relationId={}, pipelineRunId={} to fdm-products: response={}",
+                        uid, relationId, pipelineRunId, response);
                 return response;
             } catch (HttpClientErrorException.Conflict e) {
-                log.warn("fdm-products reported a version conflict for e2e uid={}: {}", uid, e.getMessage());
+                log.warn("fdm-products reported a version conflict for e2e uid={}, relationId={}, pipelineRunId={}: {}",
+                        uid, relationId, pipelineRunId, e.getMessage());
                 return null;
             } catch (HttpClientErrorException e) {
                 throw new IllegalStateException("fdm-products rejected e2e publish request: uid=" + uid
+                        + " relationId=" + relationId + " pipelineRunId=" + pipelineRunId
                         + " url=" + url + " status=" + e.getStatusCode() + " body=" + e.getResponseBodyAsString(), e);
             } catch (HttpServerErrorException | ResourceAccessException e) {
                 if (attempt > retryCount) {
                     throw new IllegalStateException("fdm-products unreachable after " + retryCount
-                            + " retries: uid=" + uid + " url=" + url, e);
+                            + " retries: uid=" + uid + " relationId=" + relationId + " pipelineRunId=" + pipelineRunId
+                            + " url=" + url, e);
                 }
-                log.warn("fdm-products call failed for uid={} (attempt {}/{}), retrying in {}ms: {}",
-                        uid, attempt, retryCount, retryDelayMs, e.getMessage());
+                log.warn("fdm-products call failed for uid={}, relationId={}, pipelineRunId={} (attempt {}/{}), retrying in {}ms: {}",
+                        uid, relationId, pipelineRunId, attempt, retryCount, retryDelayMs, e.getMessage());
                 sleep(retryDelayMs);
             }
         }
