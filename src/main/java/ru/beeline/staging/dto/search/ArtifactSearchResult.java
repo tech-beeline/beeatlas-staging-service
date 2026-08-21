@@ -8,6 +8,8 @@ public record ArtifactSearchResult(
         String name,
         Long artifactTypeId,
         String status,
+        String sourceCode,
+        String sourceName,
         Long lastRunId,
         Long lastSeenScanRunId,
         LocalDateTime updatedAt,

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +25,8 @@ public class ArtifactSearchController {
     private static final Set<String> ALLOWED_STATUSES = Set.of("active", "inactive", "deleted");
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_NAME_LENGTH = 255;
+    private static final int MAX_ARTIFACT_TYPE_LENGTH = 50;
+    private static final int MAX_ARTIFACT_UID_LENGTH = 255;
 
     private final SourceArtefactSearchRepository sourceArtefactSearchRepository;
     private final SourceArtefactTypeRepository sourceArtefactTypeRepository;
@@ -65,5 +68,36 @@ public class ArtifactSearchController {
         ArtifactSearchPage page = sourceArtefactSearchRepository.search(
                 name, artifactTypeId, normalizedStatus, limit != null ? limit : DEFAULT_LIMIT, offset);
         return ResponseEntity.ok(page);
+    }
+
+    @GetMapping("/{artifactType}/{artifactUid}")
+    public ResponseEntity<?> getArtifactByUid(@PathVariable String artifactType,
+                                              @PathVariable String artifactUid) {
+        if (artifactType == null || artifactType.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Не передан обязательный path-параметр artifactType"));
+        }
+        if (artifactType.length() > MAX_ARTIFACT_TYPE_LENGTH) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Длина artifactType превышает " + MAX_ARTIFACT_TYPE_LENGTH + " символов"));
+        }
+        if (artifactUid == null || artifactUid.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Не передан обязательный path-параметр artifactUid"));
+        }
+        if (artifactUid.length() > MAX_ARTIFACT_UID_LENGTH) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("errorMessage", "Длина artifactUid превышает " + MAX_ARTIFACT_UID_LENGTH + " символов"));
+        }
+
+        if (!sourceArtefactSearchRepository.dataTypeExists(artifactType)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Data type not found", "artifactType", artifactType));
+        }
+
+        return sourceArtefactSearchRepository.findByTypeAndUid(artifactType, artifactUid)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Artifact not found", "artifactType", artifactType, "artifactUid", artifactUid)));
     }
 }

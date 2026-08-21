@@ -12,6 +12,7 @@ public record NoticeSearchResult(
         String category,
         String description,
         String details,
+        Long rawDataRefId,
         Long rawDataContextId,
         JsonNode position,
         LocalDateTime createdAt,
