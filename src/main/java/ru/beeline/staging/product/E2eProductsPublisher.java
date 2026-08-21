@@ -29,10 +29,11 @@ public class E2eProductsPublisher {
      * after the canonical model has been persisted, so the "actual state" query below sees this run's
      * writes (same DB transaction/connection).
      */
-    public void publish(String artifactUid, Long rawDataRefId) {
+    public void publish(String artifactUid, Long rawDataRefId, Long pipelineRunId) {
         String actualScenarioJson = actualE2eScenarioRepository.fetchActualScenarioRaw(artifactUid);
         if (actualScenarioJson == null) {
-            log.warn("No actual e2e_scenario state found for uid={} — skipping fdm-products publish", artifactUid);
+            log.warn("No actual e2e_scenario state found for uid={}, relationId={}, pipelineRunId={} — skipping fdm-products publish",
+                    artifactUid, rawDataRefId, pipelineRunId);
             return;
         }
 
@@ -40,28 +41,34 @@ public class E2eProductsPublisher {
         try {
             root = objectMapper.readTree(actualScenarioJson);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse actual e2e scenario JSON for uid=" + artifactUid, e);
+            throw new IllegalStateException("Failed to parse actual e2e scenario JSON for uid=" + artifactUid
+                    + ", relationId=" + rawDataRefId + ", pipelineRunId=" + pipelineRunId, e);
         }
 
         if (root.path("e2e").path("uid").isMissingNode() || root.path("e2e").path("uid").isNull()) {
-            log.warn("Actual e2e_scenario state for uid={} has no e2e block — skipping fdm-products publish", artifactUid);
+            log.warn("Actual e2e_scenario state for uid={}, relationId={}, pipelineRunId={} has no e2e block — skipping fdm-products publish",
+                    artifactUid, rawDataRefId, pipelineRunId);
             return;
         }
 
         E2eV2PublishRequest request = e2ePublishRequestMapper.map(root);
         try {
-            e2eProductsClient.upsertE2e(request);
+            e2eProductsClient.upsertE2e(request, rawDataRefId, pipelineRunId);
         } catch (RuntimeException e) {
-            recordPublishFailure(artifactUid, rawDataRefId, e);
+            recordPublishFailure(artifactUid, rawDataRefId, pipelineRunId, e);
             throw e;
         }
     }
 
     // Saved in its own transaction (see ArtifactNoticeService.saveNoticeInNewTransaction) so the notice
     // survives the rollback the caller's @Transactional save method triggers by rethrowing.
-    private void recordPublishFailure(String artifactUid, Long rawDataRefId, Exception e) {
+    private void recordPublishFailure(String artifactUid, Long rawDataRefId, Long pipelineRunId, Exception e) {
+        log.error("fdm-products publish failed for uid={}, relationId={}, pipelineRunId={}: {}",
+                artifactUid, rawDataRefId, pipelineRunId, e.getMessage());
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("uid", artifactUid);
+        details.put("relationId", rawDataRefId);
+        details.put("pipelineRunId", pipelineRunId);
         details.put("error", e.getMessage());
         String detailsJson;
         try {

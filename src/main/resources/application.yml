@@ -36,6 +36,8 @@ camunda:
     data-source: camundaDataSource
     database:
       schema-update: true
+      schema-name: ${staging.camunda.schema:staging_camunda}
+      table-prefix: ${staging.camunda.schema:staging_camunda}.
     job-execution:
       enabled: true
       lock-time-in-millis: 900000
@@ -89,6 +91,9 @@ management:
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: staging-service
 
 springdoc:
   swagger-ui:
