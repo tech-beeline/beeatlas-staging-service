@@ -55,7 +55,7 @@ public class E2eProductsClient {
             } catch (HttpServerErrorException | ResourceAccessException e) {
                 if (attempt > retryCount) {
                     throw new IllegalStateException("fdm-products unreachable after " + retryCount
-                            + " retries: uid=" + uid + " url=" + url, e);
+                            + " retries: uid=" + uid + " url=" + url + " Last exception:\n" + e.getMessage(), e);
                 }
                 log.warn("fdm-products call failed for uid={} (attempt {}/{}), retrying in {}ms: {}",
                         uid, attempt, retryCount, retryDelayMs, e.getMessage());
