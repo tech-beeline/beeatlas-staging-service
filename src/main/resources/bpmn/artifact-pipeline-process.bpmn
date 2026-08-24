@@ -51,8 +51,7 @@
       <bpmn:serviceTask id="Task_Adapter"
                         name="Adapter"
                         camunda:type="external"
-                        camunda:topic="adapter"
-                        camunda:asyncBefore="true">
+                        camunda:topic="adapter">
         <bpmn:incoming>SubFlow_1</bpmn:incoming>
         <bpmn:outgoing>SubFlow_2</bpmn:outgoing>
       </bpmn:serviceTask>
@@ -68,8 +67,7 @@
       <bpmn:serviceTask id="Task_Validator"
                         name="Validator"
                         camunda:type="external"
-                        camunda:topic="validator"
-                        camunda:asyncBefore="true">
+                        camunda:topic="validator">
         <bpmn:incoming>SubFlow_2</bpmn:incoming>
         <bpmn:outgoing>SubFlow_3</bpmn:outgoing>
       </bpmn:serviceTask>
@@ -85,8 +83,7 @@
       <bpmn:serviceTask id="Task_Transformer"
                         name="Transformer"
                         camunda:type="external"
-                        camunda:topic="transformer"
-                        camunda:asyncBefore="true">
+                        camunda:topic="transformer">
         <bpmn:incoming>SubFlow_3</bpmn:incoming>
         <bpmn:outgoing>SubFlow_4</bpmn:outgoing>
       </bpmn:serviceTask>
@@ -102,8 +99,7 @@
       <bpmn:serviceTask id="Task_Saver"
                         name="Saver"
                         camunda:type="external"
-                        camunda:topic="saver"
-                        camunda:asyncBefore="true">
+                        camunda:topic="saver">
         <bpmn:incoming>SubFlow_4</bpmn:incoming>
         <bpmn:outgoing>SubFlow_5</bpmn:outgoing>
       </bpmn:serviceTask>
