@@ -62,7 +62,7 @@ public abstract class AbstractWorker {
         try {
             Map<String, Object> outputVars = process(task);
             if (outputVars != null && !outputVars.isEmpty()) {
-                externalTaskService.complete(task.getId(), workerId(), outputVars);
+                externalTaskService.complete(task.getId(), workerId(), Map.of(), outputVars);
             } else {
                 externalTaskService.complete(task.getId(), workerId());
             }
