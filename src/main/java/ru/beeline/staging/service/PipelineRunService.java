@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.service;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.camunda.bpm.engine.ExternalTaskService;
@@ -37,6 +38,7 @@ public class PipelineRunService {
     private final ExternalTaskService        externalTaskService;
     private final PipelineDefinitionEntryRepository pipelineDefinitionRepository;
     private final ArtifactNoticeService      noticeService;
+    private final MeterRegistry              meterRegistry;
 
     @Transactional
     public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
@@ -128,12 +130,22 @@ public class PipelineRunService {
             entry.setFailureReason(errorMessage);
             stageLogRepository.save(entry);
         });
+        String artifactType = artifactTypeOf(runId);
         runRepository.markFailed(runId, errorMessage, stageName);
+        meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "failed").increment();
     }
 
     @Transactional
     public void completeRun(Long runId) {
+        String artifactType = artifactTypeOf(runId);
         runRepository.markCompleted(runId, "completed");
+        meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
+    }
+
+    // MET-01 (prometheus-metrics-spec.md) needs artifact_type as a label; markCompleted/markFailed
+    // are bulk JPQL UPDATEs that don't return the entity, so it's fetched separately.
+    private String artifactTypeOf(Long runId) {
+        return runRepository.findById(runId).map(PipelineRun::getArtifactType).orElse("unknown");
     }
 
     @Transactional

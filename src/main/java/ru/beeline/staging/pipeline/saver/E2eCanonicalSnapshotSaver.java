@@ -148,8 +148,17 @@ public class E2eCanonicalSnapshotSaver {
             OperationRelationVersion relation = new OperationRelationVersion();
             relation.setOperationVersionId(caller != null ? caller.getId() : null);
             relation.setRelatedOperationVersionId(callee.getId());
-            relation.setCallOrder(draft.getCallOrder());
-            relation.setStereotype(draft.getStereotype());
+            // OQ-03/CMP-04: inline json_data for relation versions (call_order, stereotype) per ADR-011
+            Map<String, Object> relationAttrs = new HashMap<>();
+            if (draft.getCallOrder() != null) {
+                relationAttrs.put("call_order", draft.getCallOrder());
+            }
+            if (draft.getStereotype() != null) {
+                relationAttrs.put("stereotype", draft.getStereotype());
+            }
+            String relationJsonData = JsonDataValidator.toJsonData(relationAttrs);
+            JsonDataValidator.validate(relationJsonData);
+            relation.setJsonData(relationJsonData);
             if (draft.getContext() != null) {
                 relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
             }

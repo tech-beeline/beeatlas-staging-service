@@ -6,29 +6,56 @@ package ru.beeline.staging.product;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
-import ru.beeline.staging.product.dto.e2e.E2eContainerDto;
 import ru.beeline.staging.product.dto.e2e.E2eInfoDto;
-import ru.beeline.staging.product.dto.e2e.E2eInterfaceDto;
-import ru.beeline.staging.product.dto.e2e.E2eOperationDto;
-import ru.beeline.staging.product.dto.e2e.E2eOperationRelationDto;
 import ru.beeline.staging.product.dto.e2e.E2eOperationSlaDto;
-import ru.beeline.staging.product.dto.e2e.E2ePublishRequest;
 import ru.beeline.staging.product.dto.e2e.E2eProductDto;
+import ru.beeline.staging.product.dto.e2e.E2eV2InterfaceDto;
+import ru.beeline.staging.product.dto.e2e.E2eV2OperationDto;
+import ru.beeline.staging.product.dto.e2e.E2eV2OperationRelationDto;
+import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Maps the staging canonical model (snake_case, per ActualE2eScenarioRepository) onto the
+ * fdm-products POST /api/v2/e2e contract (camelCase, no containers layer). Interfaces link directly
+ * to their product; since v2 carries no separate containers[] array, the source container is folded
+ * into the published interface code as {@code "{interfaceCode}.{containerCode}"} so the origin isn't
+ * lost.
+ */
 @Component
-public class E2ePublishRequestMapper {
+public class E2eV2PublishRequestMapper {
 
-    public E2ePublishRequest map(JsonNode root) {
-        E2ePublishRequest request = new E2ePublishRequest();
+    public E2eV2PublishRequest map(JsonNode root) {
+        E2eV2PublishRequest request = new E2eV2PublishRequest();
         request.setE2e(mapInfo(root.path("e2e")));
         request.setProducts(mapList(root.path("products"), this::mapProduct));
-        request.setContainers(mapList(root.path("containers"), this::mapContainer));
+        // operations[].interface_code (from ActualE2eScenarioRepository) is the raw, uncompounded
+        // interface code — index interfaces[] by that same raw code so each operation's
+        // parentInterfaceCode can be resolved to the compound code actually published as
+        // interfaces[].code. Without this, fdm-products rejects the payload: operations reference a
+        // parentInterfaceCode that doesn't match any interfaces[].code.
+        Map<String, String> compoundCodeByRawCode = indexCompoundInterfaceCodes(root.path("interfaces"));
         request.setInterfaces(mapList(root.path("interfaces"), this::mapInterface));
-        request.setOperations(mapList(root.path("operations"), this::mapOperation));
+        request.setOperations(mapList(root.path("operations"), node -> mapOperation(node, compoundCodeByRawCode)));
         request.setOperationsRelations(mapList(root.path("operation_relations"), this::mapOperationRelation));
         return request;
+    }
+
+    private Map<String, String> indexCompoundInterfaceCodes(JsonNode interfacesNode) {
+        Map<String, String> index = new java.util.HashMap<>();
+        if (interfacesNode == null || !interfacesNode.isArray()) {
+            return index;
+        }
+        for (JsonNode node : interfacesNode) {
+            String rawCode = text(node, "code");
+            if (rawCode == null) {
+                continue;
+            }
+            index.put(rawCode, compoundInterfaceCode(rawCode, text(node, "parent_container_code")));
+        }
+        return index;
     }
 
     private E2eInfoDto mapInfo(JsonNode node) {
@@ -48,38 +75,33 @@ public class E2ePublishRequestMapper {
         return dto;
     }
 
-    private E2eContainerDto mapContainer(JsonNode node) {
-        E2eContainerDto dto = new E2eContainerDto();
-        dto.setContainerVersionId(longVal(node, "container_version_id"));
-        dto.setProductVersionId(longVal(node, "product_version_id"));
-        dto.setCode(text(node, "code"));
+    private E2eV2InterfaceDto mapInterface(JsonNode node) {
+        E2eV2InterfaceDto dto = new E2eV2InterfaceDto();
+        dto.setCode(compoundInterfaceCode(text(node, "code"), text(node, "parent_container_code")));
         dto.setName(text(node, "name"));
         dto.setParentProductCmdb(text(node, "parent_product_cmdb"));
-        return dto;
-    }
-
-    private E2eInterfaceDto mapInterface(JsonNode node) {
-        E2eInterfaceDto dto = new E2eInterfaceDto();
-        dto.setInterfaceVersionId(longVal(node, "interface_version_id"));
-        dto.setContainerVersionId(longVal(node, "container_version_id"));
-        dto.setCode(text(node, "code"));
-        dto.setName(text(node, "name"));
-        dto.setParentContainerCode(text(node, "parent_container_code"));
         dto.setProtocol(text(node, "protocol"));
-        // specLink/version: not available from staging — always null per save-spec §4.4.
+        // specLink/version: not available from staging — always null, same as v1.
         return dto;
     }
 
-    private E2eOperationDto mapOperation(JsonNode node) {
-        E2eOperationDto dto = new E2eOperationDto();
-        dto.setId(longVal(node, "id"));
-        dto.setInterfaceVersionId(longVal(node, "interface_version_id"));
+    /** {@code "{interfaceCode}.{containerCode}"} — containers[] isn't part of the v2 contract. */
+    private String compoundInterfaceCode(String interfaceCode, String containerCode) {
+        if (containerCode == null || containerCode.isBlank()) {
+            return interfaceCode;
+        }
+        return interfaceCode + "." + containerCode;
+    }
+
+    private E2eV2OperationDto mapOperation(JsonNode node, Map<String, String> compoundCodeByRawCode) {
+        E2eV2OperationDto dto = new E2eV2OperationDto();
         dto.setUid(text(node, "uid"));
         dto.setName(text(node, "name"));
         // type is computed at transform time (name/type split + SOAP fallback, transform-spec §4.5 v4)
         // and persisted on operation_versions.type — read it as-is rather than re-deriving it here.
         dto.setType(text(node, "type"));
-        dto.setParentInterfaceCode(text(node, "interface_code"));
+        String rawInterfaceCode = text(node, "interface_code");
+        dto.setParentInterfaceCode(compoundCodeByRawCode.getOrDefault(rawInterfaceCode, rawInterfaceCode));
         dto.setSla(mapSla(node.path("sla")));
         return dto;
     }
@@ -95,10 +117,8 @@ public class E2ePublishRequestMapper {
         return sla;
     }
 
-    private E2eOperationRelationDto mapOperationRelation(JsonNode node) {
-        E2eOperationRelationDto dto = new E2eOperationRelationDto();
-        dto.setOperationVersionId(longVal(node, "operation_version_id"));
-        dto.setRelatedOperationVersionId(longVal(node, "related_operation_version_id"));
+    private E2eV2OperationRelationDto mapOperationRelation(JsonNode node) {
+        E2eV2OperationRelationDto dto = new E2eV2OperationRelationDto();
         dto.setOperationId(text(node, "operation_uid"));
         dto.setRelatedOperationId(text(node, "related_operation_uid"));
         dto.setOrder(node.hasNonNull("call_order") ? node.get("call_order").asInt() : null);

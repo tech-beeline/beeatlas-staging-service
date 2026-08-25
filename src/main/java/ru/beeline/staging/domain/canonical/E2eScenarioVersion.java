@@ -7,6 +7,8 @@ package ru.beeline.staging.domain.canonical;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -32,8 +34,14 @@ public class E2eScenarioVersion {
     @Column(name = "name")
     private String name;
 
-    @Column(name = "description")
-    private String description;
+    /**
+     * Неосновные атрибуты e2e-сценария в JSONB-колонке json_data (BLG-004/ADR-011, V0008).
+     * Ключи snake_case: description. NULL/{} семантически равны пустому набору
+     * (FR-003-22, BR-18).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "json_data", columnDefinition = "jsonb")
+    private String jsonData;
 
     @Column(name = "raw_data_context_id")
     private Long rawDataContextId;

@@ -10,7 +10,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-
+/**
+ * Reads back the current ("actual") saved state of one e2e_scenario from the staging canonical model,
+ * as it is published to fdm-products. Ported from
+ * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file,
+ * except for {@code interfaces[].parent_product_cmdb}: added for the fdm-products POST /api/v2/e2e
+ * publish path, not present in the documented reference query.
+ */
 @Repository
 public class ActualE2eScenarioRepository {
 
@@ -28,24 +34,31 @@ public class ActualE2eScenarioRepository {
                 FROM cte_artifacts a
                     JOIN staging.raw_data_contexts c ON c.raw_data_ref_id=a.ref_id
             ), cte_e2e AS (
-                SELECT 
-                    DISTINCT v.id as e2e_version_id,v.ext_uid, v.name, v.description, b.ext_uid as bi_step_code
+                SELECT
+                    DISTINCT v.id as e2e_version_id,v.ext_uid, v.name,
+                        v.json_data ->> 'description' AS description, b.ext_uid as bi_step_code
                 FROM cte_contexts c
                     JOIN staging.e2e_scenario_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.bi_step_versions b ON b.id=v.bi_step_version_id
                 
             ), cte_operations AS (
                 SELECT
-                    v.*, i.ext_uid AS interface_code
+                    v.*, i.ext_uid AS interface_code,
+                    v.json_data ->> 'type' AS type,
+                    (v.json_data ->> 'rps')::numeric AS rps,
+                    (v.json_data ->> 'latency')::numeric AS latency,
+                    (v.json_data ->> 'error_rate')::numeric AS error_rate
                 FROM cte_contexts c
                     JOIN staging.operation_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.interface_versions i ON i.id=v.interface_version_id
             ), cte_api AS (
                 SELECT
-                    v.*, cv.ext_uid as container_code
+                    v.*, cv.ext_uid as container_code, p.ext_uid as product_code,
+                    v.json_data ->> 'protocol' AS protocol
                 FROM cte_contexts c
                     JOIN staging.interface_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.container_versions cv ON cv.id=v.container_version_id
+                    LEFT JOIN staging.product_versions p ON p.id=cv.product_version_id
             ), cte_containers AS (
                 SELECT
                     v.*, p.ext_uid as product_code
@@ -54,10 +67,10 @@ public class ActualE2eScenarioRepository {
                     LEFT JOIN staging.product_versions p ON p.id=v.product_version_id
             ), cte_op_rel AS (
                 SELECT DISTINCT
-                    v.operation_version_id, 
+                    v.operation_version_id,
                     v.related_operation_version_id,
-                    v.call_order,
-                    v.stereotype,
+                    (v.json_data ->> 'call_order')::int AS call_order,
+                    v.json_data ->> 'stereotype' AS stereotype,
                     o.ext_uid AS operation_uid, r.ext_uid AS related_operation_uid
                 FROM cte_contexts c
                     JOIN staging.operation_relation_versions v ON v.raw_data_context_id=c.id
@@ -98,7 +111,8 @@ public class ActualE2eScenarioRepository {
                                 'name', c.name,
                                 'code', c.ext_uid,
                                 'protocol', c.protocol,
-                                'parent_container_code', c.container_code )) 
+                                'parent_container_code', c.container_code,
+                                'parent_product_cmdb', c.product_code ))
                         FROM cte_api c), '[]'::jsonb),
                     'operations', COALESCE((SELECT 		jsonb_agg(
                             jsonb_build_object(

@@ -124,22 +124,22 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
 
     private ArtifactNotice error(String code, String message, String pointer) {
         return new ArtifactNotice(null, null, code, "error", "validation",
-                null, null, null, null, message, toJson(Map.of("message", message)), pointer, null);
+                null, null, null, null, message, toJson(Map.of("message", message)), pointer, null, null, null);
     }
 
     private ArtifactNotice error(String code, String message, Map<String, Object> details) {
         return new ArtifactNotice(null, null, code, "error", "validation",
-                null, null, null, null, message, toJson(details), null, null);
+                null, null, null, null, message, toJson(details), null, null, null, null);
     }
 
     private ArtifactNotice info(String code, String message, Map<String, Object> details) {
         return new ArtifactNotice(null, null, code, "info", "validation",
-                null, null, null, null, message, toJson(details), null, null);
+                null, null, null, null, message, toJson(details), null, null, null, null);
     }
 
     private ArtifactNotice warning(String code, String message, Map<String, Object> details) {
         return new ArtifactNotice(null, null, code, "warning", "validation",
-                null, null, null, null, message, toJson(details), null, null);
+                null, null, null, null, message, toJson(details), null, null, null, null);
     }
 
     private String toJson(Map<String, Object> map) {

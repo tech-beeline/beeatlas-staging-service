@@ -88,6 +88,7 @@ public class PreAdapterWorker extends AbstractWorker {
             String rootMsg = cause.getMessage();
             log.warn("Pre-adapter failed for configId={}. Root cause: {}. Full trace:", configurationId, rootMsg, e);
             pipelineRunService.failStage(stageLogId, scan.getId(), "pre-adapter", rootMsg);
+            meterRegistry.counter("staging_pipeline_scans_total", "artifact_type", artifactType, "status", "failed").increment();
             throw new RuntimeException(e);
         }
 
@@ -96,12 +97,27 @@ public class PreAdapterWorker extends AbstractWorker {
                 .collect(Collectors.joining(","));
         pipelineRunService.completeStage(stageLogId, foundArtifactUids, Map.of("foundCount", found.size()));
         pipelineRunService.completeRun(scan.getId());
+        meterRegistry.counter("staging_pipeline_scans_total", "artifact_type", artifactType, "status", "completed").increment();
+        meterRegistry.summary("staging_pipeline_scans_artifact_count", "artifact_type", artifactType, "status", "completed")
+                .record(found.size());
 
         List<String> artifactRefs = new ArrayList<>();
         for (ArtifactPreAdapter.FoundArtifact item : found) {
             PipelineRun run = pipelineRunService.createRun(
                     item.uid(), artifactType, configurationId, task.getProcessInstanceId(), scan.getId());
-            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), run.getId());
+            // Извлекаем имя артефакта из metadata: приоритет "name", затем "productName".
+            Map<String, Object> meta = item.metadata();
+            String artifactName = null;
+            if (meta != null) {
+                Object nameObj = meta.get("name");
+                if (nameObj == null) {
+                    nameObj = meta.get("productName");
+                }
+                if (nameObj != null) {
+                    artifactName = nameObj.toString();
+                }
+            }
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), run.getId(), artifactName);
             artifactRefs.add(run.getId() + "|" + item.uid());
         }
         return Map.of("artifactRefs", artifactRefs);

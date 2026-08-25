@@ -15,8 +15,15 @@ import ru.beeline.staging.repository.canonical.ContainerVersionRepository;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Find-or-create + versioning for the container identity (BLG-004/ADR-011, CMP-03).
+ * Non-primary attributes (version, description, technology) are serialized into {@code json_data}
+ * via {@link JsonDataValidator} instead of individual column setters.
+ */
 @Service
 @RequiredArgsConstructor
 public class ContainerMatchService {
@@ -46,9 +53,14 @@ public class ContainerMatchService {
         containerVersion.setProductVersionId(productVersionId);
         containerVersion.setExtUid(extUid);
         containerVersion.setName(name);
-        containerVersion.setVersion(version);
-        containerVersion.setDescription(description);
-        containerVersion.setTechnology(technology);
+        // CMP-03: serialize non-primary attributes into json_data instead of column setters
+        Map<String, Object> attrs = new HashMap<>();
+        if (version != null) attrs.put("version", version);
+        if (description != null) attrs.put("description", description);
+        if (technology != null) attrs.put("technology", technology);
+        String jsonData = JsonDataValidator.toJsonData(attrs);
+        JsonDataValidator.validate(jsonData);
+        containerVersion.setJsonData(jsonData);
         containerVersion.setCreatedAt(LocalDateTime.now());
         containerVersion.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         containerVersion.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
@@ -57,7 +69,7 @@ public class ContainerMatchService {
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
         ArtifactNotice notice = new ArtifactNotice(null, null, code, "info", "match",
-                rawDataRefId, "container", entityUid, null, code, null, jsonPointer, null);
+                rawDataRefId, "container", entityUid, null, code, null, jsonPointer, null, null, null);
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
         return saved.isEmpty() ? null : saved.get(0);
     }

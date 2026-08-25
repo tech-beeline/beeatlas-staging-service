@@ -36,6 +36,8 @@ camunda:
     data-source: camundaDataSource
     database:
       schema-update: true
+      schema-name: ${staging.camunda.schema:staging_camunda}
+      table-prefix: ${staging.camunda.schema:staging_camunda}.
     job-execution:
       enabled: true
       lock-time-in-millis: 900000
@@ -48,6 +50,13 @@ integration:
   e2e-publish:
     retry-count: ${INTEGRATION_E2E_PUBLISH_RETRY_COUNT:3}
     retry-delay-ms: ${INTEGRATION_E2E_PUBLISH_RETRY_DELAY_MS:1000}
+  grafana:
+    retry-count: ${INTEGRATION_GRAFANA_RETRY_COUNT:3}
+    retry-delay-ms: ${INTEGRATION_GRAFANA_RETRY_DELAY_MS:1000}
+    timeout-ms: ${INTEGRATION_GRAFANA_TIMEOUT_MS:15000}
+  metric-queries-publish:
+    retry-count: ${INTEGRATION_METRIC_QUERIES_PUBLISH_RETRY_COUNT:3}
+    retry-delay-ms: ${INTEGRATION_METRIC_QUERIES_PUBLISH_RETRY_DELAY_MS:1000}
 
 staging:
   dashboard:
@@ -57,6 +66,9 @@ staging:
       url: ${STAGING_SPARX_DATASOURCE_URL:}
       username: ${STAGING_SPARX_DATASOURCE_USERNAME:}
       password: ${STAGING_SPARX_DATASOURCE_PASSWORD:}
+  grafana:
+    url: ${STAGING_GRAFANA_URL:}
+    token: ${STAGING_GRAFANA_TOKEN:}
   worker:
     poll-interval-ms: 500
     lock-duration-ms: 120000
@@ -79,6 +91,9 @@ management:
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: staging-service
 
 springdoc:
   swagger-ui:

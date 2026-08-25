@@ -79,7 +79,7 @@ public class E2ESequenceValidator implements ArtifactValidator {
 
     private ArtifactNotice error(String code, String message, Map<String, Object> details) {
         return new ArtifactNotice(null, null, code, "error", "validation",
-                null, null, null, null, message, toJson(details), null, null);
+                null, null, null, null, message, toJson(details), null, null, null, null);
     }
 
     private String toJson(Map<String, Object> map) {
