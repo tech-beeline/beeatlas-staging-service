@@ -693,7 +693,7 @@ public class ScenarioDecomposer {
             ObjectNode opNode = (ObjectNode) op;
             opNode.put("interface_id", textOrNull(c4Method, "interface_id"));
 
-            // node.operationGuid = c4MethodUid;
+            node.operationGuid = c4MethodUid;
             Map<String, String> c4Tags = tagsOf(c4Method);
             // SLA: приоритет у C4-метода, fallback на operations[].tags.
             slaTags = new LinkedHashMap<>(c4Tags);
