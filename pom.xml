@@ -10,7 +10,7 @@
     </parent>
     <groupId>ru.beeline</groupId>
     <artifactId>staging-service</artifactId>
-    <version>1.6.0</version>
+    <version>1.7.0</version>
     <name>staging-service</name>
     <description>Beeatlas Staging Service — ETL pipeline with Camunda orchestration</description>
     <properties>
