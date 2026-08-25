@@ -56,7 +56,7 @@ public class E2ECanonicalSaver implements ArtifactSaver {
             batchId = stats.getBatchId();
         }
 
-        e2eProductsPublisher.publish(artifactUid, rawDataRefId);
+        e2eProductsPublisher.publish(artifactUid, rawDataRefId, runId);
 
         return SaveResult.of(Map.of("batchId", batchId != null ? batchId : -1L));
     }

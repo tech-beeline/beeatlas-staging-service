@@ -15,8 +15,15 @@ import ru.beeline.staging.repository.canonical.InterfaceVersionRepository;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Find-or-create + versioning for the interface identity (BLG-004/ADR-011, CMP-03).
+ * Non-primary attributes (protocol, spec_link, version, description, source_metric) are serialized
+ * into {@code json_data} via {@link JsonDataValidator} instead of individual column setters.
+ */
 @Service
 @RequiredArgsConstructor
 public class InterfaceMatchService {
@@ -44,12 +51,17 @@ public class InterfaceMatchService {
         InterfaceVersion versionEntity = new InterfaceVersion();
         versionEntity.setInterfaceId(entity.getId());
         versionEntity.setExtUid(extUid);
-        versionEntity.setProtocol(protocol);
         versionEntity.setName(name);
-        versionEntity.setSpecLink(specLink);
-        versionEntity.setVersion(version);
-        versionEntity.setDescription(description);
-        versionEntity.setSourceMetric(sourceMetric);
+        // CMP-03: serialize non-primary attributes into json_data instead of column setters
+        Map<String, Object> attrs = new HashMap<>();
+        if (protocol != null) attrs.put("protocol", protocol);
+        if (specLink != null) attrs.put("spec_link", specLink);
+        if (version != null) attrs.put("version", version);
+        if (description != null) attrs.put("description", description);
+        if (sourceMetric != null) attrs.put("source_metric", sourceMetric);
+        String jsonData = JsonDataValidator.toJsonData(attrs);
+        JsonDataValidator.validate(jsonData);
+        versionEntity.setJsonData(jsonData);
         versionEntity.setContainerVersionId(containerVersionId);
         versionEntity.setCreatedAt(LocalDateTime.now());
         versionEntity.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
@@ -59,7 +71,7 @@ public class InterfaceMatchService {
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
         ArtifactNotice notice = new ArtifactNotice(null, null, code, "info", "match",
-                rawDataRefId, "interface", entityUid, null, code, null, jsonPointer, null);
+                rawDataRefId, "interface", entityUid, null, code, null, jsonPointer, null, null, null);
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
         return saved.isEmpty() ? null : saved.get(0);
     }

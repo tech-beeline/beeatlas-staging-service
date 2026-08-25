@@ -142,6 +142,50 @@ class ScenarioDecomposerTest {
     }
 
     @Test
+    void dropsOperationWhenItsInterfaceHasBlankName() throws Exception {
+        String json = """
+            {
+              "entrance_diagram_uid": "D1",
+              "diagrams": [
+                {
+                  "uid": "D1",
+                  "name": "Root scenario",
+                  "notes": "step_id=Step.01.00.00.00",
+                  "messages": [
+                    {"uid":"M1","name":"CallB","start_object_id":1,"end_object_id":2,"operation_guid":"OP1","seqno":1,"pdata4":"0"}
+                  ]
+                }
+              ],
+              "objects": [
+                {"id":1,"name":"Actor","alias":"ACTOR"},
+                {"id":2,"name":"B","alias":"SYS_B"}
+              ],
+              "systems": [],
+              "containers": [
+                {"id":100,"code":"container.b.SYS_B","name":"Container B","system_code":"SYS_B"}
+              ],
+              "interfaces": [
+                {"id":10,"code":"iface.b.container.b.SYS_B","name":"","source":"manual","container_id":100,"tags":[]}
+              ],
+              "operations": [
+                {"uid":"OP1","name":"DoB","interface_id":10,"tags":[]}
+              ]
+            }
+            """;
+
+        ScenarioDecomposer.Result result = decomposer.decompose(objectMapper.readTree(json), "scenario-4");
+
+        E2ESequenceSnapshot snapshot = result.snapshot();
+        assertThat(snapshot.getOperations()).extracting(E2ESequenceSnapshot.OperationDraft::getExtUid)
+                .doesNotContain("OP1");
+        assertThat(snapshot.getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
+                .doesNotContain("iface.b");
+
+        assertThat(result.notices()).anyMatch(n -> "transform.exclude".equals(n.code())
+                && n.details() != null && n.details().contains("\"missing_interface_name\""));
+    }
+
+    @Test
     void createsScenarioWithoutBiStepWhenRootDiagramHasNoStepId() throws Exception {
         String json = """
             {

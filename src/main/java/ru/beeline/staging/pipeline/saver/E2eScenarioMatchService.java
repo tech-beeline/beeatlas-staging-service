@@ -16,8 +16,15 @@ import ru.beeline.staging.repository.canonical.E2eScenarioVersionRepository;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Find-or-create + versioning for the e2e_scenario identity (BLG-004/ADR-011, CMP-03).
+ * Non-primary attribute (description) is serialized into {@code json_data}
+ * via {@link JsonDataValidator} instead of the column setter.
+ */
 @Service
 @RequiredArgsConstructor
 public class E2eScenarioMatchService {
@@ -46,7 +53,12 @@ public class E2eScenarioMatchService {
         version.setBiStepVersionId(biStepVersionId);
         version.setExtUid(extUid);
         version.setName(name);
-        version.setDescription(description);
+        // CMP-03: serialize non-primary attribute into json_data instead of column setter
+        Map<String, Object> attrs = new HashMap<>();
+        if (description != null) attrs.put("description", description);
+        String jsonData = JsonDataValidator.toJsonData(attrs);
+        JsonDataValidator.validate(jsonData);
+        version.setJsonData(jsonData);
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
@@ -55,7 +67,7 @@ public class E2eScenarioMatchService {
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
         ArtifactNotice notice = new ArtifactNotice(null, null, code, "info", "match",
-                rawDataRefId, "e2e_scenario", entityUid, null, code, null, jsonPointer, null);
+                rawDataRefId, "e2e_scenario", entityUid, null, code, null, jsonPointer, null, null, null);
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
         return saved.isEmpty() ? null : saved.get(0);
     }

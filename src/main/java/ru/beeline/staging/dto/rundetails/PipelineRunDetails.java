@@ -10,11 +10,13 @@ import java.util.List;
 public record PipelineRunDetails(
         Long id,
         String artifactUid,
+        String artifactName,
         String artifactType,
         String status,
         String sourceName,
         LocalDateTime startedAt,
         LocalDateTime completedAt,
+        Long rawDataRefId,
         Long batch,
         List<PipelineStageLogDto> stages
 ) {}

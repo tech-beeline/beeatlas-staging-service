@@ -17,5 +17,7 @@ public record ArtifactNotice(
         String message,
         String details,
         String context,
-        Long rawDataContextId
+        Long rawDataContextId,
+        String artifactUid,
+        String artifactName
 ) {}

@@ -17,8 +17,15 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Find-or-create + versioning for the operation identity (BLG-004/ADR-011, CMP-03).
+ * Non-primary attributes (type, rps, latency, error_rate, description, return_type) are serialized
+ * into {@code json_data} via {@link JsonDataValidator} instead of individual column setters.
+ */
 @Service
 @RequiredArgsConstructor
 public class OperationMatchService {
@@ -50,12 +57,20 @@ public class OperationMatchService {
         version.setInterfaceVersionId(ifaceVersionOrNull != null ? ifaceVersionOrNull.getId() : null);
         version.setExtUid(extUid);
         version.setName(name);
-        version.setType(type);
-        version.setRps(toDecimal(rps));
-        version.setLatency(toDecimal(latency));
-        version.setErrorRate(toDecimal(errorRate));
-        version.setDescription(description);
-        version.setReturnType(returnType);
+        // CMP-03: serialize non-primary attributes into json_data instead of column setters
+        Map<String, Object> attrs = new HashMap<>();
+        if (type != null) attrs.put("type", type);
+        BigDecimal rpsDec = toDecimal(rps);
+        BigDecimal latencyDec = toDecimal(latency);
+        BigDecimal errorRateDec = toDecimal(errorRate);
+        if (rpsDec != null) attrs.put("rps", rpsDec);
+        if (latencyDec != null) attrs.put("latency", latencyDec);
+        if (errorRateDec != null) attrs.put("error_rate", errorRateDec);
+        if (description != null) attrs.put("description", description);
+        if (returnType != null) attrs.put("return_type", returnType);
+        String jsonData = JsonDataValidator.toJsonData(attrs);
+        JsonDataValidator.validate(jsonData);
+        version.setJsonData(jsonData);
         version.setTechCapabilityVersionId(techCapabilityVersionId);
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
@@ -65,7 +80,7 @@ public class OperationMatchService {
 
     private ArtifactNotice saveMatchNotice(String code, Long rawDataRefId, String entityUid, String jsonPointer) {
         ArtifactNotice notice = new ArtifactNotice(null, null, code, "info", "match",
-                rawDataRefId, "operation", entityUid, null, code, null, jsonPointer, null);
+                rawDataRefId, "operation", entityUid, null, code, null, jsonPointer, null, null, null);
         List<ArtifactNotice> saved = noticeService.saveNotices(rawDataRefId, List.of(notice));
         return saved.isEmpty() ? null : saved.get(0);
     }

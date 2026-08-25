@@ -2,6 +2,8 @@ package ru.beeline.staging.pipeline.transformer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
@@ -657,13 +659,11 @@ public class ScenarioDecomposer {
     }
 
     private void registerOperationAndInterface(CallNode node, Map<String, JsonNode> operationsByUid,
-                                               Map<Integer, JsonNode> interfacesById,
-                                               Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
-                                               Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
-                                               Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
-                                               Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
-        if (operationDrafts.containsKey(node.operationGuid) || skippedOperations.contains(node.operationGuid))
-            return;
+            Map<Integer, JsonNode> interfacesById,
+            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+            Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
+            Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
+            Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
 
         // G2: operation_guid present on the message but not found in operations[] —
         // distinct from G1
@@ -678,7 +678,33 @@ public class ScenarioDecomposer {
             return;
         }
 
-        Integer ifaceId = intOrNull(op, "interface_id");
+        // operations[].c4_methods[] — приоритетный источник SLA и привязки к
+        // интерфейсу (по c4_methods[].interface_id = api_id). C4-метод «заменяет»
+        // изначальную операцию: имя остаётся из operations[].name, а SLA и
+        // interface_id берутся из выбранного C4-метода (см. transform-spec §4.5).
+        JsonNode c4Method = selectC4Method(op);
+        Map<String, String> opTags = tagsOf(op);
+        Map<String, String> slaTags = opTags;
+        Integer c4InterfaceId = null;
+        String c4MethodUid = null;
+        if (c4Method != null) {
+            c4MethodUid = textOrNull(c4Method, "uid");
+
+            ObjectNode opNode = (ObjectNode) op;
+            opNode.put("interface_id", textOrNull(c4Method, "interface_id"));
+
+            node.operationGuid = c4MethodUid;
+            Map<String, String> c4Tags = tagsOf(c4Method);
+            // SLA: приоритет у C4-метода, fallback на operations[].tags.
+            slaTags = new LinkedHashMap<>(c4Tags);
+            opTags.forEach(slaTags::putIfAbsent);
+            c4InterfaceId = intOrNull(c4Method, "interface_id");
+        }
+
+        if (operationDrafts.containsKey(node.operationGuid) || skippedOperations.contains(node.operationGuid))
+            return;
+
+        Integer ifaceId = c4InterfaceId != null ? c4InterfaceId : intOrNull(op, "interface_id");
         JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
 
         // G1: the operation resolved, but its interface_id doesn't — or the interface
@@ -695,6 +721,17 @@ public class ScenarioDecomposer {
             return;
         }
 
+        // fdm-products (POST /api/v2/e2e) requires interfaces[].name on every interface in the
+        // payload, not just newly created ones — a single blank name (e.g. an EA object the
+        // architect never named) rejects the whole e2e with 400 BAD_REQUEST, blocking every other
+        // interface/operation in the scenario too. Drop just this operation instead, same as G1.
+        String ifaceName = textOrNull(iface, "name");
+        if (ifaceName == null || ifaceName.isBlank()) {
+            skippedOperations.add(node.operationGuid);
+            notices.add(missingInterfaceNameNotice(node.operationGuid, ifaceId, node.pointer));
+            return;
+        }
+
         OperationDraft draft = new OperationDraft();
         draft.setExtUid(node.operationGuid);
         String rawName = textOrNull(op, "name");
@@ -702,14 +739,19 @@ public class ScenarioDecomposer {
         Integer opIdx = operationArrayIndexByUid.get(node.operationGuid);
         draft.setContext(opIdx != null ? "/operations/" + opIdx : node.pointer);
 
-        Map<String, String> tags = tagsOf(op);
+        Map<String, String> tags = slaTags;
         Double rps = parseSlaField(tags, "rps", node, notices);
         Double latency = parseSlaField(tags, "latency", node, notices);
         Double errorRate = parseSlaField(tags, "error_rate", node, notices);
         draft.setRps(rps);
         draft.setLatency(latency);
         draft.setErrorRate(errorRate);
-        if (!tags.isEmpty()) {
+        if (c4MethodUid != null) {
+            draft.setC4MethodUid(c4MethodUid);
+            draft.setC4MethodInterfaceId(c4InterfaceId);
+            // C4-метод заменил изначальную операцию: SLA и привязка взяты из него.
+            notices.add(c4MethodAppliedNotice(node, c4MethodUid, c4InterfaceId, ifaceId, c4InterfaceId != null));
+        } else if (!tags.isEmpty()) {
             notices.add(implicitCastNotice(node, tags, rps, latency, errorRate));
         }
 
@@ -865,6 +907,46 @@ public class ScenarioDecomposer {
         operationDrafts.put(node.operationGuid, draft);
     }
 
+    // Выбор C4-метода из operations[].c4_methods[] (transform-spec §4.5).
+    // Приоритет: 1) есть SLA; 2) нет removedDate; 3) первый из оставшихся;
+    // 4) если ни одного без removedDate — любой с removedDate; 5) если SLA ни у
+    // одного — любой.
+    private JsonNode selectC4Method(JsonNode op) {
+        JsonNode c4Methods = op.path("c4_methods");
+        if (c4Methods == null || !c4Methods.isArray() || c4Methods.isEmpty())
+            return null;
+
+        List<JsonNode> all = new ArrayList<>();
+        c4Methods.forEach(all::add);
+
+        List<JsonNode> withSla = new ArrayList<>();
+        List<JsonNode> noRemoved = new ArrayList<>();
+        List<JsonNode> withSlaNoRemoved = new ArrayList<>();
+        for (JsonNode m : all) {
+            Map<String, String> t = tagsOf(m);
+            boolean hasSla = t.containsKey("rps") || t.containsKey("latency") || t.containsKey("error_rate");
+            boolean removed = t.containsKey("removedDate");
+            if (hasSla)
+                withSla.add(m);
+            if (!removed)
+                noRemoved.add(m);
+            if (hasSla && !removed)
+                withSlaNoRemoved.add(m);
+        }
+
+        // 1) с SLA, без removedDate
+        if (!withSlaNoRemoved.isEmpty())
+            return withSlaNoRemoved.get(0);
+        // 2) с SLA (в т.ч. с removedDate)
+        if (!withSla.isEmpty())
+            return withSla.get(0);
+        // 3) без removedDate (SLA нет ни у одного)
+        if (!noRemoved.isEmpty())
+            return noRemoved.get(0);
+        // 4) любой (только removedDate без SLA, либо без SLA вовсе)
+        return all.get(0);
+    }
+
     private Double parseSlaField(Map<String, String> tags, String field, CallNode node, List<ArtifactNotice> notices) {
         String raw = tags.get(field);
         if (raw == null)
@@ -880,6 +962,15 @@ public class ScenarioDecomposer {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("reason", "missing_interface");
         d.put("field", "interface_id");
+        d.put("value", interfaceId != null ? String.valueOf(interfaceId) : null);
+        d.put("operation_uid", operationUid);
+        return notice("transform.exclude", "warning", d, pointer);
+    }
+
+    private ArtifactNotice missingInterfaceNameNotice(String operationUid, Integer interfaceId, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "missing_interface_name");
+        d.put("field", "interfaces.name");
         d.put("value", interfaceId != null ? String.valueOf(interfaceId) : null);
         d.put("operation_uid", operationUid);
         return notice("transform.exclude", "warning", d, pointer);
@@ -1014,6 +1105,19 @@ public class ScenarioDecomposer {
         return notice("transform.implicit_cast", "info", d, node.pointer);
     }
 
+    private ArtifactNotice c4MethodAppliedNotice(CallNode node, String c4MethodUid, Integer c4InterfaceId,
+            Integer resolvedInterfaceId, boolean usedC4Interface) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("field", "operation");
+        d.put("action", "replaced_by_c4_method");
+        d.put("c4_method_uid", c4MethodUid);
+        d.put("c4_method_interface_id", c4InterfaceId);
+        d.put("resolved_interface_id", resolvedInterfaceId);
+        d.put("used_c4_interface", usedC4Interface);
+        d.put("operation_uid", node.operationGuid);
+        return notice("transform.implicit_cast", "info", d, node.pointer);
+    }
+
     private ArtifactNotice implicitCastNotice(CallNode node, Map<String, String> tags, Double rps, Double latency,
                                               Double errorRate) {
         Map<String, Object> d = new LinkedHashMap<>();
@@ -1045,7 +1149,7 @@ public class ScenarioDecomposer {
 
     private ArtifactNotice notice(String code, String level, Map<String, Object> details, String pointer) {
         return new ArtifactNotice(null, null, code, level, "transform", null, null, null, null, code, toJson(details),
-                pointer, null);
+                pointer, null, null, null);
     }
 
     private Map<String, Object> details(String reason, Object... kv) {
