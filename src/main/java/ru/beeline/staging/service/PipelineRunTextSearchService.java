@@ -17,8 +17,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Implements the "Алгоритм поиска" section of
@@ -37,40 +39,92 @@ public class PipelineRunTextSearchService {
         return repository.existsRuns(artifactType, artifactUid);
     }
 
+    /**
+     * One query for the page of runs (raw_content joined in), one query for all occurrences' overlapping
+     * contexts across the whole page — regardless of how many rows are on the page. Per-row decompression
+     * and substring search still happen in the JVM (each row's raw_content differs), but no per-row SQL.
+     */
     public PipelineRunSearchPage search(String artifactType, String artifactUid, String text,
                                          String status, LocalDateTime dateFrom, LocalDateTime dateTo,
                                          int limit, int offset) {
         RunsPage runsPage = repository.findRuns(artifactType, artifactUid, status, dateFrom, dateTo, limit, offset);
+        List<PipelineRunRow> rows = runsPage.rows();
 
-        List<PipelineRunSearchResult> results = new ArrayList<>();
-        for (PipelineRunRow row : runsPage.rows()) {
-            results.add(searchRun(row, text));
+        List<byte[]> contentByRow = new ArrayList<>(rows.size());
+        List<List<long[]>> occurrencesByRow = new ArrayList<>(rows.size());
+        List<Long> flatRefIds = new ArrayList<>();
+        List<Long> flatStarts = new ArrayList<>();
+        List<Long> flatEnds = new ArrayList<>();
+        int[] rowStartInFlat = new int[rows.size()];
+
+        for (int i = 0; i < rows.size(); i++) {
+            PipelineRunRow row = rows.get(i);
+            byte[] content = decompress(row);
+            contentByRow.add(content);
+            List<long[]> occurrences = findOccurrences(content, text);
+            occurrencesByRow.add(occurrences);
+            rowStartInFlat[i] = flatStarts.size();
+            for (long[] occurrence : occurrences) {
+                flatRefIds.add(row.rawDataRefId());
+                flatStarts.add(occurrence[0]);
+                flatEnds.add(occurrence[1]);
+            }
         }
+
+        Map<Integer, List<ContextRow>> contextsByGlobalOrdinal = groupByOccurrence(
+                repository.findOverlappingContexts(toArray(flatRefIds), toArray(flatStarts), toArray(flatEnds)));
+
+        List<PipelineRunSearchResult> results = new ArrayList<>(rows.size());
+        for (int i = 0; i < rows.size(); i++) {
+            PipelineRunRow row = rows.get(i);
+            byte[] content = contentByRow.get(i);
+            List<long[]> occurrences = occurrencesByRow.get(i);
+            int base = rowStartInFlat[i];
+
+            List<PipelineRunSearchHit> hits = new ArrayList<>(occurrences.size());
+            for (int j = 0; j < occurrences.size(); j++) {
+                long[] occurrence = occurrences.get(j);
+                int globalOrdinal = base + j + 1; // matches the 1-based SQL ordinality of the flat arrays above
+                hits.add(buildHit(content, occurrence[0], occurrence[1],
+                        contextsByGlobalOrdinal.getOrDefault(globalOrdinal, List.of())));
+            }
+
+            results.add(new PipelineRunSearchResult(
+                    row.id(), row.artifactUid(), row.artifactName(), row.artifactType(), row.status(), row.startedAt(),
+                    row.rawDataRefId(), occurrences.size(), hits));
+        }
+
         return new PipelineRunSearchPage(runsPage.totalCount(), results);
     }
 
-    private PipelineRunSearchResult searchRun(PipelineRunRow row, String text) {
-        byte[] rawContent = repository.findRawContent(row.rawDataRefId());
-        byte[] content;
+    private byte[] decompress(PipelineRunRow row) {
         try {
-            content = GzipUtils.isGzip(rawContent) ? GzipUtils.gunzip(rawContent) : rawContent;
+            byte[] rawContent = row.rawContent();
+            return GzipUtils.isGzip(rawContent) ? GzipUtils.gunzip(rawContent) : rawContent;
         } catch (IOException e) {
             throw new RawContentDecompressionException(row.rawDataRefId(), e);
         }
-
-        List<long[]> occurrences = findOccurrences(content, text);
-        List<ContextRow> contexts = occurrences.isEmpty() ? List.of() : repository.findContexts(row.rawDataRefId());
-
-        List<PipelineRunSearchHit> hits = new ArrayList<>();
-        for (long[] occurrence : occurrences) {
-            hits.add(buildHit(content, occurrence[0], occurrence[1], contexts));
-        }
-
-        return new PipelineRunSearchResult(
-                row.id(), row.artifactUid(), row.artifactName(), row.artifactType(), row.status(), row.startedAt(),
-                row.rawDataRefId(), occurrences.size(), hits);
     }
 
+    private long[] toArray(List<Long> values) {
+        long[] result = new long[values.size()];
+        for (int i = 0; i < result.length; i++) {
+            result[i] = values.get(i);
+        }
+        return result;
+    }
+
+    /** occurrenceIndex from the repository is the 1-based ordinal into the flat arrays passed to it. */
+    private Map<Integer, List<ContextRow>> groupByOccurrence(
+            List<PipelineRunTextSearchRepository.OverlapHit> overlapHits) {
+        Map<Integer, List<ContextRow>> byOccurrence = new HashMap<>();
+        for (PipelineRunTextSearchRepository.OverlapHit hit : overlapHits) {
+            byOccurrence.computeIfAbsent(hit.occurrenceIndex(), k -> new ArrayList<>()).add(hit.context());
+        }
+        return byOccurrence;
+    }
+
+    /** contexts here are already overlap-filtered in SQL (findOverlappingContexts) — no re-checking needed. */
     private PipelineRunSearchHit buildHit(byte[] content, long startOffset, long endOffset, List<ContextRow> contexts) {
         List<PipelineRunSearchHitContext> matchedContexts = new ArrayList<>();
         for (ContextRow ctx : contexts) {
@@ -78,12 +132,8 @@ public class PipelineRunTextSearchService {
             if (byteRange == null) {
                 continue;
             }
-            long ctxStart = byteRange[0];
-            long ctxEnd = byteRange[1];
-            if (ctxStart < endOffset && ctxEnd > startOffset) {
-                matchedContexts.add(new PipelineRunSearchHitContext(
-                        ctx.id(), ctx.position(), extractSnippet(content, ctxStart, ctxEnd)));
-            }
+            matchedContexts.add(new PipelineRunSearchHitContext(
+                    ctx.id(), ctx.position(), extractSnippet(content, byteRange[0], byteRange[1])));
         }
 
         String hitSnippet = matchedContexts.isEmpty()

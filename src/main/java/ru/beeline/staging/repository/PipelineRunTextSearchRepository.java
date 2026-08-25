@@ -34,11 +34,11 @@ public class PipelineRunTextSearchRepository {
             )
             """;
 
-    private static final String COUNT_RUNS = """
-            SELECT count(*)
-            FROM staging.pipeline_runs r
-            """ + WHERE_CLAUSE;
-
+    /**
+     * count(*) OVER() rides along with the page instead of a separate COUNT query — Postgres computes
+     * it over the full WHERE-filtered set before LIMIT/OFFSET are applied, so it's still the true total.
+     * raw_content is joined in directly too, so the caller never needs a per-row follow-up query for it.
+     */
     private static final String FIND_RUNS = """
             SELECT
                 r.id,
@@ -47,7 +47,9 @@ public class PipelineRunTextSearchRepository {
                 r.artifact_type,
                 r.status,
                 r.started_at,
-                r.raw_data_ref_id
+                r.raw_data_ref_id,
+                rc.raw_content,
+                count(*) OVER() AS total_count
             FROM staging.pipeline_runs r
                 LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
                     AND sa.source_artifact_type_id = (
@@ -56,18 +58,27 @@ public class PipelineRunTextSearchRepository {
                         WHERE t.code = r.artifact_type
                         LIMIT 1
                     )
+                LEFT JOIN staging.raw_data_refs rc ON rc.id = r.raw_data_ref_id
             """ + WHERE_CLAUSE + """
             ORDER BY r.started_at DESC, r.id DESC
             LIMIT ?
             OFFSET ?
             """;
 
-    private static final String FIND_RAW_CONTENT = """
-            SELECT raw_content FROM staging.raw_data_refs WHERE id = ?
-            """;
-
-    private static final String FIND_CONTEXTS = """
-            SELECT id, position FROM staging.raw_data_contexts WHERE raw_data_ref_id = ?
+    /**
+     * Overlap join done in Postgres instead of pulling every context row (can be 100k+ per
+     * raw_data_ref_id) into the JVM and scanning it once per occurrence — see idx_raw_data_contexts_byte_range.
+     * Batched across the whole page in one call: ref_id travels alongside each occurrence's own
+     * start/end so occurrences from different runs in the same page don't cross-match each other's contexts.
+     */
+    private static final String FIND_OVERLAPPING_CONTEXTS = """
+            SELECT o.ord AS occurrence_index, c.id, c.position
+            FROM unnest(?::bigint[], ?::bigint[], ?::bigint[]) WITH ORDINALITY AS o(ref_id, start_offset, end_offset, ord)
+            JOIN staging.raw_data_contexts c
+                ON c.raw_data_ref_id = o.ref_id
+               AND (c.position #>> '{primary,type}') = 'byte_range'
+               AND (c.position #>> '{primary,value,start_offset}')::bigint < o.end_offset
+               AND (c.position #>> '{primary,value,end_offset}')::bigint > o.start_offset
             """;
 
     private final JdbcTemplate stagingJdbcTemplate;
@@ -89,33 +100,43 @@ public class PipelineRunTextSearchRepository {
         Timestamp from = dateFrom != null ? Timestamp.valueOf(dateFrom) : null;
         Timestamp to = dateTo != null ? Timestamp.valueOf(dateTo) : null;
 
-        Long totalCount = stagingJdbcTemplate.queryForObject(COUNT_RUNS, Long.class,
-                artifactType, artifactUid, status, status, from, from, to, to);
+        long[] totalCount = {0};
+        List<PipelineRunRow> rows = stagingJdbcTemplate.query(FIND_RUNS, (rs, rowNum) -> {
+            totalCount[0] = rs.getLong("total_count");
+            return new PipelineRunRow(
+                    rs.getLong("id"),
+                    rs.getString("artifact_uid"),
+                    rs.getString("artifact_name"),
+                    rs.getString("artifact_type"),
+                    rs.getString("status"),
+                    rs.getTimestamp("started_at").toLocalDateTime(),
+                    rs.getLong("raw_data_ref_id"),
+                    rs.getBytes("raw_content"));
+        }, artifactType, artifactUid, status, status, from, from, to, to, limit, offset);
 
-        List<PipelineRunRow> rows = stagingJdbcTemplate.query(FIND_RUNS, (rs, rowNum) -> new PipelineRunRow(
-                rs.getLong("id"),
-                rs.getString("artifact_uid"),
-                rs.getString("artifact_name"),
-                rs.getString("artifact_type"),
-                rs.getString("status"),
-                rs.getTimestamp("started_at").toLocalDateTime(),
-                rs.getLong("raw_data_ref_id")
-        ), artifactType, artifactUid, status, status, from, from, to, to, limit, offset);
-
-        return new RunsPage(totalCount != null ? totalCount : 0, rows);
+        return new RunsPage(totalCount[0], rows);
     }
 
-    public byte[] findRawContent(Long rawDataRefId) {
-        List<byte[]> result = stagingJdbcTemplate.query(FIND_RAW_CONTENT,
-                (rs, rowNum) -> rs.getBytes("raw_content"), rawDataRefId);
-        return result.isEmpty() ? null : result.get(0);
-    }
-
-    public List<ContextRow> findContexts(Long rawDataRefId) {
-        return stagingJdbcTemplate.query(FIND_CONTEXTS, (rs, rowNum) -> new ContextRow(
-                rs.getLong("id"),
-                parsePosition(rs.getString("position"))
-        ), rawDataRefId);
+    /**
+     * @param refIds parallel to startOffsets/endOffsets — the raw_data_ref_id each occurrence belongs to,
+     *               so occurrences from different runs in the same batch only match their own contexts.
+     */
+    public List<OverlapHit> findOverlappingContexts(long[] refIds, long[] startOffsets, long[] endOffsets) {
+        if (refIds.length == 0) {
+            return List.of();
+        }
+        Long[] refs = java.util.Arrays.stream(refIds).boxed().toArray(Long[]::new);
+        Long[] starts = java.util.Arrays.stream(startOffsets).boxed().toArray(Long[]::new);
+        Long[] ends = java.util.Arrays.stream(endOffsets).boxed().toArray(Long[]::new);
+        return stagingJdbcTemplate.query(FIND_OVERLAPPING_CONTEXTS,
+                ps -> {
+                    ps.setArray(1, ps.getConnection().createArrayOf("bigint", refs));
+                    ps.setArray(2, ps.getConnection().createArrayOf("bigint", starts));
+                    ps.setArray(3, ps.getConnection().createArrayOf("bigint", ends));
+                },
+                (rs, rowNum) -> new OverlapHit(
+                        rs.getInt("occurrence_index"),
+                        new ContextRow(rs.getLong("id"), parsePosition(rs.getString("position")))));
     }
 
     private JsonNode parsePosition(String json) {
@@ -130,9 +151,12 @@ public class PipelineRunTextSearchRepository {
     }
 
     public record PipelineRunRow(Long id, String artifactUid, String artifactName, String artifactType, String status,
-                                   LocalDateTime startedAt, Long rawDataRefId) {}
+                                   LocalDateTime startedAt, Long rawDataRefId, byte[] rawContent) {}
 
     public record RunsPage(long totalCount, List<PipelineRunRow> rows) {}
 
     public record ContextRow(Long id, JsonNode position) {}
+
+    /** occurrenceIndex is 1-based, matching the ordinal position in the arrays passed to findOverlappingContexts. */
+    public record OverlapHit(int occurrenceIndex, ContextRow context) {}
 }

@@ -721,6 +721,17 @@ public class ScenarioDecomposer {
             return;
         }
 
+        // fdm-products (POST /api/v2/e2e) requires interfaces[].name on every interface in the
+        // payload, not just newly created ones — a single blank name (e.g. an EA object the
+        // architect never named) rejects the whole e2e with 400 BAD_REQUEST, blocking every other
+        // interface/operation in the scenario too. Drop just this operation instead, same as G1.
+        String ifaceName = textOrNull(iface, "name");
+        if (ifaceName == null || ifaceName.isBlank()) {
+            skippedOperations.add(node.operationGuid);
+            notices.add(missingInterfaceNameNotice(node.operationGuid, ifaceId, node.pointer));
+            return;
+        }
+
         OperationDraft draft = new OperationDraft();
         draft.setExtUid(node.operationGuid);
         String rawName = textOrNull(op, "name");
@@ -951,6 +962,15 @@ public class ScenarioDecomposer {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("reason", "missing_interface");
         d.put("field", "interface_id");
+        d.put("value", interfaceId != null ? String.valueOf(interfaceId) : null);
+        d.put("operation_uid", operationUid);
+        return notice("transform.exclude", "warning", d, pointer);
+    }
+
+    private ArtifactNotice missingInterfaceNameNotice(String operationUid, Integer interfaceId, String pointer) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("reason", "missing_interface_name");
+        d.put("field", "interfaces.name");
         d.put("value", interfaceId != null ? String.valueOf(interfaceId) : null);
         d.put("operation_uid", operationUid);
         return notice("transform.exclude", "warning", d, pointer);
