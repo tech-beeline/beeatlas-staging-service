@@ -9,6 +9,7 @@ import java.util.List;
 
 public record PipelineRunDetails(
         Long id,
+        Long scanRunId,
         String artifactUid,
         String artifactName,
         String artifactType,

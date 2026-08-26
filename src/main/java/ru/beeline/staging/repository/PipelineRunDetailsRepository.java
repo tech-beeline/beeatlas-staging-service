@@ -21,6 +21,7 @@ public class PipelineRunDetailsRepository {
     private static final String SELECT_RUN_DETAILS = """
            SELECT
                 r.id,
+                r.parent_run_id AS scan_run_id,
                 r.artifact_uid,
                 sa.name AS artifact_name,
                 r.artifact_type,
@@ -34,7 +35,6 @@ public class PipelineRunDetailsRepository {
                     SELECT jsonb_agg(jsonb_build_object(
                         'id', l.id,
                         'runId', l.run_id,
-                        'scanRunId', l.scan_run_id,
                         'stageName', l.stage_name,
                         'status', l.status,
                         'inputData', l.input_data,
@@ -70,6 +70,7 @@ public class PipelineRunDetailsRepository {
     public Optional<PipelineRunDetails> findById(Long runId) {
         List<PipelineRunDetails> rows = stagingJdbcTemplate.query(SELECT_RUN_DETAILS, (rs, rowNum) -> new PipelineRunDetails(
                 rs.getLong("id"),
+                rs.getObject("scan_run_id") != null ? rs.getLong("scan_run_id") : null,
                 rs.getString("artifact_uid"),
                 rs.getString("artifact_name"),
                 rs.getString("artifact_type"),

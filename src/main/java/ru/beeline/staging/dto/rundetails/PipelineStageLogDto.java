@@ -10,7 +10,6 @@ import java.util.Map;
 public record PipelineStageLogDto(
         Long id,
         Long runId,
-        Long scanRunId,
         String stageName,
         String status,
         String inputData,
