@@ -18,12 +18,17 @@ public class ChildPipelineRunRepository {
     private static final String WHERE_CLAUSE = """
             WHERE r.parent_run_id=?
                 AND (?::text IS NULL OR LOWER(r.status) = LOWER(?))
-                AND (?::text IS NULL OR r.artifact_uid ILIKE '%' || ? || '%')
+                AND (?::text IS NULL OR r.artifact_uid ILIKE '%' || ? || '%'
+                    OR sa.name ILIKE '%' || ? || '%')
             """;
 
     private static final String COUNT_CHILD_RUNS = """
             SELECT count(*)
             FROM staging.pipeline_runs r
+                JOIN staging.data_types t ON t.code=r.artifact_type
+                JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
+                LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
+                    AND sa.source_artifact_type_id=sat.id
             """ + WHERE_CLAUSE;
 
     private static final String SELECT_CHILD_RUNS = """
@@ -58,10 +63,10 @@ public class ChildPipelineRunRepository {
         this.stagingJdbcTemplate = stagingJdbcTemplate;
     }
 
-    public ChildPipelineRunPage findChildRuns(Long parentId, String status, String artifactUid,
-                                               int limit, int offset) {
+    public ChildPipelineRunPage findChildRuns(Long parentId, String status, String artifactQuery,
+                                                int limit, int offset) {
         Long totalCount = stagingJdbcTemplate.queryForObject(COUNT_CHILD_RUNS, Long.class,
-                parentId, status, status, artifactUid, artifactUid);
+                parentId, status, status, artifactQuery, artifactQuery, artifactQuery);
 
         List<ChildPipelineRun> results = stagingJdbcTemplate.query(SELECT_CHILD_RUNS, (rs, rowNum) -> new ChildPipelineRun(
                 rs.getLong("id"),
@@ -75,7 +80,7 @@ public class ChildPipelineRunRepository {
                 rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
                 rs.getString("failure_reason"),
                 rs.getString("failed_stage")
-        ), parentId, status, status, artifactUid, artifactUid, limit, offset);
+        ), parentId, status, status, artifactQuery, artifactQuery, artifactQuery, limit, offset);
 
         return new ChildPipelineRunPage(totalCount != null ? totalCount : 0, results);
     }
