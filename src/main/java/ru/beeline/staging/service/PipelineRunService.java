@@ -7,6 +7,7 @@ package ru.beeline.staging.service;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
@@ -37,7 +38,10 @@ public class PipelineRunService {
     private final ArtifactNoticeService      noticeService;
     private final MeterRegistry              meterRegistry;
 
-    private static final List<String> TERMINAL_STATUSES = List.of("completed", "failed");
+    private static final List<String> DONE_STATUSES = List.of("completed");
+
+    @Value("${staging.recovery.max-auto-retries:3}")
+    private int maxAutoRetries;
 
     @Transactional
     public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
@@ -143,16 +147,25 @@ public class PipelineRunService {
         runRepository.markCompleted(scanRunId, "completed");
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
 
-        // A found artifact may already have an undrained run from a previous scan of this config —
-        // reuse it instead of piling on a duplicate every cycle (that's what turned into a 1.5M-row
-        // backlog before this fix: scan completion doesn't wait for its artifacts to finish, so the
-        // next scheduled scan kept re-finding the same still-pending artifacts and re-queuing them).
+        // A found artifact may already have an undrained (or failed-but-retryable) run from a
+        // previous scan of this config — reuse it instead of piling on a duplicate every cycle.
+        // Only "completed" excludes reuse; "failed" is deliberately included (unlike the old
+        // NOT IN (completed,failed) check) — otherwise a failed run sitting between failure and
+        // the next auto-retry sweep looked "not queued" to this check, so a new scan would create
+        // a second copy for the same artifact right alongside it.
         List<PipelineRun> children = new java.util.ArrayList<>(artifactUids.size());
         for (String uid : artifactUids) {
             PipelineRun existing = runRepository
-                    .findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(uid, artifactType, TERMINAL_STATUSES)
+                    .findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(uid, artifactType, DONE_STATUSES)
                     .orElse(null);
-            children.add(existing != null ? existing : createRun(uid, artifactType, configurationId, batchId, scanRunId));
+            if (existing == null) {
+                children.add(createRun(uid, artifactType, configurationId, batchId, scanRunId));
+                continue;
+            }
+            if ("failed".equals(existing.getStatus()) && existing.getRetryCount() < maxAutoRetries) {
+                runRepository.markRetrying(existing.getId());
+            }
+            children.add(existing);
         }
         return children;
     }
