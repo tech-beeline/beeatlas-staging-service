@@ -7,6 +7,8 @@ package ru.beeline.staging.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -74,6 +76,11 @@ public class PipelineRun {
 
     // Snapshot of this scan's own children, written once at fan-out time (see
     // PipelineRunService#snapshotChildRunIds). NULL for child runs and for scans predating V0014.
+    // @JdbcTypeCode required — columnDefinition alone is DDL-only (ddl-auto: none, so it's never even
+    // read) and does nothing for the runtime JDBC binding. Without it Hibernate doesn't serialize
+    // List<Long> as jsonb, so every write here was silently going in wrong — this is why
+    // childStatsSnapshot came back empty on dev even for freshly-run scans.
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "child_run_ids", columnDefinition = "jsonb")
     private List<Long> childRunIds;
 }
