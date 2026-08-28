@@ -55,10 +55,15 @@ public class PipelineTickScheduler {
                 .collect(Collectors.toMap(
                         PipelineRunRepository.ConfigLastCompletion::getConfigId,
                         PipelineRunRepository.ConfigLastCompletion::getCompletedAt));
+        Map<Long, PipelineRunRepository.ConfigActiveArtifactRuns> activeArtifactsByConfigId =
+                pipelineRunRepository.findActiveArtifactRunCountsPerConfig().stream()
+                        .collect(Collectors.toMap(
+                                PipelineRunRepository.ConfigActiveArtifactRuns::getConfigId, Function.identity()));
 
         LocalDateTime now = LocalDateTime.now();
         for (Configuration config : candidates) {
             if (isStillActive(config, activeScanByConfigId.get(config.getId()), now)) continue;
+            if (isPreviousArtifactRunStillDraining(config, activeArtifactsByConfigId.get(config.getId()), now)) continue;
             if (!intervalElapsed(config, lastCompletionByConfigId.get(config.getId()), now)) {
                 log.info("Skip configId={} — interval not yet elapsed", config.getId());
                 continue;
@@ -93,6 +98,30 @@ public class PipelineTickScheduler {
         }
 
         log.info("Skip configId={} — scan run {} already active", config.getId(), activeScan.getId());
+        return true;
+    }
+
+    // The scan record itself (artifact_uid IS NULL) is marked completed right after fan-out — well
+    // before its children (artifact-level runs) actually finish, see PipelineExecutionService#executeScan
+    // — so isStillActive() alone doesn't catch a previous scan's artifacts still draining. Same
+    // stuck-threshold escape hatch as isStillActive: if the oldest unfinished artifact run has been
+    // sitting past the threshold, treat it as stuck rather than blocking this configuration forever.
+    private boolean isPreviousArtifactRunStillDraining(Configuration config,
+                                                        PipelineRunRepository.ConfigActiveArtifactRuns active,
+                                                        LocalDateTime now) {
+        if (active == null || active.getActiveCount() == null || active.getActiveCount() == 0) return false;
+
+        LocalDateTime threshold = now.minus(stuckScanThresholdMinutes, ChronoUnit.MINUTES);
+        if (active.getOldestStartedAt() != null && active.getOldestStartedAt().isBefore(threshold)) {
+            log.error("configId={}: {} artifact run(s) from previous scan(s) still unfinished, oldest since {} "
+                            + "(> {} min) — treating as stuck, unblocking the scheduler for this configuration "
+                            + "instead of skipping forever.",
+                    config.getId(), active.getActiveCount(), active.getOldestStartedAt(), stuckScanThresholdMinutes);
+            return false;
+        }
+
+        log.info("Skip configId={} — {} artifact run(s) from the previous scan still unfinished (oldest since {})",
+                config.getId(), active.getActiveCount(), active.getOldestStartedAt());
         return true;
     }
 

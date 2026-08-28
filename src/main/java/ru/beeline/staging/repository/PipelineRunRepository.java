@@ -53,6 +53,22 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
         LocalDateTime getCompletedAt();
     }
 
+    // One query for all configs' still-unfinished artifact runs. The scan record itself
+    // (artifact_uid IS NULL) is marked completed right after fan-out — well before its children
+    // finish (PipelineExecutionService#executeScan) — so PipelineTickScheduler also needs this to
+    // know a previous scan's artifacts are still being worked through before starting another one.
+    @Query(value = "SELECT configuration_id AS configId, count(*) AS activeCount, min(started_at) AS oldestStartedAt " +
+                   "FROM staging.pipeline_runs " +
+                   "WHERE artifact_uid IS NOT NULL AND status NOT IN ('completed', 'failed') " +
+                   "GROUP BY configuration_id", nativeQuery = true)
+    List<ConfigActiveArtifactRuns> findActiveArtifactRunCountsPerConfig();
+
+    interface ConfigActiveArtifactRuns {
+        Long getConfigId();
+        Long getActiveCount();
+        LocalDateTime getOldestStartedAt();
+    }
+
     // Non-authoritative: just candidates. #claim is the actual gate against two instances grabbing the same run.
     @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' " +
            "AND (r.ownerId IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
