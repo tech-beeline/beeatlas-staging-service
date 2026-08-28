@@ -52,6 +52,8 @@ public class ScanRunRepository {
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
             """ + SCANS_WHERE_CLAUSE + """
+                ORDER BY started_at DESC, r.id DESC
+                LIMIT ? OFFSET ?
             ), cte_childs AS (
                 -- Not parent_run_id: a rediscovered artifact reuses its earlier run (dedup fix),
                 -- so that run's parent_run_id still points at whichever scan first created it, not
@@ -98,8 +100,6 @@ public class ScanRunRepository {
                     WHERE c.id=s.id) as child_stats_snapshot
             FROM cte_scans s
             ORDER BY started_at DESC, s.id DESC
-            LIMIT ?
-            OFFSET ?
             """;
 
     private static final String SELECT_SCAN_DETAILS = """
