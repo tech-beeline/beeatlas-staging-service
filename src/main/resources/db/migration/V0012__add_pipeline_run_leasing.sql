@@ -13,7 +13,7 @@ ALTER TABLE staging.pipeline_runs
     ADD COLUMN IF NOT EXISTS lease_expires_at timestamp,
     ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
 
-COMMENT ON COLUMN staging.pipeline_runs.owner_id IS 'Instance currently processing this run ("${HOSTNAME}-${uuid}") — for crash-resume claiming and debugging which replica held it';
+COMMENT ON COLUMN staging.pipeline_runs.owner_id IS 'Instance currently processing this run (hostname + a random uuid) — for crash-resume claiming and debugging which replica held it';
 COMMENT ON COLUMN staging.pipeline_runs.lease_expires_at IS 'Claim expiry — an expired lease makes the run reclaimable by any instance, including the one that just restarted';
 COMMENT ON COLUMN staging.pipeline_runs.retry_count IS 'Persisted retry counter for failed runs, replaces the old in-memory (restart-losing) StuckProcessMonitor counter';
 
