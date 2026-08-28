@@ -31,6 +31,11 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     List<PipelineRun> findByConfigurationIdAndArtifactUidIsNullOrderByStartedAtDesc(
             Long configurationId, Pageable pageable);
 
+    // Backed by idx_pipeline_runs_artifact_uid_type (V0001) — lets finishScanWithChildren reuse an
+    // already-queued run for an artifact instead of creating a duplicate every scan cycle.
+    Optional<PipelineRun> findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(
+            String artifactUid, String artifactType, List<String> statuses);
+
     // One query for all configs' active scans instead of one findTop...NotIn call per config —
     // PipelineTickScheduler.tick() builds a Map<configurationId, PipelineRun> from this once per tick.
     @Query("SELECT r FROM PipelineRun r WHERE r.artifactUid IS NULL AND r.status <> 'completed' AND r.status <> 'failed'")

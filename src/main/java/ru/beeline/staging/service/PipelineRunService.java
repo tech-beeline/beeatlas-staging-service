@@ -37,6 +37,8 @@ public class PipelineRunService {
     private final ArtifactNoticeService      noticeService;
     private final MeterRegistry              meterRegistry;
 
+    private static final List<String> TERMINAL_STATUSES = List.of("completed", "failed");
+
     @Transactional
     public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
                                   Long scanRunId) {
@@ -141,9 +143,16 @@ public class PipelineRunService {
         runRepository.markCompleted(scanRunId, "completed");
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
 
+        // A found artifact may already have an undrained run from a previous scan of this config —
+        // reuse it instead of piling on a duplicate every cycle (that's what turned into a 1.5M-row
+        // backlog before this fix: scan completion doesn't wait for its artifacts to finish, so the
+        // next scheduled scan kept re-finding the same still-pending artifacts and re-queuing them).
         List<PipelineRun> children = new java.util.ArrayList<>(artifactUids.size());
         for (String uid : artifactUids) {
-            children.add(createRun(uid, artifactType, configurationId, batchId, scanRunId));
+            PipelineRun existing = runRepository
+                    .findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(uid, artifactType, TERMINAL_STATUSES)
+                    .orElse(null);
+            children.add(existing != null ? existing : createRun(uid, artifactType, configurationId, batchId, scanRunId));
         }
         return children;
     }
