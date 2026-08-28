@@ -54,9 +54,9 @@ public class SparxMetricQueriesRepository {
 
     /**
      * Re-fetches a single object's metadata by uid. Used by {@code MetricQueriesAdapter}, since
-     * pre-adapter-provided metadata isn't currently threaded through Camunda process variables to
-     * the adapter stage (AdapterWorker calls {@code adapter.load(uid, sourceId, null)}) — same
-     * "re-fetch by uid" pattern as StructurizrSequenceAdapter uses for fdm-products.
+     * pre-adapter-provided metadata isn't currently threaded through to the adapter stage
+     * (AdapterStage calls {@code adapter.load(uid, sourceId, null)}) — same "re-fetch by uid"
+     * pattern as StructurizrSequenceAdapter uses for fdm-products.
      */
     public Optional<MetricQueriesSourceMeta> findByUid(String uid) {
         if (sparxJdbcTemplate == null) {

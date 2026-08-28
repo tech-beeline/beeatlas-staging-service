@@ -39,9 +39,6 @@ public class SourceArtefactService {
         artefact.setStatus("active");
         artefact.setLastRunId(runId);
         artefact.setLastSeenScanRunId(scanRunId);
-        // FR-003-17 / BR-13: name опционален; не перезаписываем непустое значение пустым.
-        // Если пришедший name имеет текст — устанавливаем (и для нового, и для существующего).
-        // Если пришедший name пустой/blank — не трогаем уже сохранённое (существующее) или оставляем null (новый).
         if (StringUtils.hasText(name)) {
             artefact.setName(name);
         }

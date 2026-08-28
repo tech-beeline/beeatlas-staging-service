@@ -12,6 +12,7 @@ public record ScanRun(
         String code,
         String artifactType,
         String status,
+        String displayStatus,
         String sourceName,
         LocalDateTime startedAt,
         LocalDateTime completedAt,

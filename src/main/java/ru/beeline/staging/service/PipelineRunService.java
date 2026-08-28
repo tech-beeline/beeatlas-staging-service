@@ -7,8 +7,7 @@ package ru.beeline.staging.service;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.camunda.bpm.engine.ExternalTaskService;
-import org.camunda.bpm.engine.externaltask.ExternalTask;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
@@ -35,10 +34,14 @@ public class PipelineRunService {
     private final PipelineRunRepository      runRepository;
     private final PipelineStageLogRepository stageLogRepository;
     private final ArtifactBatchRepository    batchRepository;
-    private final ExternalTaskService        externalTaskService;
     private final PipelineDefinitionEntryRepository pipelineDefinitionRepository;
     private final ArtifactNoticeService      noticeService;
     private final MeterRegistry              meterRegistry;
+
+    private static final List<String> DONE_STATUSES = List.of("completed");
+
+    @Value("${staging.recovery.max-auto-retries:3}")
+    private int maxAutoRetries;
 
     @Transactional
     public PipelineRun createRun(String artifactUid, String artifactType, Long configurationId, String batchId,
@@ -61,15 +64,6 @@ public class PipelineRunService {
     public void setRawDataRefId(Long runId, Long rawDataRefId) {
         runRepository.findById(runId).ifPresent(run -> {
             run.setRawDataRefId(rawDataRefId);
-            runRepository.save(run);
-        });
-    }
-
-    @Transactional
-    public void bindExecution(Long runId, String processInstanceId, String executionId) {
-        runRepository.findById(runId).ifPresent(run -> {
-            run.setCamundaPid(processInstanceId);
-            run.setExecutionId(executionId);
             runRepository.save(run);
         });
     }
@@ -132,7 +126,48 @@ public class PipelineRunService {
         });
         String artifactType = artifactTypeOf(runId);
         runRepository.markFailed(runId, errorMessage, stageName);
+        runRepository.incrementRetryCount(runId);
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "failed").increment();
+    }
+
+    // One transaction: completeStage + completeRun + all children, so a crash mid-fan-out can't
+    // leave a partial set of children behind.
+    @Transactional
+    public List<PipelineRun> finishScanWithChildren(Long scanRunId, Long stageLogId, String outputData,
+                                                      Map<String, Object> summary, String artifactType,
+                                                      Long configurationId, String batchId,
+                                                      List<String> artifactUids) {
+        stageLogRepository.findById(stageLogId).ifPresent(entry -> {
+            entry.setStatus("completed");
+            entry.setCompletedAt(LocalDateTime.now());
+            entry.setOutputData(outputData);
+            entry.setSummaryJson(summary);
+            stageLogRepository.save(entry);
+        });
+        runRepository.markCompleted(scanRunId, "completed");
+        meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
+
+        // A found artifact may already have an undrained (or failed-but-retryable) run from a
+        // previous scan of this config — reuse it instead of piling on a duplicate every cycle.
+        // Only "completed" excludes reuse; "failed" is deliberately included (unlike the old
+        // NOT IN (completed,failed) check) — otherwise a failed run sitting between failure and
+        // the next auto-retry sweep looked "not queued" to this check, so a new scan would create
+        // a second copy for the same artifact right alongside it.
+        List<PipelineRun> children = new java.util.ArrayList<>(artifactUids.size());
+        for (String uid : artifactUids) {
+            PipelineRun existing = runRepository
+                    .findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(uid, artifactType, DONE_STATUSES)
+                    .orElse(null);
+            if (existing == null) {
+                children.add(createRun(uid, artifactType, configurationId, batchId, scanRunId));
+                continue;
+            }
+            if ("failed".equals(existing.getStatus()) && existing.getRetryCount() < maxAutoRetries) {
+                runRepository.markRetrying(existing.getId());
+            }
+            children.add(existing);
+        }
+        return children;
     }
 
     @Transactional
@@ -142,38 +177,20 @@ public class PipelineRunService {
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
     }
 
-    // MET-01 (prometheus-metrics-spec.md) needs artifact_type as a label; markCompleted/markFailed
-    // are bulk JPQL UPDATEs that don't return the entity, so it's fetched separately.
+    // markCompleted/markFailed are bulk UPDATEs and don't return the entity, so fetched separately.
     private String artifactTypeOf(Long runId) {
         return runRepository.findById(runId).map(PipelineRun::getArtifactType).orElse("unknown");
     }
 
     @Transactional
-    public int retryFailedRun(Long runId, int retries) {
+    public void retryFailedRun(Long runId) {
         PipelineRun run = runRepository.findById(runId)
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
         if (!"failed".equals(run.getStatus())) {
             throw new IllegalStateException("PipelineRun " + runId + " is not failed (status=" + run.getStatus() + ")");
         }
-        if (run.getExecutionId() == null && run.getCamundaPid() == null) {
-            throw new IllegalStateException("PipelineRun " + runId + " has no execution to retry");
-        }
-
-        var query = externalTaskService.createExternalTaskQuery();
-        if (run.getExecutionId() != null) {
-            query.executionId(run.getExecutionId());
-        } else {
-            query.processInstanceId(run.getCamundaPid());
-        }
-        List<ExternalTask> tasks = query.list();
-        tasks.forEach(t -> externalTaskService.setRetries(t.getId(), retries));
-
-        if (!tasks.isEmpty()) {
-            runRepository.markRetrying(runId);
-        }
-        log.info("Retry requested for pipelineRunId={}, executionId={}: {} external task(s) reset",
-                runId, run.getExecutionId(), tasks.size());
-        return tasks.size();
+        runRepository.markRetrying(runId);
+        log.info("Retry requested for pipelineRunId={}", runId);
     }
 
     @Transactional

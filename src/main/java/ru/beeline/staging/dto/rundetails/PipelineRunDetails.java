@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record PipelineRunDetails(
-        Long id,
+        Long runId,
         Long scanRunId,
         String artifactUid,
         String artifactName,

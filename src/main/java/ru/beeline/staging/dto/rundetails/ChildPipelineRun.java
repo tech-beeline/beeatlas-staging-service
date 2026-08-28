@@ -15,6 +15,7 @@ public record ChildPipelineRun(
         Long rawDataRefId,
         String sourceName,
         LocalDateTime startedAt,
+        LocalDateTime processingStartedAt,
         LocalDateTime completedAt,
         String failureReason,
         String failedStage

@@ -6,9 +6,7 @@ package ru.beeline.staging.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.camunda.bpm.engine.ExternalTaskService;
-import org.camunda.bpm.engine.HistoryService;
-import org.camunda.bpm.engine.history.HistoricProcessInstance;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.beeline.staging.domain.Configuration;
@@ -17,6 +15,7 @@ import ru.beeline.staging.dto.notice.NoticeType;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.service.ArtifactNoticeService;
+import ru.beeline.staging.service.PipelineExecutionService;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.worker.PipelineTickScheduler;
 
@@ -31,13 +30,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminController {
 
-    private final ExternalTaskService     externalTaskService;
-    private final HistoryService          historyService;
-    private final ConfigurationRepository configurationRepository;
-    private final PipelineTickScheduler   pipelineTickScheduler;
-    private final PipelineRunService      pipelineRunService;
-    private final PipelineRunRepository   pipelineRunRepository;
-    private final ArtifactNoticeService   noticeService;
+    private final ConfigurationRepository  configurationRepository;
+    private final PipelineTickScheduler    pipelineTickScheduler;
+    private final PipelineExecutionService pipelineExecutionService;
+    private final PipelineRunService       pipelineRunService;
+    private final PipelineRunRepository    pipelineRunRepository;
+    private final ArtifactNoticeService    noticeService;
 
     @PostMapping("/scan/e2e")
     public ResponseEntity<Map<String, Object>> scanE2E() {
@@ -57,26 +55,10 @@ public class AdminController {
         return ResponseEntity.accepted().body(Map.of("startedCount", started, "skippedCount", skipped));
     }
 
-    @PostMapping("/external-tasks/{taskId}/retry")
-    public ResponseEntity<Void> retryExternalTask(
-            @PathVariable String taskId,
-            @RequestParam(defaultValue = "3") int retries) {
-        externalTaskService.setRetries(taskId, retries);
-        log.info("Reset retries={} for external task {}", retries, taskId);
-        return ResponseEntity.accepted().build();
-    }
-
-    /**
-     * Retries a failed pipeline_runs row. A scan-attempt row (artifactUid == null — pre-adapter
-     * couldn't even reach the source / had no module configured) has no single Camunda task to
-     * reset retries on, so it's just re-run from scratch; an artifact row delegates to
-     * PipelineRunService.retryFailedRun (resets retries on the specific multi-instance
-     * iteration it's stuck at, via executionId).
-     */
+    // Scan row (artifactUid == null): re-run from scratch. Artifact row: resume from the first
+    // incomplete stage, same as PipelineResumeScheduler.
     @PostMapping("/pipeline-runs/{runId}/retry")
-    public ResponseEntity<Map<String, Object>> retryPipelineRun(
-            @PathVariable Long runId,
-            @RequestParam(defaultValue = "3") int retries) {
+    public ResponseEntity<Map<String, Object>> retryPipelineRun(@PathVariable Long runId) {
         PipelineRun run = pipelineRunRepository.findById(runId)
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
 
@@ -91,9 +73,12 @@ public class AdminController {
             return ResponseEntity.accepted().body(Map.of("restarted", true));
         }
 
-        int tasksReset = pipelineRunService.retryFailedRun(runId, retries);
-        log.info("Retry requested for pipelineRunId={}: {} task(s) reset", runId, tasksReset);
-        return ResponseEntity.accepted().body(Map.of("tasksReset", tasksReset));
+        String configCode = configurationRepository.findById(run.getConfigurationId())
+                .map(Configuration::getCode).orElse(null);
+        pipelineRunService.retryFailedRun(runId);
+        pipelineExecutionService.submitArtifactChain(runId, run.getArtifactType(), configCode);
+        log.info("Retried pipelineRunId={}", runId);
+        return ResponseEntity.accepted().body(Map.of("retried", true));
     }
 
     @GetMapping("/notice-types")
@@ -122,19 +107,16 @@ public class AdminController {
             @PathVariable Long configurationId,
             @RequestParam(defaultValue = "20") int limit) {
 
-        List<HistoricProcessInstance> instances = historyService
-                .createHistoricProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", configurationId)
-                .orderByProcessInstanceEndTime().desc()
-                .listPage(0, limit);
+        List<PipelineRun> scans = pipelineRunRepository
+                .findByConfigurationIdAndArtifactUidIsNullOrderByStartedAtDesc(
+                        configurationId, PageRequest.of(0, limit));
 
-        List<Map<String, Object>> result = instances.stream()
+        List<Map<String, Object>> result = scans.stream()
                 .map(p -> Map.<String, Object>of(
-                        "processInstanceId", p.getId(),
-                        "startTime",         p.getStartTime(),
-                        "endTime",           p.getEndTime() != null ? p.getEndTime() : "running",
-                        "state",             p.getState()
+                        "pipelineRunId", p.getId(),
+                        "startTime",     p.getStartedAt(),
+                        "endTime",       p.getCompletedAt() != null ? p.getCompletedAt() : "running",
+                        "state",         p.getStatus()
                 ))
                 .collect(Collectors.toList());
 
