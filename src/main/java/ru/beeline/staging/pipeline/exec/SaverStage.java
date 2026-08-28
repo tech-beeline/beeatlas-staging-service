@@ -53,15 +53,21 @@ public class SaverStage implements ArtifactPipelineStage {
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
         String type = run.getArtifactType();
         String uid = run.getArtifactUid();
-        long rawDataRefId = run.getRawDataRefId();
 
-        Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + rawDataRefId);
+        Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + run.getRawDataRefId());
         try {
             if (pipelineRunService.isAlreadyCompleted(runId)) {
                 log.info("Run {} already completed — skipping duplicate save for uid={}", runId, uid);
                 pipelineRunService.completeStage(stageLogId, "skipped: already completed", null);
                 return;
             }
+
+            // See ValidatorStage for why this is checked here instead of unboxed before the try.
+            if (run.getRawDataRefId() == null) {
+                throw new IllegalStateException("No rawDataRefId available for uid=" + uid
+                        + " — adapter stage did not produce one");
+            }
+            long rawDataRefId = run.getRawDataRefId();
 
             if (pipelineRunService.isAlreadyFullyProcessed(uid, type, rawDataRefId)) {
                 log.info("stage=saver, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping save", uid, rawDataRefId);

@@ -135,16 +135,21 @@ public class ScanRunRepository {
                 from, from,
                 to, to);
 
-        List<ScanRun> results = stagingJdbcTemplate.query(SELECT_SCAN_RUNS, (rs, rowNum) -> new ScanRun(
-                rs.getLong("id"),
-                rs.getString("code"),
-                rs.getString("artifact_type"),
-                rs.getString("status"),
-                rs.getString("source_name"),
-                rs.getTimestamp("started_at").toLocalDateTime(),
-                rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
-                parseChildStats(rs.getString("child_stats"))
-        ), artifactType, artifactType,
+        List<ScanRun> results = stagingJdbcTemplate.query(SELECT_SCAN_RUNS, (rs, rowNum) -> {
+            List<ChildStat> childStats = parseChildStats(rs.getString("child_stats"));
+            String rowStatus = rs.getString("status");
+            return new ScanRun(
+                    rs.getLong("id"),
+                    rs.getString("code"),
+                    rs.getString("artifact_type"),
+                    rowStatus,
+                    displayStatus(rowStatus, childStats),
+                    rs.getString("source_name"),
+                    rs.getTimestamp("started_at").toLocalDateTime(),
+                    rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
+                    childStats
+            );
+        }, artifactType, artifactType,
                 sourceName, sourceName,
                 status, status,
                 from, from,
@@ -161,18 +166,40 @@ public class ScanRunRepository {
      * Ported from documentation/staging-service/queries/select-scan-details.sql
      */
     public Optional<ScanRunDetails> findScanDetails(Long scanId) {
-        List<ScanRunDetails> results = stagingJdbcTemplate.query(SELECT_SCAN_DETAILS, (rs, rowNum) -> new ScanRunDetails(
-                rs.getLong("id"),
-                rs.getString("code"),
-                rs.getString("artifact_type"),
-                rs.getString("status"),
-                rs.getString("source_name"),
-                rs.getTimestamp("started_at").toLocalDateTime(),
-                rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
-                parseChildStats(rs.getString("child_stats"))
-        ), scanId);
+        List<ScanRunDetails> results = stagingJdbcTemplate.query(SELECT_SCAN_DETAILS, (rs, rowNum) -> {
+            List<ChildStat> childStats = parseChildStats(rs.getString("child_stats"));
+            String status = rs.getString("status");
+            return new ScanRunDetails(
+                    rs.getLong("id"),
+                    rs.getString("code"),
+                    rs.getString("artifact_type"),
+                    status,
+                    displayStatus(status, childStats),
+                    rs.getString("source_name"),
+                    rs.getTimestamp("started_at").toLocalDateTime(),
+                    rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
+                    childStats
+            );
+        }, scanId);
 
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+
+    // The raw `status` column on a scan row only reflects the discovery/fan-out stage (see
+    // finishScanWithChildren) — it flips to "completed" as soon as children are created/reused,
+    // regardless of whether those children have finished. Left as-is, the UI showed "Завершён"
+    // for a scan whose children were still processing (or, before the executeStageWithMetrics
+    // safety net, silently stuck forever) — indistinguishable from a scan where everything is
+    // actually done. displayStatus folds child completion in so the two cases render differently.
+    private String displayStatus(String status, List<ChildStat> childStats) {
+        if (!"completed".equals(status)) {
+            return status;
+        }
+        long total = childStats.stream().mapToLong(ChildStat::count).sum();
+        long terminal = childStats.stream()
+                .filter(cs -> "completed".equals(cs.status()) || "failed".equals(cs.status()))
+                .mapToLong(ChildStat::count).sum();
+        return (total == 0 || terminal == total) ? "completed" : "in_progress";
     }
 
     private List<ChildStat> parseChildStats(String childStatsJson) {

@@ -177,6 +177,7 @@ public class PipelineExecutionService {
             status = "failed";
             log.warn("Stage {} failed for runId={}", stageName, runId, e);
             meterRegistry.counter("staging_pipeline_errors_total", "stage", stageName, "artifact_type", artifactType).increment();
+            ensureRunMarkedFailed(runId, stageName, e);
             return false;
         } finally {
             sample.stop(Timer.builder("staging_pipeline_stage_duration_seconds")
@@ -185,6 +186,20 @@ public class PipelineExecutionService {
                     .tag("status", status)
                     .register(meterRegistry));
         }
+    }
+
+    // Each stage is expected to call PipelineRunService#failStage itself (records the stage_log
+    // entry and marks the run failed) before rethrowing. But some exceptions can escape before a
+    // stage even reaches its own try/catch (e.g. thrown while reading run fields, before
+    // startStage() is called) — that run then sits at its previous non-terminal status forever,
+    // gets reclaimed and re-throws identically on every lease cycle, and never shows up in the
+    // "failed" bucket. This is the exact "зависшие" symptom the architect flagged. Close that gap
+    // unconditionally here, regardless of where in the stage the exception originated.
+    private void ensureRunMarkedFailed(Long runId, String stageName, Exception e) {
+        PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
+        if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())) return;
+        pipelineRunRepository.markFailed(runId, e.getMessage(), stageName);
+        pipelineRunRepository.incrementRetryCount(runId);
     }
 
     private boolean claim(Long runId) {

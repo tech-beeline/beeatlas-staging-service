@@ -54,10 +54,20 @@ public class ValidatorStage implements ArtifactPipelineStage {
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
         String uid = run.getArtifactUid();
         String artifactType = run.getArtifactType();
-        long rawDataRefId = run.getRawDataRefId();
 
-        Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + rawDataRefId);
+        Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + run.getRawDataRefId());
         try {
+            // Unboxed here, inside the try: if the adapter stage completed without ever calling
+            // setRawDataRefId (e.g. an adapter's "content unchanged, nothing to load" success path),
+            // this must surface as a clean, retryable failure — not an NPE that escapes before
+            // failStage() runs and leaves the run silently stuck forever (see PipelineExecutionService
+            // #ensureRunMarkedFailed for the general safety net; this is the actual root cause it covers).
+            if (run.getRawDataRefId() == null) {
+                throw new IllegalStateException("No rawDataRefId available for uid=" + uid
+                        + " — adapter stage did not produce one");
+            }
+            long rawDataRefId = run.getRawDataRefId();
+
             if (pipelineRunService.isAlreadyFullyProcessed(uid, artifactType, rawDataRefId)) {
                 log.info("stage=validator, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping validation", uid, rawDataRefId);
                 pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
