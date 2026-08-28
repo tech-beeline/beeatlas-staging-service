@@ -15,8 +15,17 @@ import java.util.List;
 @Repository
 public class ChildPipelineRunRepository {
 
+    // Not r.parent_run_id=? — a rediscovered artifact reuses its earlier run (dedup fix in
+    // PipelineRunService#finishScanWithChildren), so that run's parent_run_id still points at
+    // whichever scan first created it, not this one. source_artifacts.last_seen_scan_run_id/
+    // last_run_id are updated on every find (new or reused), so they reflect what this scan
+    // currently sees. Same reasoning as ScanRunRepository's cte_childs.
     private static final String WHERE_CLAUSE = """
-            WHERE r.parent_run_id=?
+            WHERE r.id IN (
+                    SELECT sa2.last_run_id
+                    FROM staging.source_artifacts sa2
+                    WHERE sa2.last_seen_scan_run_id=?
+                )
                 AND (?::text IS NULL OR LOWER(r.status) = LOWER(?))
                 AND (?::text IS NULL OR r.artifact_uid ILIKE '%' || ? || '%'
                     OR sa.name ILIKE '%' || ? || '%')
