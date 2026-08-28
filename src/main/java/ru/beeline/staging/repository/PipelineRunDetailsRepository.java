@@ -20,7 +20,8 @@ public class PipelineRunDetailsRepository {
 
     private static final String SELECT_RUN_DETAILS = """
            SELECT
-                r.id,
+                r.id AS run_id,
+                COALESCE(r.parent_run_id, r.id) AS scan_run_id,
                 r.artifact_uid,
                 sa.name AS artifact_name,
                 r.artifact_type,
@@ -33,8 +34,6 @@ public class PipelineRunDetailsRepository {
                 COALESCE((
                     SELECT jsonb_agg(jsonb_build_object(
                         'id', l.id,
-                        'runId', l.run_id,
-                        'scanRunId', l.scan_run_id,
                         'stageName', l.stage_name,
                         'status', l.status,
                         'inputData', l.input_data,
@@ -52,7 +51,14 @@ public class PipelineRunDetailsRepository {
                 JOIN staging.source_systems s ON s.id = c.source_system_id
 				JOIN staging.data_types t ON t.code=r.artifact_type
 				JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
-                LEFT JOIN staging.artifact_batches b ON b.run_id = r.id
+                -- Not b.run_id = r.id: when a run's content is unchanged, SaverStage skips creating
+                -- a new batch and reuses the existing one (isAlreadyFullyProcessed) — that batch's
+                -- run_id still points at whichever earlier run actually created it, so joining on
+                -- run_id came up empty for every run after the first (the common case once an
+                -- artifact stabilizes). Joining on the artifact's current batch reflects "what this
+                -- artifact is currently saved as", which is what a run's own /details should show.
+                LEFT JOIN staging.artifact_batches b
+                    ON b.artifact_uid = r.artifact_uid AND b.artifact_type = r.artifact_type AND b.is_current = true
                 LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
 					AND sa.source_artifact_type_id=sat.id
             WHERE r.id = ?
@@ -69,7 +75,8 @@ public class PipelineRunDetailsRepository {
 
     public Optional<PipelineRunDetails> findById(Long runId) {
         List<PipelineRunDetails> rows = stagingJdbcTemplate.query(SELECT_RUN_DETAILS, (rs, rowNum) -> new PipelineRunDetails(
-                rs.getLong("id"),
+                rs.getLong("run_id"),
+                rs.getLong("scan_run_id"),
                 rs.getString("artifact_uid"),
                 rs.getString("artifact_name"),
                 rs.getString("artifact_type"),
