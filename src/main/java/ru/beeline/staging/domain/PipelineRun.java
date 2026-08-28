@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -70,4 +71,9 @@ public class PipelineRun {
 
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount = 0;
+
+    // Snapshot of this scan's own children, written once at fan-out time (see
+    // PipelineRunService#snapshotChildRunIds). NULL for child runs and for scans predating V0014.
+    @Column(name = "child_run_ids", columnDefinition = "jsonb")
+    private List<Long> childRunIds;
 }

@@ -170,6 +170,18 @@ public class PipelineRunService {
         return children;
     }
 
+    // Written once, right after fan-out (see PipelineExecutionService#executeScan) — the only moment
+    // "which artifacts did this scan find" is unambiguous. Deliberately not kept in sync afterwards:
+    // an artifact rediscovered by a later scan still belongs to this snapshot, since this scan really
+    // did find it. Only each run's *status* (read live via child_run_ids at query time) changes.
+    @Transactional
+    public void snapshotChildRunIds(Long scanRunId, List<Long> childRunIds) {
+        runRepository.findById(scanRunId).ifPresent(scan -> {
+            scan.setChildRunIds(childRunIds);
+            runRepository.save(scan);
+        });
+    }
+
     @Transactional
     public void completeRun(Long runId) {
         String artifactType = artifactTypeOf(runId);

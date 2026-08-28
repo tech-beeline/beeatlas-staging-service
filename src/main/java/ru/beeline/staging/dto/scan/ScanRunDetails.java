@@ -16,7 +16,10 @@ import java.util.List;
  * @param sourceName наименование источника данных
  * @param startedAt время начала
  * @param completedAt время завершения (null, если ещё выполняется)
- * @param childStats агрегация дочерних запусков по статусам
+ * @param childStats агрегация дочерних запусков по статусам (live, через source_artifacts —
+ *                   обнуляется, если более новый скан той же конфигурации переоткрыл те же артефакты)
+ * @param childStatsSnapshot стабильная агрегация по списку id, зафиксированному в момент fan-out
+ *                           скана — не обнуляется задним числом. Предпочтительное поле для фронта.
  */
 public record ScanRunDetails(
         Long id,
@@ -27,5 +30,6 @@ public record ScanRunDetails(
         String sourceName,
         LocalDateTime startedAt,
         LocalDateTime completedAt,
-        List<ChildStat> childStats
+        List<ChildStat> childStats,
+        List<ChildStat> childStatsSnapshot
 ) {}

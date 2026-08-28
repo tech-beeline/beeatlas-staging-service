@@ -46,7 +46,8 @@ public class ScanRunRepository {
                     r.status,
                     s.name as source_name,
                     started_at,
-                    completed_at
+                    completed_at,
+                    r.child_run_ids
                 FROM staging.pipeline_runs r
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
@@ -56,12 +57,25 @@ public class ScanRunRepository {
                 -- so that run's parent_run_id still points at whichever scan first created it, not
                 -- this one. source_artifacts.last_seen_scan_run_id/last_run_id are updated on every
                 -- find (new or reused), so they reflect "what this scan currently sees", not "what
-                -- this scan happened to create".
+                -- this scan happened to create". Kept for backward compatibility — prefer
+                -- child_stats_snapshot below, which doesn't get reassigned to a newer scan.
                 SELECT
                     s.id, r.status, count(*) as cnt
                 FROM cte_scans s
                 JOIN staging.source_artifacts sa ON sa.last_seen_scan_run_id = s.id
                 JOIN staging.pipeline_runs r ON r.id = sa.last_run_id
+                GROUP BY s.id, r.status
+            ), cte_childs_snapshot AS (
+                -- Stable: built from cte_scans.child_run_ids, frozen once at fan-out time (see
+                -- PipelineRunService#snapshotChildRunIds) — a later scan re-finding the same
+                -- artifact never removes it from this scan's own snapshot. Only each run's status
+                -- (read live here) changes as it progresses.
+                SELECT
+                    s.id, r.status, count(*) as cnt
+                FROM cte_scans s
+                JOIN staging.pipeline_runs r
+                    ON r.id IN (SELECT (jsonb_array_elements_text(s.child_run_ids))::bigint)
+                WHERE s.child_run_ids IS NOT NULL
                 GROUP BY s.id, r.status
             )
             SELECT
@@ -73,7 +87,15 @@ public class ScanRunRepository {
                             'count', c.cnt
                         ))
                     FROM cte_childs c
-                    WHERE c.id=s.id) as child_stats
+                    WHERE c.id=s.id) as child_stats,
+                (
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'status', c.status,
+                            'count', c.cnt
+                        ))
+                    FROM cte_childs_snapshot c
+                    WHERE c.id=s.id) as child_stats_snapshot
             FROM cte_scans s
             ORDER BY started_at DESC, s.id DESC
             LIMIT ?
@@ -91,7 +113,8 @@ public class ScanRunRepository {
                 r.completed_at,
                 (
                     -- Same reasoning as cte_childs in SELECT_SCAN_RUNS above: count what this scan
-                    -- currently sees via source_artifacts, not what it happened to create.
+                    -- currently sees via source_artifacts, not what it happened to create. Kept for
+                    -- backward compatibility — prefer child_stats_snapshot below.
                     SELECT jsonb_agg(
                         jsonb_build_object(
                             'status', child.status,
@@ -105,7 +128,24 @@ public class ScanRunRepository {
                         WHERE sa.last_seen_scan_run_id = r.id
                         GROUP BY pr.status
                     ) child
-                ) as child_stats
+                ) as child_stats,
+                (
+                    -- Stable: from r.child_run_ids, frozen once at fan-out time — doesn't get
+                    -- reassigned to a newer scan of the same configuration.
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'status', child.status,
+                            'count', cnt
+                        )
+                    )
+                    FROM (
+                        SELECT pr.status, count(*) as cnt
+                        FROM staging.pipeline_runs pr
+                        WHERE pr.id IN (SELECT (jsonb_array_elements_text(r.child_run_ids))::bigint)
+                        GROUP BY pr.status
+                    ) child
+                    WHERE r.child_run_ids IS NOT NULL
+                ) as child_stats_snapshot
             FROM staging.pipeline_runs r
             JOIN staging.configurations c ON c.id = r.configuration_id
             JOIN staging.source_systems s ON s.id = c.source_system_id
@@ -137,6 +177,7 @@ public class ScanRunRepository {
 
         List<ScanRun> results = stagingJdbcTemplate.query(SELECT_SCAN_RUNS, (rs, rowNum) -> {
             List<ChildStat> childStats = parseChildStats(rs.getString("child_stats"));
+            List<ChildStat> childStatsSnapshot = parseChildStats(rs.getString("child_stats_snapshot"));
             String rowStatus = rs.getString("status");
             return new ScanRun(
                     rs.getLong("id"),
@@ -147,7 +188,8 @@ public class ScanRunRepository {
                     rs.getString("source_name"),
                     rs.getTimestamp("started_at").toLocalDateTime(),
                     rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
-                    childStats
+                    childStats,
+                    childStatsSnapshot
             );
         }, artifactType, artifactType,
                 sourceName, sourceName,
@@ -168,6 +210,7 @@ public class ScanRunRepository {
     public Optional<ScanRunDetails> findScanDetails(Long scanId) {
         List<ScanRunDetails> results = stagingJdbcTemplate.query(SELECT_SCAN_DETAILS, (rs, rowNum) -> {
             List<ChildStat> childStats = parseChildStats(rs.getString("child_stats"));
+            List<ChildStat> childStatsSnapshot = parseChildStats(rs.getString("child_stats_snapshot"));
             String status = rs.getString("status");
             return new ScanRunDetails(
                     rs.getLong("id"),
@@ -178,7 +221,8 @@ public class ScanRunRepository {
                     rs.getString("source_name"),
                     rs.getTimestamp("started_at").toLocalDateTime(),
                     rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
-                    childStats
+                    childStats,
+                    childStatsSnapshot
             );
         }, scanId);
 

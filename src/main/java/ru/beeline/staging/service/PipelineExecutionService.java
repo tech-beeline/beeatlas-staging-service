@@ -116,6 +116,11 @@ public class PipelineExecutionService {
                 scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
                 config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
 
+        // Freeze which runs belong to this scan right now — childStats computed from this list later
+        // won't be stolen by a newer scan of the same config the way the source_artifacts-based
+        // childStats is (see ScanRunRepository's child_stats vs child_stats_snapshot).
+        pipelineRunService.snapshotChildRunIds(scan.getId(), children.stream().map(PipelineRun::getId).toList());
+
         dispatchChildren(scan, config, found, children);
     }
 
