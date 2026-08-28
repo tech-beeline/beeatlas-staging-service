@@ -2,19 +2,21 @@
  * Copyright (c) 2024 PJSC VimpelCom
  */
 
-package ru.beeline.staging.worker;
+package ru.beeline.staging.pipeline.exec;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
-import org.camunda.bpm.engine.externaltask.LockedExternalTask;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.TransformResult;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
+import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
@@ -27,14 +29,16 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
-public class TransformerWorker extends AbstractWorker {
+public class TransformerStage implements ArtifactPipelineStage {
 
     private static final int MAX_NOTICES = 200000;
 
     private final List<ArtifactTransformer> transformers;
     private final RawDataRefRepository      rawDataRefRepository;
+    private final PipelineRunRepository     pipelineRunRepository;
     private final ObjectMapper              objectMapper;
     private final ModuleResolver            moduleResolver;
     private final PipelineRunService        pipelineRunService;
@@ -44,36 +48,31 @@ public class TransformerWorker extends AbstractWorker {
     @PostConstruct
     void init() {
         registry = transformers.stream().collect(Collectors.toMap(ArtifactTransformer::moduleCode, t -> t));
-        log.info("TransformerWorker registry initialized for modules: {}", registry.keySet());
+        log.info("TransformerStage registry initialized for modules: {}", registry.keySet());
     }
 
     @Override
-    protected String topic() { return "transformer"; }
-
-    @Override
-    protected String workerId() { return "staging-transformer-worker"; }
-
-    @Override
-    protected List<String> variablesToFetch() {
-        return List.of("artifactType", "artifactUid", "rawDataRefId", "configurationId", "pipelineRunId");
+    public String stageName() {
+        return "transformer";
     }
 
     @Override
-    protected Map<String, Object> process(LockedExternalTask task) throws Exception {
-        String uid  = (String) task.getVariables().get("artifactUid");
-        String artifactType = (String) task.getVariables().get("artifactType");
-        long rawDataRefId = ((Number) task.getVariables().get("rawDataRefId")).longValue();
-        Long runId = ((Number) task.getVariables().get("pipelineRunId")).longValue();
+    public void execute(Long runId) throws Exception {
+        PipelineRun run = pipelineRunRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
+        String uid = run.getArtifactUid();
+        String artifactType = run.getArtifactType();
+        long rawDataRefId = run.getRawDataRefId();
 
-        Long stageLogId = pipelineRunService.startStage(runId, "transformer", "rawDataRefId=" + rawDataRefId);
+        Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + rawDataRefId);
         try {
             if (pipelineRunService.isAlreadyFullyProcessed(uid, artifactType, rawDataRefId)) {
                 log.info("stage=transformer, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping transform", uid, rawDataRefId);
                 pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
-                return Map.of("rawDataRefId", rawDataRefId, "skipped", true);
+                return;
             }
 
-            String moduleCode = moduleResolver.resolve(artifactType, topic());
+            String moduleCode = moduleResolver.resolve(artifactType, stageName());
             ArtifactTransformer transformer = registry.get(moduleCode);
             if (transformer == null) {
                 throw new IllegalStateException("No ArtifactTransformer registered for moduleCode=" + moduleCode);
@@ -85,8 +84,6 @@ public class TransformerWorker extends AbstractWorker {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
-            // TransformResult result = transformer.transform(uid, GzipUtils.gunzipToString(ref.getRawContent()));
-
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
 
@@ -107,10 +104,9 @@ public class TransformerWorker extends AbstractWorker {
                     "canonicalSnapshotBytes", snapshotJson.length(),
                     "noticeCount", (long) result.notices().size()
             );
-            pipelineRunService.completeStage(stageLogId, "rawDataRefId=" + rawDataRefId, buildSummary(output));
-            return output;
+            pipelineRunService.completeStage(stageLogId, "rawDataRefId=" + rawDataRefId, StageSupport.buildSummary(output));
         } catch (Exception e) {
-            pipelineRunService.failStage(stageLogId, runId, "transformer", e.getMessage());
+            pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
             throw e;
         }
     }

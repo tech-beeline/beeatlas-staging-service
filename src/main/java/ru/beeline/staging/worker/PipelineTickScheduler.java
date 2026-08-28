@@ -6,22 +6,22 @@ package ru.beeline.staging.worker;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.camunda.bpm.engine.HistoryService;
-import org.camunda.bpm.engine.RuntimeService;
-import org.camunda.bpm.engine.history.HistoricProcessInstance;
-import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.Configuration;
+import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.repository.ConfigurationRepository;
+import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.service.PipelineExecutionService;
 
 import java.time.Duration;
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -29,32 +29,37 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PipelineTickScheduler {
 
-    private final ConfigurationRepository configurationRepository;
-    private final RuntimeService runtimeService;
-    private final HistoryService historyService;
+    private static final List<String> TERMINAL_STATUSES = List.of("completed", "failed");
 
-    /**
-     * A scan is expected to finish in minutes (shortest configured schedule is 15 min for
-     * e2e-sequence) — an instance still "active" in Camunda after this many minutes is stuck,
-     * not slow. Without this ceiling, isAlreadyRunning() blocks every future tick for that
-     * configuration forever and silently, since a hung instance never leaves the "active" set
-     * (see incident: e2e-sequence data stopped updating from the 3rd with no log signal at all).
-     */
+    private final ConfigurationRepository  configurationRepository;
+    private final PipelineRunRepository    pipelineRunRepository;
+    private final PipelineExecutionService pipelineExecutionService;
+
+    // Shortest configured schedule is 15 min, so a scan still non-terminal past this is stuck, not slow.
     @Value("${staging.scheduler.stuck-scan-threshold-minutes:120}")
     private int stuckScanThresholdMinutes;
 
+    // Batches what used to be 2 queries per config into 2 queries total, regardless of how many
+    // configs are due — see V0013.
     @Scheduled(
             initialDelayString = "${staging.scheduler.tick-initial-delay-ms:10000}",
             fixedRateString    = "${staging.scheduler.tick-interval-ms:60000}")
     public void tick() {
         List<Configuration> candidates =
                 configurationRepository.findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
+        if (candidates.isEmpty()) return;
 
+        Map<Long, PipelineRun> activeScanByConfigId = pipelineRunRepository.findAllActiveScans().stream()
+                .collect(Collectors.toMap(PipelineRun::getConfigurationId, Function.identity()));
+        Map<Long, LocalDateTime> lastCompletionByConfigId = pipelineRunRepository.findLastScanCompletionPerConfig().stream()
+                .collect(Collectors.toMap(
+                        PipelineRunRepository.ConfigLastCompletion::getConfigId,
+                        PipelineRunRepository.ConfigLastCompletion::getCompletedAt));
+
+        LocalDateTime now = LocalDateTime.now();
         for (Configuration config : candidates) {
-            if (isAlreadyRunning(config)) {
-                continue;
-            }
-            if (!intervalElapsed(config)) {
+            if (isStillActive(config, activeScanByConfigId.get(config.getId()), now)) continue;
+            if (!intervalElapsed(config, lastCompletionByConfigId.get(config.getId()), now)) {
                 log.info("Skip configId={} — interval not yet elapsed", config.getId());
                 continue;
             }
@@ -62,65 +67,38 @@ public class PipelineTickScheduler {
         }
     }
 
-    public ProcessInstance startScan(Configuration config) {
-        Map<String, Object> variables = Map.of(
-                "configurationId", config.getId(),
-                "artifactType",    config.getArtifactType());
-        ProcessInstance pi = runtimeService.startProcessInstanceByMessage("config.scan.ready", variables);
-        log.info("Started artifact-pipeline-process for configId={}, processInstanceId={}", config.getId(), pi.getId());
-        return pi;
+    public void startScan(Configuration config) {
+        pipelineExecutionService.submitScan(config);
     }
 
+    // Optimization only, not the safety net — the DB unique index (V0011) is what actually
+    // prevents two scans for the same config; this just avoids pointless pool submissions.
+    // Used standalone (not from tick()'s batched path) by /admin/scan/e2e.
     public boolean isAlreadyRunning(Configuration config) {
-        List<ProcessInstance> active = runtimeService.createProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .active()
-                .list();
+        Optional<PipelineRun> active = pipelineRunRepository
+                .findTopByConfigurationIdAndArtifactUidIsNullAndStatusNotInOrderByStartedAtDesc(
+                        config.getId(), TERMINAL_STATUSES);
+        return active.isPresent() && isStillActive(config, active.get(), LocalDateTime.now());
+    }
 
-        if (active.isEmpty()) {
+    private boolean isStillActive(Configuration config, PipelineRun activeScan, LocalDateTime now) {
+        if (activeScan == null) return false;
+
+        LocalDateTime threshold = now.minus(stuckScanThresholdMinutes, ChronoUnit.MINUTES);
+        if (activeScan.getStartedAt().isBefore(threshold)) {
+            log.error("configId={}: scan run {} has been active since {} (> {} min) — treating it as stuck, "
+                            + "unblocking the scheduler for this configuration instead of skipping forever.",
+                    config.getId(), activeScan.getId(), activeScan.getStartedAt(), stuckScanThresholdMinutes);
             return false;
         }
 
-        Date threshold = Date.from(Instant.now().minus(stuckScanThresholdMinutes, ChronoUnit.MINUTES));
-        List<HistoricProcessInstance> stale = historyService.createHistoricProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .unfinished()
-                .startedBefore(threshold)
-                .list();
-
-        if (stale.size() >= active.size()) {
-            stale.forEach(p -> log.error(
-                    "configId={}: process instance {} has been active since {} (> {} min) — treating it as stuck, "
-                            + "unblocking the scheduler for this configuration instead of skipping forever. "
-                            + "Needs investigation in Camunda Cockpit.",
-                    config.getId(), p.getId(), p.getStartTime(), stuckScanThresholdMinutes));
-            return false;
-        }
-
-        log.info("Skip configId={} — {} process instance(s) already active: {}",
-                config.getId(), active.size(),
-                active.stream().map(ProcessInstance::getId).collect(Collectors.joining(", ")));
+        log.info("Skip configId={} — scan run {} already active", config.getId(), activeScan.getId());
         return true;
     }
 
-    private boolean intervalElapsed(Configuration config) {
+    private boolean intervalElapsed(Configuration config, LocalDateTime lastCompletedAt, LocalDateTime now) {
+        if (lastCompletedAt == null) return true;
         Duration interval = config.getScheduleInterval().orElse(Duration.ZERO);
-
-        List<HistoricProcessInstance> lastRuns = historyService
-                .createHistoricProcessInstanceQuery()
-                .processDefinitionKey("artifact-pipeline-process")
-                .variableValueEquals("configurationId", config.getId())
-                .finished()
-                .orderByProcessInstanceEndTime().desc()
-                .listPage(0, 1);
-
-        if (lastRuns.isEmpty()) {
-            return true;
-        }
-
-        Instant lastEnd = lastRuns.get(0).getEndTime().toInstant();
-        return Duration.between(lastEnd, Instant.now()).compareTo(interval) >= 0;
+        return Duration.between(lastCompletedAt, now).compareTo(interval) >= 0;
     }
 }

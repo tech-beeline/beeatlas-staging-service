@@ -24,10 +24,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * — keep in sync with that spec.
  *
  * <p>Note on metadata: the spec describes pre-adapter passing {@code metadata} (entity_type/name/
- * apiMetricTemplateUrl) to the adapter stage via Camunda process variables. In the current core,
- * {@code AdapterWorker.process()} calls {@code adapter.load(uid, sourceId, null)} — metadata is
- * never actually threaded through. Rather than touch AdapterWorker/PreAdapterWorker/BPMN (core),
- * this adapter re-resolves the object by uid from Sparx EA itself — the same pattern already used
+ * apiMetricTemplateUrl) to the adapter stage. In the current core, {@code AdapterStage.execute()}
+ * calls {@code adapter.load(uid, sourceId, null)} — metadata is never actually threaded through.
+ * Rather than touch the core stage classes, this adapter re-resolves the object by uid from
+ * Sparx EA itself — the same pattern already used
  * by {@link StructurizrSequenceAdapter}, which re-fetches product info from fdm-products instead of
  * trusting passed metadata.
  */

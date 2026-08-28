@@ -61,4 +61,13 @@ public class PipelineRun {
 
     @Column(name = "parent_run_id")
     private Long parentRunId;
+
+    @Column(name = "owner_id")
+    private String ownerId;
+
+    @Column(name = "lease_expires_at")
+    private LocalDateTime leaseExpiresAt;
+
+    @Column(name = "retry_count", nullable = false)
+    private Integer retryCount = 0;
 }

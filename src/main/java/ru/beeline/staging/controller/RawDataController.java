@@ -45,9 +45,6 @@ public class RawDataController {
         byte[] content = ref.getRawContent();
         byte[] decompressed;
         try {
-            // raw_content is only gzip-compressed when the adapter that wrote it chose to (currently
-            // disabled pipeline-wide) — detect via the gzip magic bytes rather than trusting a fixed
-            // convention, so this works whether or not compression is on.
             decompressed = GzipUtils.isGzip(content) ? GzipUtils.gunzip(content) : content;
         } catch (Exception e) {
             log.error("Failed to decompress raw_content: id={}", id, e);
