@@ -52,10 +52,16 @@ public class ScanRunRepository {
                 JOIN staging.source_systems s ON s.id=c.source_system_id
             """ + SCANS_WHERE_CLAUSE + """
             ), cte_childs AS (
+                -- Not parent_run_id: a rediscovered artifact reuses its earlier run (dedup fix),
+                -- so that run's parent_run_id still points at whichever scan first created it, not
+                -- this one. source_artifacts.last_seen_scan_run_id/last_run_id are updated on every
+                -- find (new or reused), so they reflect "what this scan currently sees", not "what
+                -- this scan happened to create".
                 SELECT
                     s.id, r.status, count(*) as cnt
                 FROM cte_scans s
-                JOIN staging.pipeline_runs r ON r.parent_run_id=s.id
+                JOIN staging.source_artifacts sa ON sa.last_seen_scan_run_id = s.id
+                JOIN staging.pipeline_runs r ON r.id = sa.last_run_id
                 GROUP BY s.id, r.status
             )
             SELECT
@@ -84,6 +90,8 @@ public class ScanRunRepository {
                 r.started_at,
                 r.completed_at,
                 (
+                    -- Same reasoning as cte_childs in SELECT_SCAN_RUNS above: count what this scan
+                    -- currently sees via source_artifacts, not what it happened to create.
                     SELECT jsonb_agg(
                         jsonb_build_object(
                             'status', child.status,
@@ -91,10 +99,11 @@ public class ScanRunRepository {
                         )
                     )
                     FROM (
-                        SELECT status, count(*) as cnt
-                        FROM staging.pipeline_runs
-                        WHERE parent_run_id = r.id
-                        GROUP BY status
+                        SELECT pr.status, count(*) as cnt
+                        FROM staging.source_artifacts sa
+                        JOIN staging.pipeline_runs pr ON pr.id = sa.last_run_id
+                        WHERE sa.last_seen_scan_run_id = r.id
+                        GROUP BY pr.status
                     ) child
                 ) as child_stats
             FROM staging.pipeline_runs r

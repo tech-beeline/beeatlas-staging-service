@@ -36,6 +36,7 @@ public class ChildPipelineRunRepository {
                 r.raw_data_ref_id,
                 s.name AS source_name,
                 r.started_at,
+                adapter_log.started_at AS processing_started_at,
                 r.completed_at,
                 r.failure_reason,
                 r.failed_stage
@@ -46,6 +47,17 @@ public class ChildPipelineRunRepository {
                 JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
                 LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
                     AND sa.source_artifact_type_id=sat.id
+                -- started_at on pipeline_runs is when the row was created (queued, possibly by an
+                -- earlier scan that this run got reused from) — processing_started_at is when the
+                -- adapter stage actually began, which is what "how long did this artifact take"
+                -- should be measured from, not queue wait.
+                LEFT JOIN LATERAL (
+                    SELECT psl.started_at
+                    FROM staging.pipeline_stage_logs psl
+                    WHERE psl.run_id = r.id AND psl.stage_name = 'adapter'
+                    ORDER BY psl.started_at ASC
+                    LIMIT 1
+                ) adapter_log ON true
             """ + WHERE_CLAUSE + """
             ORDER BY r.started_at DESC, r.id DESC
             LIMIT ?
@@ -72,6 +84,7 @@ public class ChildPipelineRunRepository {
                 (Long) rs.getObject("raw_data_ref_id"),
                 rs.getString("source_name"),
                 rs.getTimestamp("started_at").toLocalDateTime(),
+                rs.getTimestamp("processing_started_at") != null ? rs.getTimestamp("processing_started_at").toLocalDateTime() : null,
                 rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
                 rs.getString("failure_reason"),
                 rs.getString("failed_stage")
