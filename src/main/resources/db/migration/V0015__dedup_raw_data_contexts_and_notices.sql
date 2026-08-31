@@ -124,8 +124,12 @@ WHERE an.id = r.old_id;
 --    details is hashed in the notices index: it's a free-form text column,
 --    long values would otherwise risk exceeding btree's per-entry size limit.
 -- ------------------------------------------------------------
-CREATE UNIQUE INDEX idx_raw_data_contexts_ref_position_unique
+-- IF NOT EXISTS: makes the whole migration safely re-runnable (e.g. run
+-- manually first, then Flyway re-attempts the same version on next app
+-- start — on already-deduped data every UPDATE/DELETE above is a fast no-op,
+-- and these just get skipped instead of erroring on "already exists").
+CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_data_contexts_ref_position_unique
     ON staging.raw_data_contexts (raw_data_ref_id, position);
 
-CREATE UNIQUE INDEX idx_artifact_notices_context_type_details_unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_notices_context_type_details_unique
     ON staging.artifact_notices (raw_data_context_id, notice_type_id, md5(coalesce(details, '')));
