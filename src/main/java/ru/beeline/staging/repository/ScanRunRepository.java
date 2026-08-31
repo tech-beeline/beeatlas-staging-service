@@ -72,11 +72,15 @@ public class ScanRunRepository {
                 -- PipelineRunService#snapshotChildRunIds) — a later scan re-finding the same
                 -- artifact never removes it from this scan's own snapshot. Only each run's status
                 -- (read live here) changes as it progresses.
+                -- LATERAL + equality join (not `r.id IN (SELECT jsonb_array_elements_text(...))`) —
+                -- the IN-subquery form defeats the planner's ability to use pipeline_runs_pkey and
+                -- forces a full Seq Scan of pipeline_runs per cte_scans row instead of one PK lookup
+                -- per child id.
                 SELECT
                     s.id, r.status, count(*) as cnt
                 FROM cte_scans s
-                JOIN staging.pipeline_runs r
-                    ON r.id IN (SELECT (jsonb_array_elements_text(s.child_run_ids))::bigint)
+                CROSS JOIN LATERAL jsonb_array_elements_text(s.child_run_ids) AS elem(child_id)
+                JOIN staging.pipeline_runs r ON r.id = elem.child_id::bigint
                 WHERE s.child_run_ids IS NOT NULL
                 GROUP BY s.id, r.status
             )
@@ -132,6 +136,10 @@ public class ScanRunRepository {
                 (
                     -- Stable: from r.child_run_ids, frozen once at fan-out time — doesn't get
                     -- reassigned to a newer scan of the same configuration.
+                    -- LATERAL-style unnest + equality join (not `pr.id IN (SELECT
+                    -- jsonb_array_elements_text(...))`) — the IN-subquery form defeats the planner's
+                    -- ability to use pipeline_runs_pkey and forces a full Seq Scan of pipeline_runs
+                    -- instead of one PK lookup per child id.
                     SELECT jsonb_agg(
                         jsonb_build_object(
                             'status', child.status,
@@ -140,8 +148,8 @@ public class ScanRunRepository {
                     )
                     FROM (
                         SELECT pr.status, count(*) as cnt
-                        FROM staging.pipeline_runs pr
-                        WHERE pr.id IN (SELECT (jsonb_array_elements_text(r.child_run_ids))::bigint)
+                        FROM jsonb_array_elements_text(r.child_run_ids) AS elem(child_id)
+                        JOIN staging.pipeline_runs pr ON pr.id = elem.child_id::bigint
                         GROUP BY pr.status
                     ) child
                     WHERE r.child_run_ids IS NOT NULL
