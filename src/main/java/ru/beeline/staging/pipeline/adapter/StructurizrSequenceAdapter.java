@@ -8,16 +8,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
-import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.product.ProductServiceClient;
 import ru.beeline.staging.product.dto.ProductSummary;
 import ru.beeline.staging.repository.RawDataRefRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.Optional;
 
 @Slf4j
 @Component
@@ -59,32 +56,16 @@ public class StructurizrSequenceAdapter implements ArtifactAdapter {
             throw new IllegalStateException("Structurizr returned empty workspace export for alias=" + artifactUid + " url=" + jsonUrl);
         }
 
-        String contentHash = sha256(rawJson.getBytes(StandardCharsets.UTF_8));
+        byte[] content = rawJson.getBytes(StandardCharsets.UTF_8);
+        String contentHash = sha256(content);
 
-        Optional<RawDataRef> existing = rawDataRefRepository
-                .findTopByArtifactUidOrderByLoadedAtDesc(artifactUid);
-
-        long refId;
-        if (existing.isPresent() && contentHash.equals(existing.get().getContentHash())) {
-            RawDataRef ref = existing.get();
-            ref.setUpdatedAt(LocalDateTime.now());
-            refId = rawDataRefRepository.save(ref).getId();
-            log.info("Content unchanged for alias={}, reusing rawDataRefId={}", artifactUid, refId);
-        } else {
-            byte[] content = rawJson.getBytes(StandardCharsets.UTF_8);
-
-            RawDataRef ref = new RawDataRef();
-            ref.setArtifactUid(artifactUid);
-            ref.setArtifactType(TYPE);
-            ref.setSourceId(sourceId);
-            ref.setFormat("json");
-            ref.setRawContent(content);
-            ref.setContentHash(contentHash);
-            ref.setSizeBytes((long) content.length);
-            ref.setLoadedAt(LocalDateTime.now());
-            ref.setUpdatedAt(LocalDateTime.now());
-            refId = rawDataRefRepository.save(ref).getId();
+        RawDataRefRepository.UpsertResult result = rawDataRefRepository.upsertByContentHash(
+                artifactUid, TYPE, sourceId, "json", content, contentHash, content.length);
+        long refId = result.getId();
+        if (Boolean.TRUE.equals(result.getInserted())) {
             log.info("Stored raw workspace export alias={}, rawDataRefId={}, bytes={}", artifactUid, refId, content.length);
+        } else {
+            log.info("Content unchanged for alias={}, reusing rawDataRefId={}", artifactUid, refId);
         }
 
         return Map.of("rawDataRefId", refId, "contentHash", contentHash);
