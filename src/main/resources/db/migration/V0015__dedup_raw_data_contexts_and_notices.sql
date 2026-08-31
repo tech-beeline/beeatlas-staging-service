@@ -39,6 +39,7 @@ CREATE TEMP TABLE context_survivor ON COMMIT DROP AS
 SELECT raw_data_ref_id, position, min(id) AS keep_id
 FROM staging.raw_data_contexts
 GROUP BY raw_data_ref_id, position;
+ANALYZE context_survivor;
 
 CREATE TEMP TABLE context_remap ON COMMIT DROP AS
 SELECT c.id AS old_id, s.keep_id
@@ -46,6 +47,14 @@ FROM staging.raw_data_contexts c
 JOIN context_survivor s
   ON s.raw_data_ref_id = c.raw_data_ref_id AND s.position = c.position
 WHERE c.id <> s.keep_id;
+-- ANALYZE is not optional here: a freshly CREATE TABLE AS'd temp table has no
+-- stats, so the planner has no idea this is a ~7-8M row table and can pick a
+-- nested-loop-with-index-lookup plan for the UPDATEs below instead of a hash
+-- join — millions of random-I/O point lookups instead of one sequential pass.
+-- (This is what actually happened running this migration without the ANALYZE:
+-- step 1b's first UPDATE alone ran >15 minutes on DataFileRead before being
+-- killed and re-run with this fix.)
+ANALYZE context_remap;
 
 -- 1b. Repoint every table that holds a raw_data_context_id off the losers.
 UPDATE staging.artifact_notices             t SET raw_data_context_id = r.keep_id FROM context_remap r WHERE t.raw_data_context_id = r.old_id;
@@ -77,6 +86,7 @@ CREATE TEMP TABLE notice_survivor ON COMMIT DROP AS
 SELECT raw_data_context_id, notice_type_id, details, min(id) AS keep_id
 FROM staging.artifact_notices
 GROUP BY raw_data_context_id, notice_type_id, details;
+ANALYZE notice_survivor;
 
 CREATE TEMP TABLE notice_remap ON COMMIT DROP AS
 SELECT an.id AS old_id, s.keep_id
@@ -86,6 +96,7 @@ JOIN notice_survivor s
  AND s.notice_type_id = an.notice_type_id
  AND s.details IS NOT DISTINCT FROM an.details
 WHERE an.id <> s.keep_id;
+ANALYZE notice_remap;
 
 -- 2b. Repoint every table that holds a match_notice_id off the losers.
 UPDATE staging.bi_step_versions             t SET match_notice_id = r.keep_id FROM notice_remap r WHERE t.match_notice_id = r.old_id;
