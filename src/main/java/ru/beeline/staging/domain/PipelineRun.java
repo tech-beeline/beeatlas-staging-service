@@ -50,6 +50,14 @@ public class PipelineRun {
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt = LocalDateTime.now();
 
+    // Set once, the first time startStage() runs for this run (see PipelineRunService#startStage).
+    // Deliberately separate from startedAt, which stays at row-creation time — startedAt is
+    // load-bearing for stuck-run/backlog detection (PipelineTickScheduler) and resume-candidate
+    // ordering (PipelineResumeScheduler), both of which need "how long has this existed", not "how
+    // long has it been executing".
+    @Column(name = "execution_started_at")
+    private LocalDateTime executionStartedAt;
+
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 

@@ -16,6 +16,7 @@ public record PipelineRunDetails(
         String status,
         String sourceName,
         LocalDateTime startedAt,
+        LocalDateTime executionStartedAt,
         LocalDateTime completedAt,
         Long rawDataRefId,
         Long batch,

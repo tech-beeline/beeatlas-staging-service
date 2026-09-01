@@ -93,6 +93,9 @@ public class PipelineRunService {
         PipelineRun run = runRepository.findById(runId)
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
         run.setStatus(stageToStatus(stageName));
+        if (run.getExecutionStartedAt() == null) {
+            run.setExecutionStartedAt(LocalDateTime.now());
+        }
         runRepository.save(run);
 
         PipelineStageLog log = new PipelineStageLog();
