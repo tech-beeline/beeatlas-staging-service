@@ -9,27 +9,56 @@
 -- in both services, see StructurizrSequenceAdapter/RawDataContextService/
 -- ArtifactNoticeService) stops new duplicates from accumulating; this
 -- migration cleans up what already piled up. As of 2026-08-31,
--- raw_data_contexts had 8 188 520 rows for only 349 339 distinct
+-- raw_data_contexts had ~8.2M rows for only ~349K distinct
 -- (raw_data_ref_id, position) pairs (~96% removable).
 --
 -- 14 canonical version/relation tables carry their own raw_data_context_id
--- and match_notice_id FKs straight to the rows being collapsed here
--- (bi_step_versions, tech_capability_versions, product_versions,
--- container_versions, interface_versions, operation_versions,
--- sequence_versions, e2e_scenario_versions, cj_versions, cj_step_versions,
--- bi_step_relation_versions, operation_relation_versions,
--- sequence_relation_versions, metric_query_template_versions) — every one of
--- them gets repointed to the surviving row before anything is deleted, or
--- the DELETEs below fail with a foreign key violation (same class of error
--- as fk_source_artifacts_last_run_id / fk_artifact_batches_run_id during the
--- 2026-08-31 pipeline_runs cleanup).
+-- and match_notice_id FKs straight to the rows being collapsed here.
 --
--- Runs as one transaction. On a large existing dataset this can take a while
--- (deletes ~96% of raw_data_contexts and a smaller share of artifact_notices)
--- — run it during a low-traffic window rather than assuming it finishes
--- instantly at app startup. Recommend a manual VACUUM (ANALYZE) on both
--- tables afterwards (can't run inside this migration's transaction).
+-- IMPORTANT — this is the second version of this migration. The first one
+-- ran a DELETE FROM raw_data_contexts for 13+ hours on dev without finishing.
+-- Root cause: Postgres does NOT auto-index foreign key columns. Deleting a
+-- row that other tables reference requires an RI (referential integrity)
+-- trigger check against every referencing table for every deleted row — with
+-- no index on the referencing column, that's a full sequential scan of the
+-- child table PER DELETED PARENT ROW. With ~7.8M rows being deleted from
+-- raw_data_contexts and 13 referencing tables missing an index on
+-- raw_data_context_id (only artifact_notices and
+-- metric_query_template_versions had one), that's ~7.8M sequential scans
+-- across those tables — mathematically hopeless, not just slow. Step 0 below
+-- adds the missing indexes FIRST (fast — these are small tables) so the RI
+-- checks during the DELETEs become index lookups instead.
+--
+-- Runs as one transaction. Even with the missing indexes fixed, this is a
+-- large one-time cleanup — run it during a low-traffic window. Recommend a
+-- manual VACUUM (ANALYZE) on raw_data_contexts and artifact_notices
+-- afterwards (can't run inside this migration's transaction).
 -- ============================================================
+
+-- ------------------------------------------------------------
+-- 0. Indexes needed for the DELETEs below to actually be fast — Postgres
+--    does not create these automatically for FK columns. Cheap: all 14
+--    tables here are small (thousands to tens of thousands of rows).
+-- ------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_bi_step_versions_raw_data_context_id             ON staging.bi_step_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_tech_capability_versions_raw_data_context_id     ON staging.tech_capability_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_product_versions_raw_data_context_id            ON staging.product_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_container_versions_raw_data_context_id          ON staging.container_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_interface_versions_raw_data_context_id          ON staging.interface_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_operation_versions_raw_data_context_id          ON staging.operation_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_sequence_versions_raw_data_context_id           ON staging.sequence_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_e2e_scenario_versions_raw_data_context_id       ON staging.e2e_scenario_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_cj_versions_raw_data_context_id                 ON staging.cj_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_cj_step_versions_raw_data_context_id            ON staging.cj_step_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_bi_step_relation_versions_raw_data_context_id   ON staging.bi_step_relation_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_operation_relation_versions_raw_data_context_id ON staging.operation_relation_versions (raw_data_context_id);
+CREATE INDEX IF NOT EXISTS idx_sequence_relation_versions_raw_data_context_id  ON staging.sequence_relation_versions (raw_data_context_id);
+
+-- match_notice_id: only these 3 relation tables were missing it (the other
+-- 11 already had idx_*_match_notice_id from V0003/V0009).
+CREATE INDEX IF NOT EXISTS idx_bi_step_relation_versions_match_notice_id       ON staging.bi_step_relation_versions (match_notice_id);
+CREATE INDEX IF NOT EXISTS idx_operation_relation_versions_match_notice_id     ON staging.operation_relation_versions (match_notice_id);
+CREATE INDEX IF NOT EXISTS idx_sequence_relation_versions_match_notice_id      ON staging.sequence_relation_versions (match_notice_id);
 
 -- ------------------------------------------------------------
 -- 1. Collapse raw_data_contexts duplicates: keep the lowest id per
@@ -47,13 +76,6 @@ FROM staging.raw_data_contexts c
 JOIN context_survivor s
   ON s.raw_data_ref_id = c.raw_data_ref_id AND s.position = c.position
 WHERE c.id <> s.keep_id;
--- ANALYZE is not optional here: a freshly CREATE TABLE AS'd temp table has no
--- stats, so the planner has no idea this is a ~7-8M row table and can pick a
--- nested-loop-with-index-lookup plan for the UPDATEs below instead of a hash
--- join — millions of random-I/O point lookups instead of one sequential pass.
--- (This is what actually happened running this migration without the ANALYZE:
--- step 1b's first UPDATE alone ran >15 minutes on DataFileRead before being
--- killed and re-run with this fix.)
 ANALYZE context_remap;
 
 -- 1b. Repoint every table that holds a raw_data_context_id off the losers.
@@ -123,11 +145,8 @@ WHERE an.id = r.old_id;
 --    find-or-create logic in RawDataContextService/ArtifactNoticeService.
 --    details is hashed in the notices index: it's a free-form text column,
 --    long values would otherwise risk exceeding btree's per-entry size limit.
+--    IF NOT EXISTS: makes the whole migration safely re-runnable.
 -- ------------------------------------------------------------
--- IF NOT EXISTS: makes the whole migration safely re-runnable (e.g. run
--- manually first, then Flyway re-attempts the same version on next app
--- start — on already-deduped data every UPDATE/DELETE above is a fast no-op,
--- and these just get skipped instead of erroring on "already exists").
 CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_data_contexts_ref_position_unique
     ON staging.raw_data_contexts (raw_data_ref_id, position);
 
