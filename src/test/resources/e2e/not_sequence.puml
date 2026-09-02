@@ -1,0 +1,10 @@
+@startuml
+class Order {
+  +id: Long
+  +submit()
+}
+class Customer {
+  +id: Long
+}
+Order --> Customer
+@enduml

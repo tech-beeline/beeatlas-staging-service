@@ -1,0 +1,7 @@
+@startuml
+participant CRM as crm
+participant BILLING as billing
+
+crm -> billing: POST /api/v1/order
+billing --> crm: GET /api/v1/order/status
+@enduml

@@ -36,6 +36,8 @@ integration:
     retry-delay-ms: ${INTEGRATION_METRIC_QUERIES_PUBLISH_RETRY_DELAY_MS:1000}
 
 staging:
+  document-service:
+    base-url: ${INTEGRATION_DOCUMENT_SERVICE_URL:}
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:}
   sparx:

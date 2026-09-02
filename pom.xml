@@ -67,6 +67,20 @@
             <optional>true</optional>
         </dependency>
         <dependency>
+            <groupId>net.sourceforge.plantuml</groupId>
+            <artifactId>plantuml</artifactId>
+            <version>1.2024.8</version>
+            <exclusions>
+                <!-- Several org.eclipse.elk.* transitives (pulled in for ELK-based diagram layout,
+                     which we never invoke — only syntax/type checks and Sequence Diagram structure)
+                     depend on a broken com.google.guava:guava:24.0-SNAPSHOT that 403s on our Nexus mirror. -->
+                <exclusion>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>

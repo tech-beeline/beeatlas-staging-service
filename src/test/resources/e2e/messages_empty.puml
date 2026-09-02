@@ -1,0 +1,4 @@
+@startuml
+participant CRM as crm
+participant BILLING as billing
+@enduml
