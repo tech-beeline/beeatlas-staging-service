@@ -12,9 +12,6 @@ RUN mvn clean package -DskipTests -B
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-# fontconfig (pulls in libfreetype6) — PlantUML/Java2D font manager needs it even for
-# text-only parsing/validation (SFDM-4087), not just image rendering; without it the JVM
-# throws UnsatisfiedLinkError: libfontmanager.so: libfreetype.so.6: cannot open shared object file
 RUN apt-get update && apt-get install -y curl fontconfig && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/target/*.jar app.jar
