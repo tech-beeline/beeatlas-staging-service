@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
-import ru.beeline.staging.product.ProductServiceClient;
+import ru.beeline.staging.client.ProductServiceClient;
 import ru.beeline.staging.product.dto.ProductSummary;
 import ru.beeline.staging.repository.RawDataRefRepository;
 

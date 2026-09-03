@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.e2e.CmdbAliasLookup.ResolvedParticipant.Kind;
-import ru.beeline.staging.product.ProductServiceClient;
+import ru.beeline.staging.client.ProductServiceClient;
 import ru.beeline.staging.product.dto.ContainerSummary;
 import ru.beeline.staging.product.dto.ProductAliasSummary;
 

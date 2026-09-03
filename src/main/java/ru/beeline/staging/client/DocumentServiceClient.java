@@ -2,7 +2,7 @@
  * Copyright (c) 2024 PJSC VimpelCom
  */
 
-package ru.beeline.staging.document;
+package ru.beeline.staging.client;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import ru.beeline.staging.exception.DocumentNotFoundException;
+import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
 import java.nio.charset.StandardCharsets;
 

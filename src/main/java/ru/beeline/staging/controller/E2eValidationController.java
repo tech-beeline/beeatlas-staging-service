@@ -14,14 +14,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.beeline.staging.document.DocumentNotFoundException;
-import ru.beeline.staging.document.DocumentServiceClient;
-import ru.beeline.staging.document.DocumentServiceUnavailableException;
+import ru.beeline.staging.client.DocumentServiceClient;
 import ru.beeline.staging.dto.e2e.E2eValidateRequest;
 import ru.beeline.staging.dto.e2e.E2eValidationReport;
 import ru.beeline.staging.dto.e2e.ValidationNotice;
 import ru.beeline.staging.e2e.EngineResult;
 import ru.beeline.staging.e2e.PlantUmlValidationEngine;
+import ru.beeline.staging.exception.DocumentNotFoundException;
+import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;

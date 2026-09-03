@@ -37,7 +37,7 @@ integration:
 
 staging:
   document-service:
-    base-url: ${INTEGRATION_DOCUMENT_SERVICE_URL:}
+    base-url: ${INTEGRATION_DOCUMENT_SERVER_URL:}
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:}
   sparx:

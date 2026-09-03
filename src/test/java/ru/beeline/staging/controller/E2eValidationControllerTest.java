@@ -6,14 +6,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import ru.beeline.staging.document.DocumentNotFoundException;
-import ru.beeline.staging.document.DocumentServiceClient;
-import ru.beeline.staging.document.DocumentServiceUnavailableException;
+import ru.beeline.staging.client.DocumentServiceClient;
 import ru.beeline.staging.dto.e2e.E2eValidateRequest;
 import ru.beeline.staging.e2e.CmdbAliasLookup;
 import ru.beeline.staging.e2e.PlantUmlDiagramParser;
 import ru.beeline.staging.e2e.PlantUmlValidationEngine;
 import ru.beeline.staging.e2e.RestEndpointLookup;
+import ru.beeline.staging.exception.DocumentNotFoundException;
+import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
 import java.util.Map;
 
