@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import ru.beeline.staging.exception.DocumentAccessDeniedException;
 import ru.beeline.staging.exception.DocumentNotFoundException;
 import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
@@ -47,6 +48,8 @@ public class DocumentServiceClient {
             throw new DocumentNotFoundException(docId);
         } catch (HttpClientErrorException.BadRequest e) {
             throw new DocumentNotFoundException(docId);
+        } catch (HttpClientErrorException.Forbidden e) {
+            throw new DocumentAccessDeniedException(docId);
         } catch (RestClientException e) {
             HttpStatusCode status = (e instanceof HttpClientErrorException httpError) ? httpError.getStatusCode() : null;
             throw new DocumentServiceUnavailableException(

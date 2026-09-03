@@ -1,0 +1,7 @@
+@startuml
+participant CRM as crm
+participant BILLING as billing
+crm -> billing: GET /a
+crm -> billing: GET /b
+crm -> billing: GET /c
+@enduml

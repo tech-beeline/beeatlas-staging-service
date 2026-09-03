@@ -12,6 +12,7 @@ import ru.beeline.staging.e2e.CmdbAliasLookup;
 import ru.beeline.staging.e2e.PlantUmlDiagramParser;
 import ru.beeline.staging.e2e.PlantUmlValidationEngine;
 import ru.beeline.staging.e2e.RestEndpointLookup;
+import ru.beeline.staging.exception.DocumentAccessDeniedException;
 import ru.beeline.staging.exception.DocumentNotFoundException;
 import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
@@ -44,7 +45,7 @@ class E2eValidationControllerTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
         PlantUmlValidationEngine engine =
                 new PlantUmlValidationEngine(new PlantUmlDiagramParser(), cmdbAliasLookup, restEndpointLookup);
 
@@ -107,5 +108,32 @@ class E2eValidationControllerTest {
 
         mockMvc.perform(post("/api/v1/e2e/validate/1"))
                 .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void returnsForbiddenRatherThanUnavailableWhenDocumentIsNotPublic() throws Exception {
+        when(documentServiceClient.fetchContent(anyLong())).thenThrow(new DocumentAccessDeniedException(7L));
+
+        mockMvc.perform(post("/api/v1/e2e/validate/7"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void doesNotLeakInternalDetailsWhenTheEngineFailsUnexpectedly() throws Exception {
+        CmdbAliasLookup failingCmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(failingCmdbAliasLookup.resolveAll(any())).thenThrow(new IllegalStateException(
+                "Failed to fetch products by aliases: url=http://eafdmmart-func-fdm-products/api/v1/product/by-aliases?aliases=A0"));
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        PlantUmlValidationEngine failingEngine =
+                new PlantUmlValidationEngine(new PlantUmlDiagramParser(), failingCmdbAliasLookup, restEndpointLookup);
+        MockMvc failingMockMvc = MockMvcBuilders
+                .standaloneSetup(new E2eValidationController(failingEngine, documentServiceClient)).build();
+        E2eValidateRequest request = new E2eValidateRequest(VALID_PUML, null, null, null);
+
+        failingMockMvc.perform(post("/api/v1/e2e/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.errorMessage").value("Validation failed due to an internal error, try again later"));
     }
 }

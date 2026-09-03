@@ -75,8 +75,9 @@ public class PlantUmlDiagramParser {
         List<ParsedDiagram.Participant> participants = new ArrayList<>();
         for (Participant participant : sequenceDiagram.participants()) {
             String alias = participant.getCode();
+            String name = joinDisplay(participant.getDisplay(false));
             participants.add(new ParsedDiagram.Participant(
-                    alias, participant.getType().name(), locator.findFirstLine(alias)));
+                    alias, name, participant.getType().name(), locator.findFirstLine(alias)));
         }
 
         List<ParsedDiagram.Message> messages = new ArrayList<>();
@@ -86,7 +87,8 @@ public class PlantUmlDiagramParser {
                 String fromAlias = message.getParticipant1().getCode();
                 String toAlias = message.getParticipant2().getCode();
                 int line = locator.findMessageLine(fromAlias, toAlias, cursorLine);
-                cursorLine = line;
+                // advance past this line so the next message of the same pair doesn't collapse onto it
+                cursorLine = line + 1;
                 messages.add(new ParsedDiagram.Message(fromAlias, toAlias, joinDisplay(message.getLabel()), line));
             }
         }

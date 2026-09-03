@@ -12,6 +12,7 @@ import ru.beeline.staging.dto.e2e.UnrecognizedCall;
 import ru.beeline.staging.dto.e2e.UnrecognizedParticipant;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -31,7 +32,10 @@ import java.util.regex.Pattern;
 public class PlantUmlValidationEngine {
 
     private static final Pattern REST_CALL = Pattern.compile(
-            "(?i)\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+(/\\S+)");
+            "(?i)\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+(\\S+)");
+
+    /** Above this, a single CMDB batch lookup risks blowing the URL-length limit on fdm-products. */
+    private static final int MAX_PARTICIPANTS = 300;
 
     private final PlantUmlDiagramParser parser;
     private final CmdbAliasLookup cmdbAliasLookup;
@@ -55,13 +59,26 @@ public class PlantUmlValidationEngine {
                     "Diagram does not contain any messages", null, null, null));
         }
 
-        Map<String, CmdbAliasLookup.ResolvedParticipant> resolved = cmdbAliasLookup.resolveAll(collectAliases(diagram));
+        if (diagram.participants().size() > MAX_PARTICIPANTS) {
+            findings.add(Finding.error("e2e.validation.diagram.too_many_participants",
+                    "Diagram has " + diagram.participants().size() + " participants, exceeding the limit of "
+                            + MAX_PARTICIPANTS, null, null, null));
+            return new EngineResult(List.of(), List.of(), List.of(), List.of(), findings);
+        }
+
+        Map<String, CmdbAliasLookup.ResolvedParticipant> resolved = cmdbAliasLookup.resolveAll(collectLookupKeys(diagram));
 
         List<RecognizedParticipant> recognizedParticipants = new ArrayList<>();
         List<UnrecognizedParticipant> unrecognizedParticipants = new ArrayList<>();
+        Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias = new HashMap<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
-            CmdbAliasLookup.ResolvedParticipant match = resolved.get(participant.alias());
+            // process owners write the CMDB mnemonic in the participant name, not the short "as" alias
+            CmdbAliasLookup.ResolvedParticipant match = hasText(participant.name()) ? resolved.get(participant.name()) : null;
+            if (match == null) {
+                match = resolved.get(participant.alias());
+            }
             if (match != null) {
+                resolvedByPlantUmlAlias.put(participant.alias(), match);
                 recognizedParticipants.add(new RecognizedParticipant(
                         participant.alias(), match.name(), match.kind().name().toLowerCase(Locale.ROOT), participant.line()));
             } else {
@@ -75,38 +92,59 @@ public class PlantUmlValidationEngine {
         List<RecognizedCall> recognizedCalls = new ArrayList<>();
         List<UnrecognizedCall> unrecognizedCalls = new ArrayList<>();
         for (ParsedDiagram.Message message : diagram.messages()) {
-            classifyCall(message, recognizedCalls, unrecognizedCalls, findings);
+            classifyCall(message, resolvedByPlantUmlAlias, recognizedCalls, unrecognizedCalls, findings);
         }
 
         return new EngineResult(recognizedParticipants, unrecognizedParticipants, recognizedCalls, unrecognizedCalls, findings);
     }
 
-    private void classifyCall(ParsedDiagram.Message message, List<RecognizedCall> recognizedCalls,
-                               List<UnrecognizedCall> unrecognizedCalls, List<Finding> findings) {
+    private void classifyCall(ParsedDiagram.Message message, Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias,
+                               List<RecognizedCall> recognizedCalls, List<UnrecognizedCall> unrecognizedCalls, List<Finding> findings) {
         String elementRef = message.fromAlias() + "->" + message.toAlias();
         Matcher matcher = REST_CALL.matcher(message.label());
-        if (matcher.find()) {
-            String method = matcher.group(1).toUpperCase(Locale.ROOT);
-            String path = matcher.group(2);
-            if (restEndpointLookup.exists(method, path)) {
-                recognizedCalls.add(new RecognizedCall(message.fromAlias(), message.toAlias(), method, path, message.line()));
-                return;
-            }
-            findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
-                    "No matching REST endpoint " + method + " " + path, message.line(), message.line(), elementRef));
-        } else {
+        if (!matcher.find()) {
             findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
                     "Message does not declare a REST endpoint (expected 'METHOD /path')",
                     message.line(), message.line(), elementRef));
+            unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
+            return;
         }
+
+        String method = matcher.group(1).toUpperCase(Locale.ROOT);
+        String path = matcher.group(2);
+
+        // the endpoint must exist on the receiver specifically — existing anywhere in the CMDB is not enough
+        CmdbAliasLookup.ResolvedParticipant receiver = resolvedByPlantUmlAlias.get(message.toAlias());
+        if (receiver == null) {
+            findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
+                    "Cannot verify REST endpoint " + method + " " + path + ": receiver '" + message.toAlias()
+                            + "' is not recognized by CMDB", message.line(), message.line(), elementRef));
+            unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
+            return;
+        }
+
+        if (restEndpointLookup.exists(receiver.alias(), method, path)) {
+            recognizedCalls.add(new RecognizedCall(message.fromAlias(), message.toAlias(), method, path, message.line()));
+            return;
+        }
+        findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
+                "No matching REST endpoint " + method + " " + path + " on '" + message.toAlias() + "'",
+                message.line(), message.line(), elementRef));
         unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
     }
 
-    private static Set<String> collectAliases(ParsedDiagram diagram) {
-        Set<String> aliases = new LinkedHashSet<>();
+    private static Set<String> collectLookupKeys(ParsedDiagram diagram) {
+        Set<String> keys = new LinkedHashSet<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
-            aliases.add(participant.alias());
+            if (hasText(participant.name())) {
+                keys.add(participant.name());
+            }
+            keys.add(participant.alias());
         }
-        return aliases;
+        return keys;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

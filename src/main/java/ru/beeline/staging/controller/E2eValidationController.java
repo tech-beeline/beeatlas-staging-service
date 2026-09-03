@@ -20,6 +20,7 @@ import ru.beeline.staging.dto.e2e.E2eValidationReport;
 import ru.beeline.staging.dto.e2e.ValidationNotice;
 import ru.beeline.staging.e2e.EngineResult;
 import ru.beeline.staging.e2e.PlantUmlValidationEngine;
+import ru.beeline.staging.exception.DocumentAccessDeniedException;
 import ru.beeline.staging.exception.DocumentNotFoundException;
 import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
@@ -60,6 +61,8 @@ public class E2eValidationController {
             content = documentServiceClient.fetchContent(docId);
         } catch (DocumentNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("errorMessage", e.getMessage()));
+        } catch (DocumentAccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("errorMessage", e.getMessage()));
         } catch (DocumentServiceUnavailableException e) {
             log.warn("document-service unavailable while fetching docId={}: {}", docId, e.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -77,25 +80,27 @@ public class E2eValidationController {
             EngineResult result = CompletableFuture.supplyAsync(() -> engine.validate(plantUmlText))
                     .orTimeout(VALIDATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     .join();
-            return ResponseEntity.ok(toReport(result));
+            return ResponseEntity.ok(toReport(result, plantUmlText));
         } catch (CompletionException e) {
             if (e.getCause() instanceof TimeoutException) {
                 return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT)
                         .body(Map.of("errorMessage", "Validation timed out"));
             }
+            // never forward e.getCause().getMessage() to the client — it can carry internal
+            // infrastructure details (e.g. an upstream service URL)
             log.error("e2e validation failed", e.getCause());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(Map.of("errorMessage", "Validation failed: " + e.getCause().getMessage()));
+                    .body(Map.of("errorMessage", "Validation failed due to an internal error, try again later"));
         }
     }
 
-    private E2eValidationReport toReport(EngineResult result) {
+    private E2eValidationReport toReport(EngineResult result, String sourceText) {
         return new E2eValidationReport(
                 result.valid(),
                 result.recognizedParticipants(),
                 result.unrecognizedParticipants(),
                 result.recognizedCalls(),
                 result.unrecognizedCalls(),
-                result.findings().stream().map(ValidationNotice::from).toList());
+                result.findings().stream().map(finding -> ValidationNotice.from(finding, sourceText)).toList());
     }
 }

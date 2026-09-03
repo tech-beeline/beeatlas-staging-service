@@ -20,10 +20,23 @@ class PlantUmlDiagramParserTest {
         assertThat(outcome.diagram().participants())
                 .extracting(ParsedDiagram.Participant::alias)
                 .containsExactlyInAnyOrder("crm", "billing");
+        assertThat(outcome.diagram().participants())
+                .extracting(ParsedDiagram.Participant::name)
+                .containsExactlyInAnyOrder("CRM", "BILLING");
         assertThat(outcome.diagram().messages()).hasSize(2);
         assertThat(outcome.diagram().messages().get(0).label()).contains("POST /api/v1/order");
         assertThat(outcome.diagram().messages().get(0).fromAlias()).isEqualTo("crm");
         assertThat(outcome.diagram().messages().get(0).toAlias()).isEqualTo("billing");
+    }
+
+    @Test
+    void assignsDistinctIncreasingLinesToConsecutiveMessagesOfTheSamePair() {
+        ParseOutcome outcome = parser.parse(fixture("consecutive_messages.puml"));
+
+        assertThat(outcome.isParsed()).isTrue();
+        assertThat(outcome.diagram().messages())
+                .extracting(ParsedDiagram.Message::line)
+                .containsExactly(4, 5, 6);
     }
 
     @Test

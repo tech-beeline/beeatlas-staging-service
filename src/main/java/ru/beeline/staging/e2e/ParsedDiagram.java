@@ -11,8 +11,12 @@ import java.util.List;
  */
 public record ParsedDiagram(List<Participant> participants, List<Message> messages) {
 
-    /** {@code declaredKind} is the PlantUML keyword used (participant/actor/database/...), not a CMDB kind. */
-    public record Participant(String alias, String declaredKind, int line) {}
+    /**
+     * {@code declaredKind} is the PlantUML keyword used (participant/actor/database/...), not a CMDB kind.
+     * {@code name} is the display name — for {@code participant Name as alias} that's {@code Name}, where
+     * process owners write the CMDB mnemonic; {@code alias} is what messages reference it by.
+     */
+    public record Participant(String alias, String name, String declaredKind, int line) {}
 
     public record Message(String fromAlias, String toAlias, String label, int line) {}
 }
