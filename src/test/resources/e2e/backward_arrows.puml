@@ -1,0 +1,7 @@
+@startuml
+participant A as a
+participant B as b
+a<-b: first backward
+a->b: forward
+a<--b: second backward
+@enduml

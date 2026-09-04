@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.e2e.CmdbAliasLookup.ResolvedParticipant.Kind;
 import ru.beeline.staging.client.ProductServiceClient;
-import ru.beeline.staging.product.dto.ContainerSummary;
+import ru.beeline.staging.product.dto.ContainerByCodeSummary;
 import ru.beeline.staging.product.dto.ProductAliasSummary;
 
 import java.util.ArrayList;
@@ -21,9 +21,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Resolves participant aliases against fdm-products: first as systems (batch, one call),
- * then unresolved aliases against the containers of the already-recognized systems (fdm-products
- * has no global container-by-alias search, only per-product listing).
+ * Resolves participant aliases against fdm-products: first as systems (batch, one call), then
+ * unresolved aliases as containers (batch, one call) — a diagram can reference a container without
+ * also including a separate participant for its owning system.
  */
 @Slf4j
 @Component
@@ -48,36 +48,29 @@ public class FdmProductsCmdbAliasLookup implements CmdbAliasLookup {
         }
 
         Set<String> remaining = new LinkedHashSet<>();
-        Set<String> resolvedSystemAliases = new LinkedHashSet<>();
         for (String alias : aliases) {
             ProductAliasSummary match = productsByLowerAlias.get(alias.toLowerCase(Locale.ROOT));
             if (match != null) {
                 result.put(alias, new ResolvedParticipant(alias, match.getName(), Kind.SYSTEM));
-                resolvedSystemAliases.add(match.getAlias());
             } else {
                 remaining.add(alias);
             }
         }
 
-        for (String systemAlias : resolvedSystemAliases) {
-            if (remaining.isEmpty()) {
-                break;
-            }
-            List<ContainerSummary> containers = productServiceClient.getContainers(systemAlias);
-            Map<String, ContainerSummary> containersByLowerCode = new LinkedHashMap<>();
-            for (ContainerSummary container : containers) {
+        if (!remaining.isEmpty()) {
+            List<ContainerByCodeSummary> containers = productServiceClient.getContainersByCodes(new ArrayList<>(remaining));
+            Map<String, ContainerByCodeSummary> containersByLowerCode = new LinkedHashMap<>();
+            for (ContainerByCodeSummary container : containers) {
                 if (container.getCode() != null) {
                     containersByLowerCode.putIfAbsent(container.getCode().toLowerCase(Locale.ROOT), container);
                 }
             }
-            remaining.removeIf(alias -> {
-                ContainerSummary container = containersByLowerCode.get(alias.toLowerCase(Locale.ROOT));
-                if (container == null) {
-                    return false;
+            for (String alias : remaining) {
+                ContainerByCodeSummary container = containersByLowerCode.get(alias.toLowerCase(Locale.ROOT));
+                if (container != null) {
+                    result.put(alias, new ResolvedParticipant(alias, container.getName(), Kind.CONTAINER));
                 }
-                result.put(alias, new ResolvedParticipant(alias, container.getName(), Kind.CONTAINER));
-                return true;
-            });
+            }
         }
 
         log.info("CMDB alias resolution: total={} recognized={} unrecognized={}",

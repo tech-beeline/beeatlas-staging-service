@@ -30,6 +30,18 @@ class PlantUmlDiagramParserTest {
     }
 
     @Test
+    void locatesTheLineOfABackwardArrowMessageInsteadOfFallingBackToAnotherLine() {
+        ParseOutcome outcome = parser.parse(fixture("backward_arrows.puml"));
+
+        assertThat(outcome.isParsed()).isTrue();
+        // a<-b (line 4), a->b (line 5), a<--b (line 6) — none of them should collapse onto line 1
+        // (the @startuml fallback) or borrow another message's line
+        assertThat(outcome.diagram().messages())
+                .extracting(ParsedDiagram.Message::line)
+                .containsExactly(4, 5, 6);
+    }
+
+    @Test
     void assignsDistinctIncreasingLinesToConsecutiveMessagesOfTheSamePair() {
         ParseOutcome outcome = parser.parse(fixture("consecutive_messages.puml"));
 

@@ -11,7 +11,9 @@ import ru.beeline.staging.client.ProductServiceClient;
 import ru.beeline.staging.product.dto.OperationEntry;
 import ru.beeline.staging.product.dto.OperationSearchResponse;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -29,11 +31,14 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
 
+    private static final Pattern UUID_SEGMENT = Pattern.compile(
+            "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
     private final ProductServiceClient productServiceClient;
 
     @Override
     public boolean exists(String cmdbAlias, String httpMethod, String path) {
-        OperationSearchResponse response = productServiceClient.searchOperation(path, httpMethod);
+        OperationSearchResponse response = productServiceClient.searchOperation(searchNeedle(path), httpMethod);
         List<OperationEntry> archOperations = response.getArchOperations();
         List<OperationEntry> discoveredOperations = response.getDiscoveredOperations();
         return Stream.concat(
@@ -42,6 +47,33 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
                 .anyMatch(entry -> pathMatches(path, entry.getName())
                         && (entry.getType() == null || entry.getType().equalsIgnoreCase(httpMethod))
                         && belongsTo(entry, cmdbAlias));
+    }
+
+    /**
+     * fdm-products matches the search path with a plain substring ILIKE — a concrete diagram path
+     * like "/api/v1/graph/123" is never a substring of a templated catalog entry
+     * "/api/v1/graph/{docId}", so searching with the full path can never surface it. Trimming to the
+     * stable prefix before the first id-looking segment widens the net; {@link #pathMatches} still
+     * does the precise check against the untrimmed path.
+     */
+    private static String searchNeedle(String path) {
+        String[] segments = splitPath(path);
+        List<String> stable = new ArrayList<>();
+        for (String segment : segments) {
+            if (looksLikeVariableValue(segment)) {
+                break;
+            }
+            stable.add(segment);
+        }
+        return stable.isEmpty() ? path : "/" + String.join("/", stable);
+    }
+
+    private static boolean looksLikeVariableValue(String segment) {
+        if (segment.isEmpty()) {
+            return false;
+        }
+        boolean allDigits = segment.chars().allMatch(Character::isDigit);
+        return allDigits || UUID_SEGMENT.matcher(segment).matches();
     }
 
     private static boolean belongsTo(OperationEntry entry, String cmdbAlias) {

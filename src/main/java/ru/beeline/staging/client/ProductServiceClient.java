@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-import ru.beeline.staging.product.dto.ContainerSummary;
+import ru.beeline.staging.product.dto.ContainerByCodeSummary;
 import ru.beeline.staging.product.dto.OperationSearchResponse;
 import ru.beeline.staging.product.dto.ProductAliasSummary;
 import ru.beeline.staging.product.dto.ProductSummary;
@@ -75,18 +75,22 @@ public class ProductServiceClient {
     }
 
     /**
-     * Containers of a product (system), CMDB alias in {@code code} (GET /api/v1/product/{cmdb}/container).
+     * Global container lookup by CMDB code (GET /api/v1/container/by-codes) — unlike a per-product
+     * listing, the caller does not need to already know/have resolved the owning system.
      */
-    public List<ContainerSummary> getContainers(String cmdb) {
-        String url = baseUrl + "/api/v1/product/" + cmdb + "/container";
-        log.info("Fetching containers: cmdb={} url={}", cmdb, url);
-        try {
-            ContainerSummary[] containers = restTemplate.getForObject(url, ContainerSummary[].class);
-            return containers != null ? List.of(containers) : List.of();
-        } catch (HttpClientErrorException.NotFound e) {
+    public List<ContainerByCodeSummary> getContainersByCodes(List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
             return List.of();
+        }
+        String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/container/by-codes")
+                .queryParam("codes", codes)
+                .toUriString();
+        log.info("Fetching containers by codes: count={} url={}", codes.size(), url);
+        try {
+            ContainerByCodeSummary[] containers = restTemplate.getForObject(url, ContainerByCodeSummary[].class);
+            return containers != null ? List.of(containers) : List.of();
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to fetch containers: cmdb=" + cmdb + " url=" + url + " — " + e.getMessage(), e);
+            throw new IllegalStateException("Failed to fetch containers by codes: url=" + url + " — " + e.getMessage(), e);
         }
     }
 

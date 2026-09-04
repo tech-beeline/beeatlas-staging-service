@@ -54,7 +54,8 @@ class SourceLineLocator {
     }
 
     private static boolean isArrowLine(String line) {
-        return line.indexOf('-') >= 0 && line.indexOf('>') >= 0;
+        // backward arrows (<-, <--, <<-) have no '>' at all — only '<'
+        return line.indexOf('-') >= 0 && (line.indexOf('>') >= 0 || line.indexOf('<') >= 0);
     }
 
     private static Pattern wordBoundary(String token) {

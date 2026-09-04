@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +41,17 @@ class FdmProductsRestEndpointLookupTest {
                 .thenReturn(response(operation("/api/v1/graph/{docId}", "GET", "arch-graph", null)));
 
         assertThat(lookup.exists("arch-graph", "GET", "/api/v1/graph/123")).isTrue();
+    }
+
+    @Test
+    void searchesUsingAStablePrefixSoATemplatedCatalogEntryCanBeFound() {
+        // fdm-products matches with a plain substring ILIKE: searching with the full concrete path
+        // ("...123") can never hit a stored "{docId}" template, so it must never even be tried —
+        // only the stable prefix before the id-looking segment is sent to the search.
+        when(productServiceClient.searchOperation(eq("/api/v1/graph"), anyString()))
+                .thenReturn(response(operation("/api/v1/graph/{docId}", "POST", "fdmshowcaseapp", null)));
+
+        assertThat(lookup.exists("fdmshowcaseapp", "POST", "/api/v1/graph/123")).isTrue();
     }
 
     @Test
