@@ -75,6 +75,15 @@ public class PlantUmlValidationEngine {
             // process owners write the CMDB mnemonic in the participant name, not the short "as" alias
             CmdbAliasLookup.ResolvedParticipant match = hasText(participant.name()) ? resolved.get(participant.name()) : null;
             if (match == null) {
+                // the name itself is often "<CMDB container code>.<qualifier>" (e.g.
+                // ext_DynamicSIM.ActivationPageService) — the container is registered under just the
+                // prefix, the qualifier is the diagram author's own detail, not part of the CMDB code
+                String prefix = mnemonicPrefix(participant.name());
+                if (prefix != null) {
+                    match = resolved.get(prefix);
+                }
+            }
+            if (match == null) {
                 match = resolved.get(participant.alias());
             }
             if (match != null) {
@@ -138,10 +147,23 @@ public class PlantUmlValidationEngine {
         for (ParsedDiagram.Participant participant : diagram.participants()) {
             if (hasText(participant.name())) {
                 keys.add(participant.name());
+                String prefix = mnemonicPrefix(participant.name());
+                if (prefix != null) {
+                    keys.add(prefix);
+                }
             }
             keys.add(participant.alias());
         }
         return keys;
+    }
+
+    /** The part of a dotted mnemonic before the first '.', or null if there's no dot to split on. */
+    private static String mnemonicPrefix(String name) {
+        if (name == null) {
+            return null;
+        }
+        int dot = name.indexOf('.');
+        return dot > 0 ? name.substring(0, dot) : null;
     }
 
     private static boolean hasText(String value) {
