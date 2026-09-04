@@ -37,16 +37,36 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
     private final ProductServiceClient productServiceClient;
 
     @Override
-    public boolean exists(String cmdbAlias, String httpMethod, String path) {
-        OperationSearchResponse response = productServiceClient.searchOperation(searchNeedle(path), httpMethod);
+    public boolean exists(String cmdbAlias, String cmdbName, String httpMethod, String path) {
+        List<OperationEntry> candidates = candidatesOwnedByReceiver(cmdbAlias, cmdbName, path);
+        if (candidates.stream().anyMatch(entry -> typeMatches(entry, httpMethod))) {
+            return true;
+        }
+        // the catalog sometimes never captured the protocol at all (type=UNKNOWN, a placeholder from
+        // import, not a real HTTP method) — accept that only as a last resort, so it doesn't mask a
+        // genuine type mismatch when a better candidate exists
+        return candidates.stream().anyMatch(FdmProductsRestEndpointLookup::hasUnknownType);
+    }
+
+    private List<OperationEntry> candidatesOwnedByReceiver(String cmdbAlias, String cmdbName, String path) {
+        // no server-side type filter: an exact-type candidate and a type=UNKNOWN one are both needed
+        // to decide between the two tiers above
+        OperationSearchResponse response = productServiceClient.searchOperation(searchNeedle(path), null);
         List<OperationEntry> archOperations = response.getArchOperations();
         List<OperationEntry> discoveredOperations = response.getDiscoveredOperations();
         return Stream.concat(
                         archOperations != null ? archOperations.stream() : Stream.empty(),
                         discoveredOperations != null ? discoveredOperations.stream() : Stream.empty())
-                .anyMatch(entry -> pathMatches(path, entry.getName())
-                        && (entry.getType() == null || entry.getType().equalsIgnoreCase(httpMethod))
-                        && belongsTo(entry, cmdbAlias));
+                .filter(entry -> pathMatches(path, entry.getName()) && belongsTo(entry, cmdbAlias, cmdbName))
+                .toList();
+    }
+
+    private static boolean typeMatches(OperationEntry entry, String httpMethod) {
+        return entry.getType() == null || entry.getType().equalsIgnoreCase(httpMethod);
+    }
+
+    private static boolean hasUnknownType(OperationEntry entry) {
+        return "UNKNOWN".equalsIgnoreCase(entry.getType());
     }
 
     /**
@@ -55,6 +75,11 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
      * "/api/v1/graph/{docId}", so searching with the full path can never surface it. Trimming to the
      * stable prefix before the first id-looking segment widens the net; {@link #pathMatches} still
      * does the precise check against the untrimmed path.
+     * <p>
+     * The leading slash is dropped too — some catalog entries are stored without one at all (e.g.
+     * "getServiceList" rather than "/getServiceList"), and a needle with no slash is still a valid
+     * (just broader) substring match against entries that do have one, so nothing is lost by dropping
+     * it — {@link #pathMatches} still normalizes slashes on both sides for the precise check.
      */
     private static String searchNeedle(String path) {
         String[] segments = splitPath(path);
@@ -65,7 +90,7 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
             }
             stable.add(segment);
         }
-        return stable.isEmpty() ? path : "/" + String.join("/", stable);
+        return stable.isEmpty() ? path : String.join("/", stable);
     }
 
     private static boolean looksLikeVariableValue(String segment) {
@@ -76,10 +101,24 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
         return allDigits || UUID_SEGMENT.matcher(segment).matches();
     }
 
-    private static boolean belongsTo(OperationEntry entry, String cmdbAlias) {
-        boolean productMatch = entry.getProduct() != null && cmdbAlias.equalsIgnoreCase(entry.getProduct().getAlias());
-        boolean containerMatch = entry.getContainer() != null && cmdbAlias.equalsIgnoreCase(entry.getContainer().getCode());
-        return productMatch || containerMatch;
+    /**
+     * A hit counts if it's owned by the exact CMDB record the receiver resolved to (by code), or —
+     * since that record can be one of several disconnected duplicates sharing a display name — by
+     * any other record with the same name. Several candidates may end up matching; which one "wins"
+     * is unspecified for now (first hit in whatever order the catalog returns).
+     */
+    private static boolean belongsTo(OperationEntry entry, String cmdbAlias, String cmdbName) {
+        boolean productAliasMatch = entry.getProduct() != null && cmdbAlias.equalsIgnoreCase(entry.getProduct().getAlias());
+        boolean containerCodeMatch = entry.getContainer() != null && cmdbAlias.equalsIgnoreCase(entry.getContainer().getCode());
+        if (productAliasMatch || containerCodeMatch) {
+            return true;
+        }
+        if (cmdbName == null) {
+            return false;
+        }
+        boolean productNameMatch = entry.getProduct() != null && cmdbName.equalsIgnoreCase(entry.getProduct().getName());
+        boolean containerNameMatch = entry.getContainer() != null && cmdbName.equalsIgnoreCase(entry.getContainer().getName());
+        return productNameMatch || containerNameMatch;
     }
 
     /** Segment-by-segment match, treating any {@code {param}}-shaped template segment as a wildcard. */

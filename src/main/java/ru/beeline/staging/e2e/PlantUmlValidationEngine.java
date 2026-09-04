@@ -132,7 +132,7 @@ public class PlantUmlValidationEngine {
             return;
         }
 
-        if (restEndpointLookup.exists(receiver.alias(), method, path)) {
+        if (restEndpointLookup.exists(receiver.alias(), receiver.name(), method, path)) {
             recognizedCalls.add(new RecognizedCall(message.fromAlias(), message.toAlias(), method, path, message.line()));
             return;
         }

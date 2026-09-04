@@ -31,7 +31,7 @@ class PlantUmlValidationEngineTest {
                         "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
                         "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("valid.puml"));
@@ -49,7 +49,7 @@ class PlantUmlValidationEngineTest {
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
                 "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("valid.puml"));
@@ -69,7 +69,7 @@ class PlantUmlValidationEngineTest {
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
                 "ext_DynamicSIM", new ResolvedParticipant("ext_DynamicSIM", "DynamicSIM", Kind.CONTAINER)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("03_DSIM.Flashing_Min_Changes.puml"));
@@ -92,7 +92,7 @@ class PlantUmlValidationEngineTest {
                 "ext_DynamicSIM", new ResolvedParticipant("ext_DynamicSIM", "DynamicSIM", Kind.CONTAINER),
                 "ext_NAPIProxy", new ResolvedParticipant("ext_NAPIProxy", "NAPIProxy", Kind.CONTAINER)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(eq("ext_NAPIProxy"), eq("GET"), eq("/getServiceList")))
+        when(restEndpointLookup.exists(eq("ext_NAPIProxy"), eq("NAPIProxy"), eq("GET"), eq("/getServiceList")))
                 .thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
@@ -113,7 +113,7 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("valid.puml"));
@@ -132,7 +132,7 @@ class PlantUmlValidationEngineTest {
                 "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
                 "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(false);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("valid.puml"));
@@ -153,8 +153,8 @@ class PlantUmlValidationEngineTest {
                 "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         // the endpoint exists somewhere, but never on the receiver actually addressed in the diagram
-        when(restEndpointLookup.exists(eq("billing"), anyString(), anyString())).thenReturn(false);
-        when(restEndpointLookup.exists(eq("crm"), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(eq("billing"), anyString(), anyString(), anyString())).thenReturn(false);
+        when(restEndpointLookup.exists(eq("crm"), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("valid.puml"));
@@ -172,7 +172,7 @@ class PlantUmlValidationEngineTest {
                 "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
                 "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(false);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("no_slash_call.puml"));
@@ -231,7 +231,7 @@ class PlantUmlValidationEngineTest {
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
                 "crm", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         String text = fixture("valid.puml");

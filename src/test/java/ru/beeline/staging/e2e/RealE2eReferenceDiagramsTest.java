@@ -106,7 +106,7 @@ class RealE2eReferenceDiagramsTest {
             return resolved;
         });
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("03_DSIM.Flashing_Min_Changes.puml"));
