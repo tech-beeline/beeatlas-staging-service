@@ -1,0 +1,155 @@
+@startuml DFD_1_MNP_Interregional
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam DefaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #E8F5E9
+  BorderColor #2E7D32
+  FontColor #1B5E20
+}
+skinparam database {
+  BackgroundColor #FFF3E0
+  BorderColor #E65100
+  FontColor #BF360C
+}
+skinparam ArrowFontColor #1565C0
+skinparam ArrowColor #1565C0
+
+title DFD-1: Декомпозиция уровня 1\nМежрегиональный MNP — CRM-MNP
+
+' ============ EXTERNAL ENTITIES ============
+rectangle "**Абонент**" as Abonent #E3F2FD
+rectangle "**Сотрудники**\n(СО/B2B/ДОК)" as Staff #E3F2FD
+rectangle "**БДПН**\n(ЦБДПН)" as BDPN #FFEBEE
+rectangle "**СМЭВ**\n(via UCRM)" as SMEV #FFEBEE
+rectangle "**Витрина /\nConsumer**" as Consumer #E3F2FD
+
+' ============ PROCESSES (P1-P6) ============
+rectangle "**P1.** Инициация и\nвалидация заявки" as P1 #C8E6C9
+rectangle "**P2.** Обработка заявки\nв БДПН" as P2 #C8E6C9
+rectangle "**P3.** Провижининг\nна сеть" as P3 #C8E6C9
+rectangle "**P4.** Тарификация\nи списания" as P4 #C8E6C9
+rectangle "**P5.** Нотификация\nабонента" as P5 #C8E6C9
+rectangle "**P6.** Сетевая\nмаршрутизация" as P6 #C8E6C9
+
+' ============ DATA STORES ============
+database "RegionDB\n(ИС Регионы)" as D1 #FFF3E0
+database "Ensemble\n(Q0, BAN, CTN,\nподсветка)" as D4 #FFF3E0
+database "CRM-MNP БД\n(заявки, статусы,\nПДн)" as D5 #FFF3E0
+database "S3\n(файлы БДПН)" as D6 #FFF3E0
+database "Kafka\n(события MNP)" as D8 #FFF3E0
+database "SRF\n(Routing Number)" as D7 #FFF3E0
+database "A&F БД\n(MI9_MNP_CTN_TYPE)" as D2 #FFF3E0
+database "Arena БД\n(MNP_PRICING)" as D3 #FFF3E0
+database "Atlant\n(PORTNUMBERS)" as D9 #FFF3E0
+database "MediationFix\n(MNP_NUMBER)" as D10 #FFF3E0
+database "CMD\n(VC_MNP_VIEW)" as D11 #FFF3E0
+database "BeePayXP\n(CTN routes)" as D15 #FFF3E0
+database "Темафон\n(отстойник)" as D16 #FFF3E0
+database "MMSC\n(MSISDN→RN)" as D12 #FFF3E0
+
+' --- SwitchControl как процесс ---
+rectangle "**SwitchControl (SC)**\nпровижининг сети" as SC #B3E5FC
+
+' --- aCRM ---
+rectangle "**aCRM**\n(интеракции)" as ACRM #F3E5F5
+
+' --- ПСК ---
+rectangle "**ПСК**\n(SMS/Email)" as PSK #F3E5F5
+
+' ============ FLOWS: P1 — Initiation & Validation ============
+Staff --> P1 : REST /portation-in/validate,\n/relocation/validate,\nGET /portableCtn
+Consumer --> P1 : POST /portation-in,\nGET /portableCtn
+Abonent --> P1 : Заявление (паспорт, MSISDN)
+P1 --> D1 : REST проверка региона,\nSOAP GetAttributeValuesByNumbers
+D1 --> P1 : Регион, маркет-код,\nLogical HLR
+P1 --> D4 : fac-scaaw (проверка абонента,\nблокировок, BAN)
+D4 --> P1 : Данные абонента\n(BAN, статус, AR_BALANCE)
+P1 --> SMEV : Проверка паспорта\n(POST /v1/document-check-smev)
+SMEV --> P1 : Результат проверки ПДн
+P1 --> D5 : Сохранение заявки\n(статус, ПДн)
+P1 --> P2 : Созданная заявка\n(NP Create / NP Region Change)
+
+' ============ FLOWS: P2 — BDPN Processing ============
+P2 <--> BDPN : NP-сообщения (Create, CDB Confirm/Reject,\nDonor Accept/Reject, Region Activate,\nSuspend, Return, Cancel, Reverse)
+BDPN --> D6 : SFTP-файлы (Port_All, Port_All_Full,\nPort_Increment, Return_Increment,\nNumbering_plan, Operators, Status_Code)
+P2 --> D6 : Сохранение файлов от БДПН
+P2 --> D5 : Обновление статуса заявки
+P2 --> D8 : События request_info\n(NP_CREATE, NP_CDB_CONFIRM,…)
+P2 --> P3 : Команда провижининга\n(PortIn / PortOut / Relocation)
+P2 --> P5 : Триггер нотификации\n(статус заявки)
+
+' ============ FLOWS: P3 — Provisioning ============
+P3 --> D4 : PreparePortCtn (подсветка),\nMNPPortInCTN, MNPPortOutCTN,\nMNPReleaseGroup
+D4 --> P3 : Результат провижининга
+P3 --> D1 : REST /mnp/ctn/add,\n/mnp/ctn/delete
+P3 --> D2 : SQL add_port_ctn,\nclose_port, updateInAF
+P3 --> D8 : События CCC, CCB,\nзавершение провижининга
+D8 --> P3 : События Cancel\n(отмена по requestId)
+P3 --> SC : Командный роутинг\n(Q0 → SC: DAC/CAN/CCN/CCB/CCC)
+P3 --> P4 : Транзакция списания
+P3 --> P6 : Обновление маршрутизации\n(RN прописан)
+P3 --> P5 : Триггер\n(завершение провижининга)
+
+' --- SC flows ---
+SC --> D7 : Прописание RN (add/delete MSISDN→RN)
+SC --> D9 : insert/update PORTNUMBERS
+SC --> D10 : insert MNP_NUMBER
+SC --> D11 : insert/update VC_MNP_VIEW
+SC --> D12 : create/update/delete MSISDN-RN
+SC --> D15 : addCTNRoute / deleteCTNRoute
+SC --> D16 : Сообщение о постановке\nв отстойник (reason POU/PIN)
+SC --> D8 : События ChangeMSISDNFinished,\nCompletePortRequest, removeNumber, CCC, CCB
+SC --> D4 : ChangeMSISDNFinished,\nCompletePortRequest
+
+' ============ FLOWS: P4 — Tariffication ============
+P4 --> D3 : SELECT MNP_CP_SOC_RELATION\n(стоимость, SOC)
+D3 --> P4 : Стоимость MNP\nпо account_type
+P4 --> SC : Списания по base_feature\n(SC → C1)
+SC --> P4 : Результат списания
+
+' ============ FLOWS: P5 — Notification ============
+P5 --> PSK : SMS/Email\n(шаблоны MNP_b2b_18,\nMNP_b2c_17 и др.)
+PSK --> Abonent : SMS / Email\nуведомления
+P5 --> ACRM : POST /interactions,\n/acrm/cases, /acrm/flashes
+P5 --> D8 : События нотификации
+
+' ============ FLOWS: P6 — Network Routing ============
+P6 --> D7 : Чтение RN\nдля маршрутизации
+P6 --> D4 : Hermes → C1\n(OSA-вызовы для\nавторизации/биллинга)
+
+' --- ETL ---
+rectangle "**ETL**\n(синхронизация)" as ETL #B3E5FC
+ETL --> D5 : Чтение списка\nперенесённых номеров
+ETL <--> D2 : Сравнение и\nзапись (Dblink)
+ETL <--> D1 : Сравнение и\nREST-управление
+ETL <--> D15 : Сравнение и\naddCTNRoute/deleteCTNRoute
+ETL <--> D9 : Прямая запись\nPORTNUMBERS
+ETL <--> D10 : Прямая запись\nMNP_NUMBER
+ETL <--> D11 : Прямая запись\nVC_MNP_VIEW
+
+note bottom of P2
+  P2 декомпозируется на 8 подпроцессов (DFD-2):
+  P2.1 Создание заявки (NP Create / Region Change)
+  P2.2 Арбитраж и проверка ПДн (СМЭВ)
+  P2.3 Обработка долга донора (Donor Info)
+  P2.4 Активация региона (Region Activate)
+  P2.5 Отмена заявки (NP Cancel)
+  P2.6 Блокировка за задолж. (NP Suspend)
+  P2.7 Возврат номера (NP Return)
+  P2.8 Загрузка файлов от БДПН (SFTP)
+end note
+
+note bottom of P3
+  P3 декомпозируется на 8 подпроцессов (DFD-2):
+  P3.1 Подсветка номера (PreparePortCtn)
+  P3.2 Прописание маршрутизации в RegionDB
+  P3.3 Прописание в A&F
+  P3.4 Провижининг Ensemble (PortIn/PortOut)
+  P3.5 Командный роутинг RICH → SC
+  P3.6 Прописание RN на SRF
+  P3.7 Снятие подсветки (ReleaseGroup)
+  P3.8 Списание стоимости (SC → C1)
+end note
+
+@enduml

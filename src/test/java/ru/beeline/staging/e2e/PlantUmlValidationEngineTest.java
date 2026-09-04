@@ -60,6 +60,34 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
+    void recognizesTheCallOnTheRealDsimFlashingReferenceDiagramOnceCmdbHasBothMnemonics() {
+        // DSIMFlashing -> NAPIProxy: GET /getServiceList (line 22 of the QA reference diagram) —
+        // used to be unrecognized because CMDB was only ever queried by the short "as" alias,
+        // never by the mnemonic in the participant name position
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
+                "ext_DynamicSIM.ActivationPageService", new ResolvedParticipant(
+                        "ext_DynamicSIM.ActivationPageService", "DSIM Flashing", Kind.SYSTEM),
+                "ext_NAPIProxy.NAPIService", new ResolvedParticipant(
+                        "ext_NAPIProxy.NAPIService", "NAPI Proxy", Kind.SYSTEM)));
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(eq("ext_NAPIProxy.NAPIService"), eq("GET"), eq("/getServiceList")))
+                .thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(fixture("03_DSIM.Flashing_Min_Changes.puml"));
+
+        assertThat(result.recognizedCalls())
+                .anySatisfy(call -> {
+                    assertThat(call.fromAlias()).isEqualTo("DSIMFlashing");
+                    assertThat(call.toAlias()).isEqualTo("NAPIProxy");
+                    assertThat(call.httpMethod()).isEqualTo("GET");
+                    assertThat(call.path()).isEqualTo("/getServiceList");
+                    assertThat(call.line()).isEqualTo(22);
+                });
+    }
+
+    @Test
     void flagsUnrecognizedParticipantsAsWarningNotBlockingValidity() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());

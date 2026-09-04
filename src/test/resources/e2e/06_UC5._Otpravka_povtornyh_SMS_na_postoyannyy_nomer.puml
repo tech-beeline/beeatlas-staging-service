@@ -1,0 +1,21 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+
+title UC5. Отправка повторных SMS на постоянный номер.
+
+participant ext_DynamicSIM.ActivationPageService as DSIM.Flashing #lightyellow  
+
+activate DSIM.Flashing #lightgreen
+loop 1. через интервалы времени, указанные в переменной xxxxxxxxxxxxx
+DSIM.Flashing -> DSIM.Flashing: 1. получениe SIM-карт, по которым не удалось получить отчет о доставке SMS на постоянный номер в сценарии UC3.1
+loop по найденным записям
+DSIM.Flashing ->> SMSPusher : 2.1. PushSMSToMQ (SMS с type=0 на постоянный  номер абонента с запросом уведомления о доставке.)
+
+
+end
+end
+
+deactivate DSIM.Flashing
+@enduml

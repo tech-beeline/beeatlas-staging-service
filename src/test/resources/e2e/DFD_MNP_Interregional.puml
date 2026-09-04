@@ -1,0 +1,70 @@
+@startuml DFD_MNP_Interregional
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam DefaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #E8F5E9
+  BorderColor #2E7D32
+  FontColor #1B5E20
+}
+skinparam database {
+  BackgroundColor #FFF3E0
+  BorderColor #E65100
+  FontColor #BF360C
+}
+skinparam ArrowFontColor #1565C0
+skinparam ArrowColor #1565C0
+skinparam NoteBackgroundColor #FFFDE7
+skinparam NoteBorderColor #F9A825
+
+title DFD-0: Контекстная диаграмма\nМежрегиональный MNP (CRM-MNP)
+
+' ============ DFD-0: CONTEXT DIAGRAM ============
+
+rectangle "**Абонент**\n(ФЛ / ЮЛ / ИП / Гос)" as Abonent #E3F2FD
+rectangle "**Сотрудники**\n(СО / B2B / ДОК / ДОКК)" as Staff #E3F2FD
+rectangle "**БДПН (ЦБДПН)**\nФедеральная БД перенесённых\nномеров" as BDPN #FFEBEE
+rectangle "**СМЭВ**\n(через UCRM)" as SMEV #FFEBEE
+rectangle "**Другие операторы**\n(донор / реципиент)" as OtherOps #FFEBEE
+rectangle "**Альфа-Мобайл**\n(MVNO)" as AlfaMobile #FFEBEE
+rectangle "**Consumer / Витрина**\n(портал, ИМ, саморегистрация)" as Consumer #E3F2FD
+rectangle "**Sales Funnel**\n(источник данных)" as SalesFunnel #F3E5F5
+
+rectangle "**CRM-MNP**\n==Центральный оркестратор==\nМежрегиональный MNP" as CRMMNP #C8E6C9
+
+' --- Абонент ---
+Abonent --> CRMMNP : Заявление на перенос/перевод номера\n(паспорт, MSISDN, target регион)
+CRMMNP --> Abonent : SMS / Email уведомления\n(статус заявки, напоминание о долге)
+
+' --- Сотрудники ---
+Staff --> CRMMNP : REST API: создание / управление заявкой\n(validate, requests, cancel, change date)
+CRMMNP --> Staff : Результат валидации,\nстатус заявки, ошибки
+
+' --- Витрина / Consumer ---
+Consumer --> CRMMNP : POST /portation-in, /portation-out,\nGET /portableCtn, /requests/validate
+CRMMNP --> Consumer : Результат валидации,\nстатус заявки
+
+' --- БДПН ---
+CRMMNP <--> BDPN : NP-сообщения (Create, CDB Confirm/Reject,\nDonor Accept/Reject, Region Activate,\nSuspend, Return, Cancel, Reverse)\n+ SFTP-файлы (Port_All, Increment,\nOperators, Numbering_plan)
+
+' --- Другие операторы (через БДПН) ---
+OtherOps --> BDPN : NP Create (от реципиента),\nNP Donor Info
+BDPN --> OtherOps : NP Donor Accept/Reject,\nNP Recipient Activate
+
+' --- СМЭВ ---
+CRMMNP --> SMEV : POST /v1/document-check-smev\n(проверка паспорта, арбитраж)
+SMEV --> CRMMNP : Результат проверки ПДн
+
+' --- Альфа-Мобайл ---
+CRMMNP <--> AlfaMobile : Спец-сценарий MVNO\n(reason_code FOUT vs POUT)
+
+' --- Sales Funnel ---
+SalesFunnel --> CRMMNP : Данные перенесённых абонентов\n(для beemetrics)
+
+note right of CRMMNP
+  Граница системы: CRM-MNP
+  Включает: GlassFish (GF), ETL,
+  Kafka-топики, REST/SOAP API
+end note
+
+@enduml

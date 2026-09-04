@@ -1,0 +1,72 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+
+title UC3.1 Обработка асинхронного ответа от OTA.
+participant ext_DynamicSIM.ActivationPageService as DSIM.Flashing #lightyellow 
+participant componentSMSPusher.glassfish as SMSPusher #lightgreen
+participant IBMMQ.glassfish as Internal.MQ.queue.Sicap #lightgreen
+ 
+
+DSIM.Flashing <<- Internal.MQ.queue.Sicap: 1. получение асинхронного ответа от OTA Sicap
+activate DSIM.Flashing
+DSIM.Flashing -> PINPUKViewer:2. вызов SQL-процедуры замены временного IMSI на постоянный
+activate PINPUKViewer
+DSIM.Flashing<--PINPUKViewer:
+deactivate PINPUKViewer
+group 3. Активация нового динамического абонента
+DSIM.Flashing -> DSTK: 3.1. getSubscription для получения iccid SIM-карты.
+activate DSTK
+DSIM.Flashing -> DSTK:3.2. updateSubscription для смены IMSI SIM-карты.
+DSIM.Flashing -> DSTK:3.3. changeSubscriptionAddress для активации SIM-карты.
+DSIM.Flashing -> DSTK:3.4. setSubscriptionProperty для установки типа системы расчета абонента.
+DSIM.Flashing -> DSTK:3.5. setSubscriptionProperty для установки маркет кода абонента.
+DSIM.Flashing -> DSTK:3.6. setSubscriptionProperty для установки даты изменения.
+deactivate DSTK
+end
+
+DSIM.Flashing -> DSIM.Flashing: 4. проверка необходимости отправки SMS для саморегистрации по таблице DYNAMICSIMIMSIACTIVITY с активностями абонентов со статусом из переменной business-logic.self-reg-sms-statuses  
+
+alt 4.2. записей DYNAMICSIMIMSIACTIVITY не найдено 
+DSIM.Flashing ->> SMSPusher : 5. PushSMSToMQ (SMS на временный номер абонента без запроса уведомления о доставке)
+DSIM.Flashing ->  DSIM.Flashing: 6. Поиск записи в таблице DYNAMICSIMSTATUSES по старым/новыми IMSI/MSISDN
+alt  6. Запись DYNAMICSIMSTATUSES найдена
+DSIM.Flashing --> DSIM.Flashing:  6.2. получено значение SOURCE, и опционально получены значения LG_PRIMARY_IND и PRIMARY_CTN
+DSIM.Flashing ->> SMSPusher : 7. PushSMSToMQ (SMS на постоянный  номер абонента с запросом уведомления о доставке.)
+else 6б. Запись DYNAMICSIMSTATUSES не найдена, тип источника запроса не определен
+
+DSIM.Flashing<--DSIM.Flashing:
+note over DSIM.Flashing: продолжает основной сценарий
+
+end
+else 4б. запись DYNAMICSIMIMSIACTIVITY найдена
+DSIM.Flashing<--DSIM.Flashing:
+
+DSIM.Flashing ->> SMSPusher : 4б.1. PushSMSToMQ (SMS на временный номер абонента без запроса уведомления о доставке)
+DSIM.Flashing ->> SMSPusher : 4б.2. PushSMSToMQ (SMS на постоянный  номер абонента с запросом уведомления о доставке.)
+end
+loop 8. Проверка получения отчета о доставке каждые business-logic.interval-uc3 миллисекунд
+
+DSIM.Flashing ->  DSIM.Flashing: Проверка изменения статуса записи в DS001 или DS012
+break #lightgreen 8б. Истекло время ожидания отчета о доставке  business-logic.wait-uc3
+
+
+
+opt 8б.1. business-logic.esim-send-sms-after-ota-error = true
+DSIM.Flashing ->  DSIM.Flashing: 8б.1.a. Поиск записи в таблице DYNAMICSIMSTATUSES по старым/новыми IMSI/MSISDN для получения типа карты и первичного номера абонента
+DSIM.Flashing ->> SMSPusher : 8б.1.b. PushSMSToMQ (SMS на временный номер абонента без запроса уведомления о доставке)
+DSIM.Flashing ->> SMSPusher : 8б.1.c.  PushSMSToMQ (SMS на постоянный  номер абонента с запросом уведомления о доставке.)
+end
+DSIM.Flashing -> DSIM.Flashing: 8б.2. Добавление записи в таблицу DYNAMICSIMSTATUSES (STATUS =DS012, STEP = SMS_N_STAT, SYSTEM = SMSDispatcher)
+end
+
+
+break 8. Проверка успешна, статус изменился в DS001 или DS012
+
+note over DSIM.Flashing:  9. завершение сценария
+
+end
+end
+
+@enduml

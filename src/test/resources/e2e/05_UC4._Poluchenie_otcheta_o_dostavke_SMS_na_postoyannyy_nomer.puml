@@ -1,0 +1,33 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+
+title UC4. Получение отчета о доставке SMS на постоянный номер
+participant ext_DynamicSIM.ActivationPageService as DSIM.Flashing #lightyellow 
+participant IBMMQ.glassfish as MQ.queue.delivery.report #lightgreen
+participant ext_napi_proxy.NAPIService as napiproxy #lightgreen
+
+
+MQ.queue.delivery.report ->> DSIM.Flashing: 1. Процесс получает из отдельной MQ-очереди сообщение о доставке SMS
+activate DSIM.Flashing
+alt 1б. статус 1 или 6
+note over DSIM.Flashing:  завершение сценария
+else 2. статус 2
+DSIM.Flashing ->>  DSIM.Flashing: 2. добавляет запись в таблицу DYNAMICSIMSTATUSES статус DS001, STEP = SMS_STAT_2
+DSIM.Flashing ->  napiproxy : 3. POST overideAgingImsi  ( для удаления временного абонента.)
+activate napiproxy
+DSIM.Flashing<--napiproxy:OK (200)
+deactivate napiproxy
+DSIM.Flashing -> OTA: POST ChangeSubscription ( для удаления временного абонента.)
+activate OTA #lightgreen
+OTA --> DSIM.Flashing: OK (200)
+deactivate OTA
+else 2. получен отчет о доставке со статусом из списка 3, 4, 5, 7, 8
+DSIM.Flashing ->>  DSIM.Flashing: 2. добавляет запись в таблицу DYNAMICSIMSTATUSES  статус DS012, STEP = SMS_D_STAT
+note over DSIM.Flashing:  завершение сценария
+
+end
+
+deactivate DSIM.Flashing
+@enduml
