@@ -146,6 +146,33 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
+    void aBrokenEndpointCheckDoesNotTakeDownTheWholeReport() {
+        // a downstream failure (fdm-products 500, network blip, ...) on one call must not 503 the
+        // whole diagram — the rest is still worth validating
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
+                "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
+                "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(eq("crm"), anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("boom"));
+        when(restEndpointLookup.exists(eq("billing"), anyString(), anyString(), anyString()))
+                .thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(fixture("valid.puml"));
+
+        assertThat(result.valid()).isTrue();
+        // billing -> crm: GET /api/v1/order/status hit the broken lookup, crm -> billing: POST
+        // /api/v1/order did not
+        assertThat(result.recognizedCalls()).hasSize(1);
+        assertThat(result.unrecognizedCalls()).hasSize(1);
+        assertThat(result.findings())
+                .extracting(Finding::code)
+                .contains("e2e.validation.call.check_failed");
+    }
+
+    @Test
     void doesNotCountAnEndpointThatExistsOnlyOnAnotherParticipant() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(

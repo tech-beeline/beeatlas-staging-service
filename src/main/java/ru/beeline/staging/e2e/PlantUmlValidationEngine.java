@@ -5,6 +5,7 @@
 package ru.beeline.staging.e2e;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.dto.e2e.RecognizedCall;
 import ru.beeline.staging.dto.e2e.RecognizedParticipant;
@@ -27,6 +28,7 @@ import java.util.regex.Pattern;
  * checks call messages for a REST endpoint. Pure function of the input text plus the current
  * state of the two lookups — no persistence, no pipeline side effects (STG-01/STG-02).
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PlantUmlValidationEngine {
@@ -132,7 +134,22 @@ public class PlantUmlValidationEngine {
             return;
         }
 
-        if (restEndpointLookup.exists(receiver.alias(), receiver.name(), method, path)) {
+        boolean found;
+        try {
+            found = restEndpointLookup.exists(receiver.alias(), receiver.name(), method, path);
+        } catch (RuntimeException e) {
+            // a broken lookup for one call must not take the whole report down (STG-08 guards the
+            // input, not a flaky/broken downstream call) — log it and report just this call as
+            // unverifiable, the rest of the diagram is still worth validating
+            log.warn("REST endpoint check failed for {} {} on '{}': {}", method, path, message.toAlias(), e.toString());
+            findings.add(Finding.warning("e2e.validation.call.check_failed",
+                    "Could not verify REST endpoint " + method + " " + path + " on '" + message.toAlias()
+                            + "': lookup failed", message.line(), message.line(), elementRef));
+            unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
+            return;
+        }
+
+        if (found) {
             recognizedCalls.add(new RecognizedCall(message.fromAlias(), message.toAlias(), method, path, message.line()));
             return;
         }
