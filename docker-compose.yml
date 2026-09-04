@@ -52,15 +52,9 @@ services:
       - "8085:8080"
     stop_grace_period: 35s
     environment:
-      SPRING_DATASOURCE_CAMUNDA_URL: jdbc:postgresql://staging-postgres:5432/${STAGING_POSTGRES_DB:-staging}
-      SPRING_DATASOURCE_CAMUNDA_USERNAME: ${STAGING_POSTGRES_USER:-postgres}
-      SPRING_DATASOURCE_CAMUNDA_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-postgres}
       SPRING_DATASOURCE_STAGING_HIKARI_JDBC-URL: jdbc:postgresql://staging-postgres:5432/${STAGING_POSTGRES_DB:-staging}
       SPRING_DATASOURCE_STAGING_HIKARI_USERNAME: ${STAGING_POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_STAGING_HIKARI_PASSWORD: ${STAGING_POSTGRES_PASSWORD:-postgres}
-      CAMUNDA_BPM_DATABASE_SCHEMA_UPDATE: "true"
-      CAMUNDA_BPM_ADMIN_USER_ID: beeatlas
-      CAMUNDA_BPM_ADMIN_USER_PASSWORD: ${CAMUNDA_ADMIN_PASSWORD:-beeatlas}
       STAGING_S3_ENDPOINT: http://minio:9000
       STAGING_S3_ACCESS-KEY: ${STAGING_MINIO_ACCESS_KEY:-minioadmin}
       STAGING_S3_SECRET-KEY: ${STAGING_MINIO_SECRET_KEY:-minioadmin}
@@ -85,4 +79,3 @@ configs:
   staging-postgres-init:
     content: |
       CREATE SCHEMA IF NOT EXISTS staging;
-      CREATE SCHEMA IF NOT EXISTS staging_camunda;

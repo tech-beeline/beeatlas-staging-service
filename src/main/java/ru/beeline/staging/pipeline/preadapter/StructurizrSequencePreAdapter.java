@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.Configuration;
-import ru.beeline.staging.product.ProductServiceClient;
+import ru.beeline.staging.client.ProductServiceClient;
 import ru.beeline.staging.product.dto.ProductSummary;
 
 import java.util.*;

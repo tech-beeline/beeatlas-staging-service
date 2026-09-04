@@ -71,6 +71,7 @@ public class PipelineRunsController {
     public ResponseEntity<?> listChildRuns(
             @PathVariable Long parentId,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String artifactQuery,
             @RequestParam(required = false) String artifactUid,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false, defaultValue = "0") int offset) {
@@ -88,8 +89,14 @@ public class PipelineRunsController {
         if (normalizedStatus != null && !ALLOWED_STATUSES.contains(normalizedStatus)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid status: " + status));
         }
-        if (artifactUid != null && artifactUid.length() > 255) {
-            return ResponseEntity.badRequest().body(Map.of("error", "artifactUid must not exceed 255 characters"));
+        // artifactUid — устаревший параметр, игнорируется
+        // Пустая/пробельная строка artifactQuery эквивалентна отсутствию фильтра
+        String effectiveArtifactQuery = artifactQuery;
+        if (effectiveArtifactQuery != null && effectiveArtifactQuery.isBlank()) {
+            effectiveArtifactQuery = null;
+        }
+        if (effectiveArtifactQuery != null && effectiveArtifactQuery.length() > 255) {
+            return ResponseEntity.badRequest().body(Map.of("error", "artifactQuery must not exceed 255 characters"));
         }
         if (limit != null && limit < 0) {
             return ResponseEntity.badRequest().body(Map.of("error", "limit must not be negative"));
@@ -99,7 +106,7 @@ public class PipelineRunsController {
         }
 
         ChildPipelineRunPage children = childPipelineRunRepository.findChildRuns(
-                parentId, normalizedStatus, artifactUid, limit != null ? limit : DEFAULT_LIMIT, offset);
+                parentId, normalizedStatus, effectiveArtifactQuery, limit != null ? limit : DEFAULT_LIMIT, offset);
         return ResponseEntity.ok(children);
     }
 

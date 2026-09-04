@@ -8,13 +8,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record PipelineRunDetails(
-        Long id,
+        Long runId,
+        Long scanRunId,
         String artifactUid,
         String artifactName,
         String artifactType,
         String status,
         String sourceName,
         LocalDateTime startedAt,
+        LocalDateTime executionStartedAt,
         LocalDateTime completedAt,
         Long rawDataRefId,
         Long batch,

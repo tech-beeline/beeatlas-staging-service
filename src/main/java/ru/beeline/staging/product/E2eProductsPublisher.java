@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import ru.beeline.staging.client.E2eProductsClient;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 import ru.beeline.staging.service.ArtifactNoticeService;

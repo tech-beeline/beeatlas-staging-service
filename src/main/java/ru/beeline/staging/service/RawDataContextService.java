@@ -7,6 +7,7 @@ package ru.beeline.staging.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import ru.beeline.staging.domain.RawDataContextEntity;
 import ru.beeline.staging.domain.RawDataRef;
@@ -51,11 +52,30 @@ public class RawDataContextService {
         return save(rawDataRefId, position);
     }
 
+    // Find-or-create instead of a blind insert: a re-scan of unchanged content (or two concurrent
+    // reprocessing runs racing each other — see V0006's note on the same class of bug one stage
+    // later, in artifact_batches) used to insert a fresh duplicate context row every time, since
+    // nothing here ever checked for an existing one. jsonb equality ignores key order, so this
+    // still matches regardless of how the position map was built.
+    // NOTE: no unique DB constraint on (raw_data_ref_id, position) yet — the existing duplicate
+    // rows have to be cleaned up first, or creating that index will fail. Until then this closes
+    // the common (sequential re-processing) case but not a same-instant concurrent race.
     private Long save(Long rawDataRefId, Map<String, Object> position) {
-        RawDataContextEntity entity = new RawDataContextEntity();
-        entity.setRawDataRefId(rawDataRefId);
-        entity.setPosition(toJson(position));
-        return repository.save(entity).getId();
+        String positionJson = toJson(position);
+        return repository.findByRawDataRefIdAndPosition(rawDataRefId, positionJson)
+                .map(RawDataContextEntity::getId)
+                .orElseGet(() -> {
+                    RawDataContextEntity entity = new RawDataContextEntity();
+                    entity.setRawDataRefId(rawDataRefId);
+                    entity.setPosition(positionJson);
+                    try {
+                        return repository.save(entity).getId();
+                    } catch (DataIntegrityViolationException e) {
+                        return repository.findByRawDataRefIdAndPosition(rawDataRefId, positionJson)
+                                .map(RawDataContextEntity::getId)
+                                .orElseThrow(() -> e);
+                    }
+                });
     }
 
     private Map<String, Object> buildPosition(JsonByteRangeLocator.ByteRange byteRange, String jsonPointer) {

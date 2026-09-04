@@ -52,11 +52,22 @@ public class ArtifactNoticeService {
                         : rawDataContextService.pointToFreeText(rawDataRefId, contextText);
             }
 
-            ArtifactNoticeEntity entity = new ArtifactNoticeEntity();
-            entity.setNoticeTypeId(type.getId());
-            entity.setDetails(notice.details());
-            entity.setRawDataContextId(rawDataContextId);
-            ArtifactNoticeEntity persisted = artifactNoticeRepository.save(entity);
+            Long finalRawDataContextId = rawDataContextId;
+            ArtifactNoticeEntity persisted = artifactNoticeRepository
+                    .findByRawDataContextIdAndNoticeTypeIdAndDetails(rawDataContextId, type.getId(), notice.details())
+                    .orElseGet(() -> {
+                        ArtifactNoticeEntity entity = new ArtifactNoticeEntity();
+                        entity.setNoticeTypeId(type.getId());
+                        entity.setDetails(notice.details());
+                        entity.setRawDataContextId(finalRawDataContextId);
+                        try {
+                            return artifactNoticeRepository.save(entity);
+                        } catch (DataIntegrityViolationException e) {
+                            return artifactNoticeRepository
+                                    .findByRawDataContextIdAndNoticeTypeIdAndDetails(finalRawDataContextId, type.getId(), notice.details())
+                                    .orElseThrow(() -> e);
+                        }
+                    });
             meterRegistry.counter("staging_notices_total", "level", notice.level(), "notice_type", notice.code()).increment();
 
             saved.add(new ArtifactNotice(

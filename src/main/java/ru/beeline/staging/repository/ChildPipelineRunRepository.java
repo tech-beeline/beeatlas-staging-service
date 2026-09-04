@@ -15,15 +15,29 @@ import java.util.List;
 @Repository
 public class ChildPipelineRunRepository {
 
+    // Not r.parent_run_id=? — a rediscovered artifact reuses its earlier run (dedup fix in
+    // PipelineRunService#finishScanWithChildren), so that run's parent_run_id still points at
+    // whichever scan first created it, not this one. source_artifacts.last_seen_scan_run_id/
+    // last_run_id are updated on every find (new or reused), so they reflect what this scan
+    // currently sees. Same reasoning as ScanRunRepository's cte_childs.
     private static final String WHERE_CLAUSE = """
-            WHERE r.parent_run_id=?
+            WHERE r.id IN (
+                    SELECT sa2.last_run_id
+                    FROM staging.source_artifacts sa2
+                    WHERE sa2.last_seen_scan_run_id=?
+                )
                 AND (?::text IS NULL OR LOWER(r.status) = LOWER(?))
-                AND (?::text IS NULL OR r.artifact_uid ILIKE '%' || ? || '%')
+                AND (?::text IS NULL OR r.artifact_uid ILIKE '%' || ? || '%'
+                    OR sa.name ILIKE '%' || ? || '%')
             """;
 
     private static final String COUNT_CHILD_RUNS = """
             SELECT count(*)
             FROM staging.pipeline_runs r
+                JOIN staging.data_types t ON t.code=r.artifact_type
+                JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
+                LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
+                    AND sa.source_artifact_type_id=sat.id
             """ + WHERE_CLAUSE;
 
     private static final String SELECT_CHILD_RUNS = """
@@ -36,6 +50,7 @@ public class ChildPipelineRunRepository {
                 r.raw_data_ref_id,
                 s.name AS source_name,
                 r.started_at,
+                adapter_log.started_at AS processing_started_at,
                 r.completed_at,
                 r.failure_reason,
                 r.failed_stage
@@ -46,6 +61,17 @@ public class ChildPipelineRunRepository {
                 JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
                 LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid
                     AND sa.source_artifact_type_id=sat.id
+                -- started_at on pipeline_runs is when the row was created (queued, possibly by an
+                -- earlier scan that this run got reused from) — processing_started_at is when the
+                -- adapter stage actually began, which is what "how long did this artifact take"
+                -- should be measured from, not queue wait.
+                LEFT JOIN LATERAL (
+                    SELECT psl.started_at
+                    FROM staging.pipeline_stage_logs psl
+                    WHERE psl.run_id = r.id AND psl.stage_name = 'adapter'
+                    ORDER BY psl.started_at ASC
+                    LIMIT 1
+                ) adapter_log ON true
             """ + WHERE_CLAUSE + """
             ORDER BY r.started_at DESC, r.id DESC
             LIMIT ?
@@ -58,10 +84,10 @@ public class ChildPipelineRunRepository {
         this.stagingJdbcTemplate = stagingJdbcTemplate;
     }
 
-    public ChildPipelineRunPage findChildRuns(Long parentId, String status, String artifactUid,
-                                               int limit, int offset) {
+    public ChildPipelineRunPage findChildRuns(Long parentId, String status, String artifactQuery,
+                                                int limit, int offset) {
         Long totalCount = stagingJdbcTemplate.queryForObject(COUNT_CHILD_RUNS, Long.class,
-                parentId, status, status, artifactUid, artifactUid);
+                parentId, status, status, artifactQuery, artifactQuery, artifactQuery);
 
         List<ChildPipelineRun> results = stagingJdbcTemplate.query(SELECT_CHILD_RUNS, (rs, rowNum) -> new ChildPipelineRun(
                 rs.getLong("id"),
@@ -72,10 +98,11 @@ public class ChildPipelineRunRepository {
                 (Long) rs.getObject("raw_data_ref_id"),
                 rs.getString("source_name"),
                 rs.getTimestamp("started_at").toLocalDateTime(),
+                rs.getTimestamp("processing_started_at") != null ? rs.getTimestamp("processing_started_at").toLocalDateTime() : null,
                 rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
                 rs.getString("failure_reason"),
                 rs.getString("failed_stage")
-        ), parentId, status, status, artifactUid, artifactUid, limit, offset);
+        ), parentId, status, status, artifactQuery, artifactQuery, artifactQuery, limit, offset);
 
         return new ChildPipelineRunPage(totalCount != null ? totalCount : 0, results);
     }
