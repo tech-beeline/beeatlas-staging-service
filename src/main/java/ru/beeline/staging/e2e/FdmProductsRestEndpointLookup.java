@@ -11,9 +11,8 @@ import ru.beeline.staging.client.ProductServiceClient;
 import ru.beeline.staging.product.dto.OperationEntry;
 import ru.beeline.staging.product.dto.OperationSearchResponse;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -31,14 +30,14 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
 
-    private static final Pattern UUID_SEGMENT = Pattern.compile(
-            "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
     private final ProductServiceClient productServiceClient;
 
     @Override
     public boolean exists(String cmdbAlias, String cmdbName, String httpMethod, String path) {
-        List<OperationEntry> candidates = candidatesOwnedByReceiver(cmdbAlias, cmdbName, path);
+        // a query string is never part of the operation's path in CMDB — matching (search AND the
+        // precise segment check) must ignore it, or it poisons both
+        String matchPath = stripQueryString(path);
+        List<OperationEntry> candidates = candidatesOwnedByReceiver(cmdbAlias, cmdbName, matchPath);
         if (candidates.stream().anyMatch(entry -> typeMatches(entry, httpMethod))) {
             return true;
         }
@@ -48,10 +47,40 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
         return candidates.stream().anyMatch(FdmProductsRestEndpointLookup::hasUnknownType);
     }
 
+    private static String stripQueryString(String path) {
+        int idx = path.indexOf('?');
+        return idx >= 0 ? path.substring(0, idx) : path;
+    }
+
+    /**
+     * fdm-products matches the search path with a plain substring ILIKE — a concrete diagram path
+     * like "/api/v4/systems/BLN" is never a substring of a templated catalog entry
+     * "/api/v4/systems/{code}", so searching with the untrimmed path can miss it. There's no reliable
+     * way to tell from the string alone which segment stands in for a template value — a numeric id
+     * and a UUID are recognizable, but a system mnemonic like "BLN" or a process uid like "abc-123"
+     * look just like an ordinary path segment. So instead of guessing, this tries the full path first
+     * (best precision for a plain, non-templated operation), then progressively drops trailing
+     * segments and searches again, until a needle turns up an owned, path-matching candidate.
+     * {@link #pathMatches} still does the precise, template-aware check against the untrimmed path
+     * for whatever candidates a needle returns — a broader needle only means more candidates to filter,
+     * never a wrong match.
+     */
     private List<OperationEntry> candidatesOwnedByReceiver(String cmdbAlias, String cmdbName, String path) {
+        String[] segments = splitPath(path);
+        for (int keep = segments.length; keep >= 1; keep--) {
+            String needle = String.join("/", Arrays.copyOfRange(segments, 0, keep));
+            List<OperationEntry> candidates = searchAndFilter(needle, path, cmdbAlias, cmdbName);
+            if (!candidates.isEmpty()) {
+                return candidates;
+            }
+        }
+        return List.of();
+    }
+
+    private List<OperationEntry> searchAndFilter(String needle, String path, String cmdbAlias, String cmdbName) {
         // no server-side type filter: an exact-type candidate and a type=UNKNOWN one are both needed
-        // to decide between the two tiers above
-        OperationSearchResponse response = productServiceClient.searchOperation(searchNeedle(path), null);
+        // to decide between the two tiers in exists()
+        OperationSearchResponse response = productServiceClient.searchOperation(needle, null);
         List<OperationEntry> archOperations = response.getArchOperations();
         List<OperationEntry> discoveredOperations = response.getDiscoveredOperations();
         return Stream.concat(
@@ -67,38 +96,6 @@ public class FdmProductsRestEndpointLookup implements RestEndpointLookup {
 
     private static boolean hasUnknownType(OperationEntry entry) {
         return "UNKNOWN".equalsIgnoreCase(entry.getType());
-    }
-
-    /**
-     * fdm-products matches the search path with a plain substring ILIKE — a concrete diagram path
-     * like "/api/v1/graph/123" is never a substring of a templated catalog entry
-     * "/api/v1/graph/{docId}", so searching with the full path can never surface it. Trimming to the
-     * stable prefix before the first id-looking segment widens the net; {@link #pathMatches} still
-     * does the precise check against the untrimmed path.
-     * <p>
-     * The leading slash is dropped too — some catalog entries are stored without one at all (e.g.
-     * "getServiceList" rather than "/getServiceList"), and a needle with no slash is still a valid
-     * (just broader) substring match against entries that do have one, so nothing is lost by dropping
-     * it — {@link #pathMatches} still normalizes slashes on both sides for the precise check.
-     */
-    private static String searchNeedle(String path) {
-        String[] segments = splitPath(path);
-        List<String> stable = new ArrayList<>();
-        for (String segment : segments) {
-            if (looksLikeVariableValue(segment)) {
-                break;
-            }
-            stable.add(segment);
-        }
-        return stable.isEmpty() ? path : String.join("/", stable);
-    }
-
-    private static boolean looksLikeVariableValue(String segment) {
-        if (segment.isEmpty()) {
-            return false;
-        }
-        boolean allDigits = segment.chars().allMatch(Character::isDigit);
-        return allDigits || UUID_SEGMENT.matcher(segment).matches();
     }
 
     /**

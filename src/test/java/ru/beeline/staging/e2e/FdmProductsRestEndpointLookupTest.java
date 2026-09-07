@@ -54,10 +54,58 @@ class FdmProductsRestEndpointLookupTest {
 
     @Test
     void searchesUsingAStablePrefixSoATemplatedCatalogEntryCanBeFound() {
+        // first try (the full path as needle) finds nothing — it has to fall back to a shorter one
+        when(productServiceClient.searchOperation(eq("api/v1/graph/123"), isNull())).thenReturn(emptyResponse());
         when(productServiceClient.searchOperation(eq("api/v1/graph"), isNull()))
                 .thenReturn(response(operation("/api/v1/graph/{docId}", "POST", "fdmshowcaseapp", "FDM Showcase", null, null)));
 
         assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "POST", "/api/v1/graph/123")).isTrue();
+    }
+
+    /**
+     * Real func-stand finding: a template value that isn't a number or a UUID — a system mnemonic
+     * ("BLN") or a process uid ("abc-123") — used to poison the search needle (the old heuristic only
+     * recognized digit/UUID segments as "variable", so it kept the literal value in the needle, which
+     * is never a substring of the stored "{code}"/"{uid}" template). The progressive-shrink search
+     * doesn't care what the value looks like.
+     */
+    @Test
+    void matchesATemplateSegmentWhoseValueIsNeitherNumericNorAUuid() {
+        when(productServiceClient.searchOperation(eq("api/v4/systems/BLN"), isNull())).thenReturn(emptyResponse());
+        when(productServiceClient.searchOperation(eq("api/v4/systems"), isNull()))
+                .thenReturn(response(operation("/api/v4/systems/{code}", "GET", "fdmshowcaseapp", "FDM Showcase", null, null)));
+
+        assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "GET", "/api/v4/systems/BLN")).isTrue();
+    }
+
+    /** Same real func-stand finding, with the template in the middle of the path rather than at the end. */
+    @Test
+    void matchesATemplateSegmentInTheMiddleOfThePathWhoseValueIsNotNumericOrAUuid() {
+        when(productServiceClient.searchOperation(eq("api/v4/systems/BLN/purpose"), isNull())).thenReturn(emptyResponse());
+        when(productServiceClient.searchOperation(eq("api/v4/systems/BLN"), isNull())).thenReturn(emptyResponse());
+        when(productServiceClient.searchOperation(eq("api/v4/systems"), isNull()))
+                .thenReturn(response(operation("/api/v4/systems/{code}/purpose", "GET", "fdmshowcaseapp", "FDM Showcase", null, null)));
+
+        assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "GET", "/api/v4/systems/BLN/purpose")).isTrue();
+    }
+
+    @Test
+    void ignoresAQueryStringWhenMatchingAPlainOperation() {
+        when(productServiceClient.searchOperation(eq("api/v4/systems?limit=10"), isNull())).thenReturn(emptyResponse());
+        when(productServiceClient.searchOperation(eq("api/v4/systems"), isNull()))
+                .thenReturn(response(operation("/api/v4/systems", "GET", "fdmshowcaseapp", "FDM Showcase", null, null)));
+
+        assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "GET", "/api/v4/systems?limit=10")).isTrue();
+    }
+
+    @Test
+    void ignoresAQueryStringGluedOntoATemplatedSegment() {
+        when(productServiceClient.searchOperation(eq("api/v4/systems/123?full=true"), isNull())).thenReturn(emptyResponse());
+        when(productServiceClient.searchOperation(eq("api/v4/systems/123"), isNull())).thenReturn(emptyResponse());
+        when(productServiceClient.searchOperation(eq("api/v4/systems"), isNull()))
+                .thenReturn(response(operation("/api/v4/systems/{code}", "GET", "fdmshowcaseapp", "FDM Showcase", null, null)));
+
+        assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "GET", "/api/v4/systems/123?full=true")).isTrue();
     }
 
     @Test
@@ -114,6 +162,13 @@ class FdmProductsRestEndpointLookupTest {
     private static OperationSearchResponse response(OperationEntry entry) {
         OperationSearchResponse response = new OperationSearchResponse();
         response.setArchOperations(List.of(entry));
+        response.setDiscoveredOperations(List.of());
+        return response;
+    }
+
+    private static OperationSearchResponse emptyResponse() {
+        OperationSearchResponse response = new OperationSearchResponse();
+        response.setArchOperations(List.of());
         response.setDiscoveredOperations(List.of());
         return response;
     }
