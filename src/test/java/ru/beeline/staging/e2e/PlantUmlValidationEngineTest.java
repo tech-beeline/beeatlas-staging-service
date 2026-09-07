@@ -1,6 +1,9 @@
 package ru.beeline.staging.e2e;
 
 import org.junit.jupiter.api.Test;
+import ru.beeline.staging.dto.e2e.RecognizedParticipant;
+import ru.beeline.staging.dto.e2e.UnrecognizedCall;
+import ru.beeline.staging.dto.e2e.UnrecognizedParticipant;
 import ru.beeline.staging.e2e.CmdbAliasLookup.ResolvedParticipant;
 import ru.beeline.staging.e2e.CmdbAliasLookup.ResolvedParticipant.Kind;
 
@@ -10,102 +13,130 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * The CMDB/endpoint data used against "universal.puml" here is real dev-CMDB content, verified
+ * end-to-end against the deployed dev server (see universal.puml's own header comment) — not
+ * invented mnemonics like the earlier QA-supplied files turned out to be.
+ */
 class PlantUmlValidationEngineTest {
 
     private final PlantUmlDiagramParser parser = new PlantUmlDiagramParser();
 
     @Test
-    void reportsValidWhenAllParticipantsAndCallsAreRecognized() {
+    void reportsValidWhenAllRealParticipantsAreRecognizedAndEveryLookupIsPermissive() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(eq(Set.of("CRM", "crm", "BILLING", "billing"))))
-                .thenReturn(Map.of(
-                        "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
-                        "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("valid.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
         assertThat(result.valid()).isTrue();
-        assertThat(result.recognizedParticipants()).hasSize(2);
-        assertThat(result.unrecognizedParticipants()).isEmpty();
-        assertThat(result.recognizedCalls()).hasSize(2);
-        assertThat(result.unrecognizedCalls()).isEmpty();
+        assertThat(result.recognizedParticipants()).hasSize(4);
+        // "Client" is an external actor, deliberately not a CMDB entity
+        assertThat(result.unrecognizedParticipants())
+                .extracting(UnrecognizedParticipant::alias)
+                .containsExactly("Client");
+        // every message shaped like "METHOD token" gets recognized once the lookup is fully permissive
+        // — including the deliberately-fake "POST reconciliation-note" at line 32, which is why this is
+        // 7, not 6: see recognizesOnlyTheCallsThatReallyExistOnTheRealDevCmdbData for the precise picture
+        assertThat(result.recognizedCalls()).hasSize(7);
+        // the four narrative "200 OK"/result messages never match the REST-call regex at all
+        assertThat(result.unrecognizedCalls()).hasSize(4);
     }
 
     @Test
     void resolvesParticipantByCmdbMnemonicInTheNamePositionNotOnlyByTheShortAlias() {
+        // BNPL is declared as participant "b2c-digital-payments-bnpl" as BNPL — CMDB only recognizes
+        // the full name; the short "as" alias "BNPL" itself is not a CMDB entity
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM)));
+                "b2c-digital-payments-bnpl", new ResolvedParticipant(
+                        "b2c-digital-payments-bnpl", "b2c-digital-payments-bnpl", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("valid.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
         assertThat(result.recognizedParticipants())
-                .extracting(rp -> rp.alias())
-                .contains("crm");
+                .extracting(RecognizedParticipant::alias)
+                .contains("BNPL");
     }
 
     @Test
     void resolvesAMnemonicByThePrefixBeforeTheFirstDotWhenTheFullNameIsntRegistered() {
-        // real dev CMDB, checked by hand: no product/container is registered under the full name
-        // "ext_DynamicSIM.ActivationPageService" — only under the prefix "ext_DynamicSIM" (id 4597,
-        // a container). ".ActivationPageService" is the diagram author's own qualifier, not part of
-        // the CMDB code.
+        // "<CMDB code>.<qualifier>" is a real CMDB naming convention (confirmed across every QA
+        // эталон we were handed), not something tied to any one diagram — exercised with a small
+        // inline diagram since this is pure resolution logic, not CMDB content
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "ext_DynamicSIM", new ResolvedParticipant("ext_DynamicSIM", "DynamicSIM", Kind.CONTAINER)));
+                "ext_Example", new ResolvedParticipant("ext_Example", "Example System", Kind.CONTAINER)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("03_DSIM.Flashing_Min_Changes.puml"));
+        EngineResult result = engine.validate(DOTTED_MNEMONIC_PUML);
 
         assertThat(result.recognizedParticipants())
                 .anySatisfy(rp -> {
-                    assertThat(rp.alias()).isEqualTo("DSIMFlashing");
-                    assertThat(rp.name()).isEqualTo("DynamicSIM");
+                    assertThat(rp.alias()).isEqualTo("Short");
+                    assertThat(rp.name()).isEqualTo("Example System");
                     assertThat(rp.kind()).isEqualTo("container");
                 });
     }
 
     @Test
-    void recognizesTheCallOnTheRealDsimFlashingReferenceDiagramOnceCmdbHasBothMnemonicPrefixes() {
-        // DSIMFlashing -> NAPIProxy: GET /getServiceList (line 22 of the QA reference diagram) —
-        // used to be unrecognized because CMDB was only ever queried by the short "as" alias, never
-        // by the mnemonic in the participant name position, nor by its prefix before the first dot
+    void recognizesOnlyTheCallsThatReallyExistOnTheRealDevCmdbData() {
+        // exact end-to-end picture verified live against the dev server: all 6 real REST calls
+        // recognized, including the path-template match (/api/v1/payment/{paymentId}/paymentItem);
+        // the fabricated "POST reconciliation-note" correctly stays unrecognized here since its
+        // owner (arfix) genuinely doesn't have that operation
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "ext_DynamicSIM", new ResolvedParticipant("ext_DynamicSIM", "DynamicSIM", Kind.CONTAINER),
-                "ext_NAPIProxy", new ResolvedParticipant("ext_NAPIProxy", "NAPIProxy", Kind.CONTAINER)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(eq("ext_NAPIProxy"), eq("NAPIProxy"), eq("GET"), eq("/getServiceList")))
+        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), eq("POST"), eq("/command/createApplication")))
                 .thenReturn(true);
+        when(restEndpointLookup.exists(eq("antispam"), anyString(), eq("GET"), eq("/api/v1/calls/")))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("antispam"), anyString(), eq("POST"), eq("/api/v1/calls/feedback")))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), eq("POST"), eq("/chat/completions")))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), eq("POST"), eq("/command/completePayment")))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("arfix"), anyString(), eq("GET"), eq("/api/v1/payment/12345/paymentItem")))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("arfix"), anyString(), eq("POST"), eq("reconciliation-note")))
+                .thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("03_DSIM.Flashing_Min_Changes.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
+        assertThat(result.valid()).isTrue();
+        assertThat(result.recognizedCalls()).hasSize(6);
         assertThat(result.recognizedCalls())
-                .anySatisfy(call -> {
-                    assertThat(call.fromAlias()).isEqualTo("DSIMFlashing");
-                    assertThat(call.toAlias()).isEqualTo("NAPIProxy");
-                    assertThat(call.httpMethod()).isEqualTo("GET");
-                    assertThat(call.path()).isEqualTo("/getServiceList");
-                    assertThat(call.line()).isEqualTo(22);
-                });
+                .extracting(call -> call.httpMethod() + " " + call.path())
+                .containsExactlyInAnyOrder(
+                        "POST /command/createApplication",
+                        "GET /api/v1/calls/",
+                        "POST /api/v1/calls/feedback",
+                        "POST /chat/completions",
+                        "POST /command/completePayment",
+                        "GET /api/v1/payment/12345/paymentItem");
+        assertThat(result.unrecognizedCalls())
+                .extracting(UnrecognizedCall::label)
+                .contains("POST reconciliation-note");
     }
 
     @Test
@@ -116,10 +147,10 @@ class PlantUmlValidationEngineTest {
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("valid.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
         assertThat(result.valid()).isTrue();
-        assertThat(result.unrecognizedParticipants()).hasSize(2);
+        assertThat(result.unrecognizedParticipants()).hasSize(5);
         assertThat(result.findings())
                 .extracting(Finding::code)
                 .contains("e2e.validation.participant.unrecognized");
@@ -128,18 +159,16 @@ class PlantUmlValidationEngineTest {
     @Test
     void flagsCallsWithoutMatchingRestEndpointAsUnrecognized() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
-                "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("valid.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
         assertThat(result.valid()).isTrue();
         assertThat(result.recognizedCalls()).isEmpty();
-        assertThat(result.unrecognizedCalls()).hasSize(2);
+        assertThat(result.unrecognizedCalls()).hasSize(11);
         assertThat(result.findings())
                 .extracting(Finding::code)
                 .contains("e2e.validation.call.no_rest_endpoint");
@@ -150,65 +179,62 @@ class PlantUmlValidationEngineTest {
         // a downstream failure (fdm-products 500, network blip, ...) on one call must not 503 the
         // whole diagram — the rest is still worth validating
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
-                "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(eq("crm"), anyString(), anyString(), anyString()))
+        when(restEndpointLookup.exists(eq("arfix"), anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("boom"));
-        when(restEndpointLookup.exists(eq("billing"), anyString(), anyString(), anyString()))
+        when(restEndpointLookup.exists(eq("antispam"), anyString(), anyString(), anyString()))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), anyString(), anyString()))
+                .thenReturn(true);
+        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), anyString(), anyString()))
                 .thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("valid.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
         assertThat(result.valid()).isTrue();
-        // billing -> crm: GET /api/v1/order/status hit the broken lookup, crm -> billing: POST
-        // /api/v1/order did not
-        assertThat(result.recognizedCalls()).hasSize(1);
-        assertThat(result.unrecognizedCalls()).hasSize(1);
+        // the two calls to ARFix (lines 29 and 32) hit the broken lookup, the rest didn't
         assertThat(result.findings())
-                .extracting(Finding::code)
-                .contains("e2e.validation.call.check_failed");
+                .filteredOn(f -> f.code().equals("e2e.validation.call.check_failed"))
+                .hasSize(2);
     }
 
     @Test
     void doesNotCountAnEndpointThatExistsOnlyOnAnotherParticipant() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
-                "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        // the endpoint exists somewhere, but never on the receiver actually addressed in the diagram
-        when(restEndpointLookup.exists(eq("billing"), anyString(), anyString(), anyString())).thenReturn(false);
-        when(restEndpointLookup.exists(eq("crm"), anyString(), anyString(), anyString())).thenReturn(true);
+        // GET /api/v1/calls/ is stubbed as absent on antispam but present on ai-tool — the check must
+        // still come back negative, since the diagram actually addresses antispam, not ai-tool
+        when(restEndpointLookup.exists(eq("antispam"), anyString(), eq("GET"), eq("/api/v1/calls/")))
+                .thenReturn(false);
+        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), eq("GET"), eq("/api/v1/calls/")))
+                .thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("valid.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
-        // POST /api/v1/order goes crm -> billing, so it must be checked against "billing", not "crm"
         assertThat(result.unrecognizedCalls())
-                .extracting(uc -> uc.toAlias())
-                .contains("billing");
+                .extracting(UnrecognizedCall::toAlias)
+                .contains("Antispam");
     }
 
     @Test
     void recognizesAMethodFollowedByAPathWithoutALeadingSlashAsAnAttemptedRestCall() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "CRM", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM),
-                "BILLING", new ResolvedParticipant("billing", "Billing System", Kind.SYSTEM)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(fixture("no_slash_call.puml"));
+        EngineResult result = engine.validate(fixture("universal.puml"));
 
-        // "POST tratata" must be parsed as method=POST path=tratata, not fall into the generic
-        // "no endpoint declared" bucket
+        // "POST reconciliation-note" (line 32) must be parsed as method=POST path=reconciliation-note,
+        // not fall into the generic "no endpoint declared" bucket
         assertThat(result.findings())
                 .extracting(Finding::message)
-                .anyMatch(message -> message.contains("Эндпоинт POST tratata не найден"));
+                .anyMatch(message -> message.contains("Эндпоинт POST reconciliation-note не найден"));
     }
 
     @Test
@@ -229,7 +255,7 @@ class PlantUmlValidationEngineTest {
         assertThat(result.findings())
                 .extracting(Finding::code)
                 .contains("e2e.validation.diagram.too_many_participants");
-        org.mockito.Mockito.verifyNoInteractions(cmdbAliasLookup);
+        verifyNoInteractions(cmdbAliasLookup);
     }
 
     @Test
@@ -255,19 +281,36 @@ class PlantUmlValidationEngineTest {
     @Test
     void validationIsDeterministicForTheSameTextAndLookupState() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "crm", new ResolvedParticipant("crm", "CRM System", Kind.SYSTEM)));
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        String text = fixture("valid.puml");
+        String text = fixture("universal.puml");
 
         EngineResult first = engine.validate(text);
         EngineResult second = engine.validate(text);
 
         assertThat(first).isEqualTo(second);
     }
+
+    /** The four real systems in universal.puml, exactly as resolved by the live dev CMDB. */
+    private static Map<String, ResolvedParticipant> realCmdbData() {
+        return Map.of(
+                "b2c-digital-payments-bnpl", new ResolvedParticipant(
+                        "b2c-digital-payments-bnpl", "b2c-digital-payments-bnpl", Kind.SYSTEM),
+                "antispam", new ResolvedParticipant("antispam", "Антиспам", Kind.SYSTEM),
+                "ai-tool", new ResolvedParticipant("ai-tool", "AI Tool", Kind.SYSTEM),
+                "arfix", new ResolvedParticipant("arfix", "AR Collection", Kind.SYSTEM));
+    }
+
+    private static final String DOTTED_MNEMONIC_PUML = """
+            @startuml
+            participant ext_Example.SomeDetail as Short
+            participant Other as other
+            Short -> other: GET /ping
+            @enduml
+            """;
 
     private static String fixture(String name) {
         try (InputStream in = PlantUmlValidationEngineTest.class.getResourceAsStream("/e2e/" + name)) {
