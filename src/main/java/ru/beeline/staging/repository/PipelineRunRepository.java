@@ -77,6 +77,15 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     @Query("SELECT r FROM PipelineRun r WHERE r.status = 'failed' AND r.retryCount < :maxRetries")
     List<PipelineRun> findFailedRetryable(@Param("maxRetries") int maxRetries, Pageable pageable);
 
+    // The complement of findFailedRetryable: artifact runs nothing will touch again on its own —
+    // the auto-retry sweep is out of attempts and a re-scan no longer adopts them. Surfaced through
+    // /admin/pipeline-runs/blocked so they don't sit unnoticed (defect QA-1).
+    @Query("SELECT r FROM PipelineRun r WHERE r.artifactUid IS NOT NULL AND r.status = 'failed' " +
+           "AND r.retryCount >= :maxRetries AND (:artifactType IS NULL OR r.artifactType = :artifactType) " +
+           "ORDER BY r.startedAt ASC")
+    List<PipelineRun> findBlocked(@Param("artifactType") String artifactType,
+                                  @Param("maxRetries") int maxRetries, Pageable pageable);
+
     // @Transactional here (not just @Modifying) because claim() is called directly from
     // PipelineExecutionService — a plain, non-transactional service running on a pool thread —
     // unlike the other @Modifying methods below, which only ever run inside a PipelineRunService
@@ -105,6 +114,22 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     @Modifying
     @Query("UPDATE PipelineRun r SET r.status = 'failed', r.completedAt = CURRENT_TIMESTAMP, r.failureReason = :reason, r.failedStage = :stage WHERE r.id = :id")
     void markFailed(@Param("id") Long id, @Param("reason") String reason, @Param("stage") String stage);
+
+    // Drops one id from a scan's child_run_ids snapshot, used when a re-queued run's ownership moves
+    // to a newer scan (PipelineRunService#reassignParent). Rebuilt via jsonb_agg rather than the
+    // `jsonb - text` operator: that operator only removes *string* elements, and this array holds
+    // numbers. COALESCE keeps an emptied snapshot as [] instead of NULL, which would read as
+    // "pre-V0014 scan, no snapshot taken" in ScanRunRepository.
+    @Transactional
+    @Modifying
+    @Query(value = """
+            UPDATE staging.pipeline_runs
+               SET child_run_ids = COALESCE((SELECT jsonb_agg(e)
+                                             FROM jsonb_array_elements(child_run_ids) e
+                                             WHERE e::text::bigint <> :childId), '[]'::jsonb)
+             WHERE id = :scanRunId AND child_run_ids IS NOT NULL
+            """, nativeQuery = true)
+    void removeChildFromSnapshot(@Param("scanRunId") Long scanRunId, @Param("childId") Long childId);
 
     // Also clears the lease, otherwise a retry inside the previous attempt's lease window would fail claim().
     @Transactional

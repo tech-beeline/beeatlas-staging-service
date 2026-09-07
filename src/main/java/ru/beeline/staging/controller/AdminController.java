@@ -6,6 +6,7 @@ package ru.beeline.staging.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,7 @@ import ru.beeline.staging.service.PipelineExecutionService;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.worker.PipelineTickScheduler;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -36,6 +38,9 @@ public class AdminController {
     private final PipelineRunService       pipelineRunService;
     private final PipelineRunRepository    pipelineRunRepository;
     private final ArtifactNoticeService    noticeService;
+
+    @Value("${staging.recovery.max-auto-retries:3}")
+    private int maxAutoRetries;
 
     @PostMapping("/scan/e2e")
     public ResponseEntity<Map<String, Object>> scanE2E() {
@@ -79,6 +84,57 @@ public class AdminController {
         pipelineExecutionService.submitArtifactChain(runId, run.getArtifactType(), configCode);
         log.info("Retried pipelineRunId={}", runId);
         return ResponseEntity.accepted().body(Map.of("retried", true));
+    }
+
+    // Runs that failed and used up staging.recovery.max-auto-retries are terminal until a human acts:
+    // the scheduler's auto-retry sweep skips them, and a scan that re-finds the artifact no longer
+    // adopts them (see PipelineRunService#finishScanWithChildren). Nothing else surfaces them, so
+    // without this listing an artifact could silently stop being processed for weeks (defect QA-1).
+    @GetMapping("/pipeline-runs/blocked")
+    public ResponseEntity<Map<String, Object>> listBlockedRuns(
+            @RequestParam(required = false) String artifactType,
+            @RequestParam(defaultValue = "100") int limit) {
+
+        List<PipelineRun> blocked = pipelineRunRepository.findBlocked(
+                artifactType, maxAutoRetries, PageRequest.of(0, limit));
+        List<Map<String, Object>> items = blocked.stream()
+                .map(run -> {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("runId", run.getId());
+                    item.put("artifactUid", run.getArtifactUid());
+                    item.put("artifactType", run.getArtifactType());
+                    item.put("failedStage", run.getFailedStage());
+                    item.put("failureReason", run.getFailureReason());
+                    item.put("retryCount", run.getRetryCount());
+                    item.put("startedAt", run.getStartedAt());
+                    return item;
+                })
+                .toList();
+        return ResponseEntity.ok(Map.of("count", items.size(), "items", items));
+    }
+
+    /** Bulk counterpart of {@link #retryPipelineRun} — clears the blocked backlog after its cause is fixed. */
+    @PostMapping("/pipeline-runs/retry-blocked")
+    public ResponseEntity<Map<String, Object>> retryBlockedRuns(
+            @RequestParam(required = false) String artifactType,
+            @RequestParam(defaultValue = "100") int limit) {
+
+        List<PipelineRun> blocked = pipelineRunRepository.findBlocked(
+                artifactType, maxAutoRetries, PageRequest.of(0, limit));
+        int retried = 0;
+        for (PipelineRun run : blocked) {
+            String configCode = configurationRepository.findById(run.getConfigurationId())
+                    .map(Configuration::getCode).orElse(null);
+            try {
+                pipelineRunService.retryFailedRun(run.getId());
+                pipelineExecutionService.submitArtifactChain(run.getId(), run.getArtifactType(), configCode);
+                retried++;
+            } catch (Exception e) {
+                log.warn("Could not requeue blocked pipelineRunId={}", run.getId(), e);
+            }
+        }
+        log.info("Requeued {} of {} blocked run(s), artifactType={}", retried, blocked.size(), artifactType);
+        return ResponseEntity.accepted().body(Map.of("retriedCount", retried, "selectedCount", blocked.size()));
     }
 
     @GetMapping("/notice-types")

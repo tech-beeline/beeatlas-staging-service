@@ -14,8 +14,14 @@ import java.util.List;
  * Reads back the current ("actual") saved state of one e2e_scenario from the staging canonical model,
  * as it is published to fdm-products. Ported from
  * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file,
- * except for {@code interfaces[].parent_product_cmdb}: added for the fdm-products POST /api/v2/e2e
- * publish path, not present in the documented reference query.
+ * with two deliberate divergences:
+ * <ul>
+ *   <li>{@code interfaces[].parent_product_cmdb} — added for the fdm-products POST /api/v2/e2e
+ *       publish path, not present in the documented reference query;</li>
+ *   <li>{@code DISTINCT ON (ext_uid)} in every entity CTE — "current version only". The reference
+ *       query returns every version ever attached to the artifact's raw_data_ref, which is fine for
+ *       ad-hoc lineage inspection but wrong for a publish payload (see the comment in the query).</li>
+ * </ul>
  */
 @Repository
 public class ActualE2eScenarioRepository {
@@ -33,16 +39,25 @@ public class ActualE2eScenarioRepository {
                     *
                 FROM cte_artifacts a
                     JOIN staging.raw_data_contexts c ON c.raw_data_ref_id=a.ref_id
-            ), cte_e2e AS (
-                SELECT
-                    DISTINCT v.id as e2e_version_id,v.ext_uid, v.name,
+            )
+            -- DISTINCT ON (ext_uid) ... ORDER BY ext_uid, id DESC во всех cte ниже — публикуется
+            -- только ТЕКУЩАЯ версия каждой сущности. raw_data_ref переиспользуется между прогонами
+            -- (upsert по content_hash в SparxE2EAdapter), поэтому на его контекстах висят версии
+            -- ВСЕХ прогонов этого артефакта: у живых сценариев это тысячи строк на один ext_uid.
+            -- Без фильтра payload публикации распухал пропорционально числу прогонов, fdm-products
+            -- получал один и тот же uid операции сотни раз, а вместе с ним — и давно исправленные
+            -- значения старых версий (в т.ч. не влезающие в его колонки: 500 DataException,
+            -- дефекты QA-2/QA-3).
+            , cte_e2e AS (
+                SELECT DISTINCT ON (v.ext_uid)
+                    v.id as e2e_version_id, v.ext_uid, v.name,
                         v.json_data ->> 'description' AS description, b.ext_uid as bi_step_code
                 FROM cte_contexts c
                     JOIN staging.e2e_scenario_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.bi_step_versions b ON b.id=v.bi_step_version_id
-                
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_operations AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*, i.ext_uid AS interface_code,
                     v.json_data ->> 'type' AS type,
                     (v.json_data ->> 'rps')::numeric AS rps,
@@ -51,22 +66,28 @@ public class ActualE2eScenarioRepository {
                 FROM cte_contexts c
                     JOIN staging.operation_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.interface_versions i ON i.id=v.interface_version_id
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_api AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*, cv.ext_uid as container_code, p.ext_uid as product_code,
                     v.json_data ->> 'protocol' AS protocol
                 FROM cte_contexts c
                     JOIN staging.interface_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.container_versions cv ON cv.id=v.container_version_id
                     LEFT JOIN staging.product_versions p ON p.id=cv.product_version_id
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_containers AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*, p.ext_uid as product_code
                 FROM cte_contexts c
                     JOIN staging.container_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.product_versions p ON p.id=v.product_version_id
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_op_rel AS (
-                SELECT DISTINCT
+                -- Ключ дедупликации — бизнес-ключ связи (кто → кого → каким по счёту вызовом), а не
+                -- id версий: на каждый прогон создаётся новая пара operation_version_id, физически
+                -- разная, семантически та же самая связь.
+                SELECT DISTINCT ON (o.ext_uid, r.ext_uid, (v.json_data ->> 'call_order')::int)
                     v.operation_version_id,
                     v.related_operation_version_id,
                     (v.json_data ->> 'call_order')::int AS call_order,
@@ -76,11 +97,13 @@ public class ActualE2eScenarioRepository {
                     JOIN staging.operation_relation_versions v ON v.raw_data_context_id=c.id
                         LEFT JOIN staging.operation_versions o ON o.id=v.operation_version_id
                         LEFT JOIN staging.operation_versions r ON r.id=v.related_operation_version_id
+                ORDER BY o.ext_uid, r.ext_uid, (v.json_data ->> 'call_order')::int, v.id DESC
             ), cte_products AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*
                 FROM cte_contexts c
                     JOIN staging.product_versions v ON v.raw_data_context_id=c.id
+                ORDER BY v.ext_uid, v.id DESC
             )
             SELECT 
                 jsonb_build_object(

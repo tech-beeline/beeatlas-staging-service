@@ -23,6 +23,8 @@ import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.repository.canonical.OperationRelationVersionRepository;
+import ru.beeline.staging.repository.canonical.ProductRepository;
+import ru.beeline.staging.repository.canonical.ProductVersionRepository;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.service.RawDataContextService;
 
@@ -42,6 +44,8 @@ import java.util.Map;
 public class E2eCanonicalSnapshotSaver {
 
     private final OperationRelationVersionRepository operationRelationVersionRepository;
+    private final ProductRepository                  productRepository;
+    private final ProductVersionRepository           productVersionRepository;
     private final BiStepMatchService                 biStepMatchService;
     private final E2eScenarioMatchService            e2eScenarioMatchService;
     private final ProductMatchService                productMatchService;
@@ -79,9 +83,7 @@ public class E2eCanonicalSnapshotSaver {
 
         Map<String, ContainerVersion> containerVersionsByUid = new HashMap<>();
         for (E2ESequenceSnapshot.ContainerDraft draft : snapshot.getContainers()) {
-            ProductVersion productVersion = draft.getProductUid() != null
-                    ? productVersionsByUid.get(draft.getProductUid())
-                    : null;
+            ProductVersion productVersion = resolveProductVersion(draft.getProductUid(), productVersionsByUid);
             ContainerVersion version = containerMatchService.matchOrCreate(
                     draft.getUid(), draft.getExtUid(), draft.getName(), null, null, null,
                     productVersion != null ? productVersion.getId() : null,
@@ -177,6 +179,27 @@ public class E2eCanonicalSnapshotSaver {
         stats.setE2eScenarioId(scenarioVersion.getE2eScenarioId());
         stats.setOperationRelationsSaved(operationRelationsSaved);
         return stats;
+    }
+
+    // A container's owning system is often absent from this artifact's own export — systems[] only
+    // lists systems that appear as diagram objects (see ScenarioDecomposer#ensureSelfContained), so
+    // the snapshot can name a productUid it doesn't describe. Rather than leaving
+    // container_versions.product_version_id NULL and the hierarchy broken (defect QA-5), fall back
+    // to the product identity another artifact already registered under that uid.
+    private ProductVersion resolveProductVersion(String productUid,
+                                                  Map<String, ProductVersion> productVersionsInThisSnapshot) {
+        if (productUid == null) return null;
+        ProductVersion fromSnapshot = productVersionsInThisSnapshot.get(productUid);
+        if (fromSnapshot != null) return fromSnapshot;
+
+        ProductVersion existing = productRepository.findByUid(productUid)
+                .flatMap(product -> productVersionRepository.findFirstByProductIdOrderByIdDesc(product.getId()))
+                .orElse(null);
+        if (existing == null) {
+            log.warn("Container references productUid={} that is neither in this snapshot nor in the canonical "
+                    + "catalog — container_versions.product_version_id stays NULL", productUid);
+        }
+        return existing;
     }
 
     private String resolveSourceCode(Long runId) {

@@ -14,6 +14,9 @@ public interface ArtifactNoticeRepository extends JpaRepository<ArtifactNoticeEn
 
     List<ArtifactNoticeEntity> findByNoticeTypeId(Long noticeTypeId);
 
-    Optional<ArtifactNoticeEntity> findByRawDataContextIdAndNoticeTypeIdAndDetails(
+    // findFirst... for the same reason as RawDataContextRepository's lookup: duplicates from before
+    // find-or-create existed here are still in the table, and a unique-result query fails the stage
+    // outright instead of reusing one of them (defect QA-2).
+    Optional<ArtifactNoticeEntity> findFirstByRawDataContextIdAndNoticeTypeIdAndDetailsOrderByIdAsc(
             Long rawDataContextId, Long noticeTypeId, String details);
 }

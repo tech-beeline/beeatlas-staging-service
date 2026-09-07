@@ -245,7 +245,105 @@ public class ScenarioDecomposer {
             }
         }
 
+        ensureSelfContained(snapshot, root, containersById, cleanedContainerCodeById, notices);
+
         return new Result(snapshot, notices, stepId);
+    }
+
+    /**
+     * Closes the snapshot over its own references: every {@code interfaces[].containerUid} must be
+     * described in {@code containers[]}, and every {@code containers[].productUid} in
+     * {@code products[]}.
+     *
+     * <p>The two blocks are built from different parts of the export and by different rules, so they
+     * can disagree: containers[]/systems[] are emitted by their own top-level loops (which drop
+     * entries on a missing/duplicate code), while an interface's owning container is resolved
+     * separately, per operation, while walking the call tree. A container dropped by the first loop
+     * but still referenced by the second left a dangling containerUid, and — since systems[] only
+     * lists systems that appear as diagram objects, while a container's owning system need not — a
+     * container's productUid regularly points at a product the snapshot never describes. Both leave
+     * the saver unable to resolve the hierarchy (container_versions.product_version_id stays NULL),
+     * which is defect QA-5.
+     *
+     * <p>Backfill only ever copies what the raw export already says; nothing is invented. A
+     * reference that can't be backfilled is recorded as a notice, and a dangling containerUid is
+     * cleared rather than published as a broken link.
+     */
+    private void ensureSelfContained(E2ESequenceSnapshot snapshot, JsonNode root,
+            Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
+            List<ArtifactNotice> notices) {
+
+        Map<String, Integer> containerIdByCleanedCode = new LinkedHashMap<>();
+        cleanedContainerCodeById.forEach((id, code) -> containerIdByCleanedCode.putIfAbsent(code, id));
+        Map<Integer, Integer> containerArrayIndexById = arrayIndexByIntField(root.path("containers"), "id");
+        Map<String, JsonNode> systemsByCode = indexByStringField(root.path("systems"), "code");
+        Map<String, Integer> systemArrayIndexByCode = arrayIndexByStringField(root.path("systems"), "code");
+
+        Set<String> describedContainers = new HashSet<>();
+        for (E2ESequenceSnapshot.ContainerDraft container : snapshot.getContainers()) {
+            describedContainers.add(container.getUid());
+        }
+
+        for (InterfaceDraft iface : snapshot.getInterfaces()) {
+            String containerUid = iface.getContainerUid();
+            if (containerUid == null || describedContainers.contains(containerUid)) continue;
+
+            Integer containerId = containerIdByCleanedCode.get(containerUid);
+            JsonNode containerNode = containerId != null ? containersById.get(containerId) : null;
+            if (containerNode == null) {
+                notices.add(mapFailed("warning", details("dangling_container_reference",
+                        "interface_uid", iface.getUid(), "container_uid", containerUid), iface.getContext()));
+                iface.setContainerUid(null);
+                continue;
+            }
+            Integer containerIdx = containerArrayIndexById.get(containerId);
+            String pointer = containerIdx != null ? "/containers/" + containerIdx : iface.getContext();
+
+            E2ESequenceSnapshot.ContainerDraft draft = new E2ESequenceSnapshot.ContainerDraft();
+            draft.setUid(containerUid);
+            draft.setExtUid(containerUid);
+            draft.setName(textOrNull(containerNode, "name"));
+            draft.setProductUid(textOrNull(containerNode, "system_code"));
+            draft.setContext(pointer);
+            snapshot.getContainers().add(draft);
+            describedContainers.add(containerUid);
+            notices.add(notice("transform.include", "info",
+                    details("container_backfilled", "container_uid", containerUid,
+                            "interface_uid", iface.getUid()), pointer));
+        }
+
+        Set<String> describedProducts = new HashSet<>();
+        for (E2ESequenceSnapshot.ProductDraft product : snapshot.getProducts()) {
+            describedProducts.add(product.getUid());
+        }
+
+        for (E2ESequenceSnapshot.ContainerDraft container : snapshot.getContainers()) {
+            String productUid = container.getProductUid();
+            if (productUid == null || describedProducts.contains(productUid)) continue;
+
+            JsonNode system = systemsByCode.get(productUid);
+            if (system == null) {
+                // Deliberately keeps productUid: it is the container's only recorded owner, and the
+                // saver resolves it against products already in the canonical catalog.
+                notices.add(mapFailed("warning", details("product_not_in_systems",
+                        "container_uid", container.getUid(), "product_uid", productUid),
+                        container.getContext()));
+                continue;
+            }
+            Integer systemIdx = systemArrayIndexByCode.get(productUid);
+            String pointer = systemIdx != null ? "/systems/" + systemIdx : container.getContext();
+
+            E2ESequenceSnapshot.ProductDraft draft = new E2ESequenceSnapshot.ProductDraft();
+            draft.setUid(productUid);
+            draft.setExtUid(productUid);
+            draft.setName(textOrNull(system, "name"));
+            draft.setContext(pointer);
+            snapshot.getProducts().add(draft);
+            describedProducts.add(productUid);
+            notices.add(notice("transform.include", "info",
+                    details("product_backfilled", "product_uid", productUid,
+                            "container_uid", container.getUid()), pointer));
+        }
     }
 
     void createRelations(CallNode node, E2ESequenceSnapshot snapshot) {

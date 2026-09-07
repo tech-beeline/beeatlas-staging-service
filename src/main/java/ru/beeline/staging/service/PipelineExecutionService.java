@@ -25,6 +25,7 @@ import ru.beeline.staging.repository.PipelineStageLogRepository;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +46,8 @@ public class PipelineExecutionService {
     private final SourceArtefactService       sourceArtefactService;
     private final MeterRegistry               meterRegistry;
     private final PipelineExecutors            pipelineExecutors;
+
+    private static final int BLOCKED_SAMPLE_SIZE = 20;
 
     @Value("${staging.executor.lease-duration-ms:300000}")
     private long leaseDurationMs;
@@ -112,16 +115,57 @@ public class PipelineExecutionService {
 
         List<ArtifactPreAdapter.FoundArtifact> found = outcome.found();
         List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
-        List<PipelineRun> children = pipelineRunService.finishScanWithChildren(
+        List<PipelineRunService.ChildOutcome> outcomes = pipelineRunService.finishScanWithChildren(
                 scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
                 config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
 
         // Freeze which runs belong to this scan right now — childStats computed from this list later
         // won't be stolen by a newer scan of the same config the way the source_artifacts-based
         // childStats is (see ScanRunRepository's child_stats vs child_stats_snapshot).
-        pipelineRunService.snapshotChildRunIds(scan.getId(), children.stream().map(PipelineRun::getId).toList());
+        pipelineRunService.snapshotChildRunIds(scan.getId(), outcomes.stream()
+                .filter(PipelineRunService.ChildOutcome::ownedByThisScan)
+                .map(o -> o.run().getId())
+                .toList());
 
-        dispatchChildren(scan, config, found, children);
+        recordDispositions(scan, config, outcome.stageLogId(), outcomes);
+        dispatchChildren(scan, config, found, outcomes);
+    }
+
+    // The scan row's own stage log is the only place that can answer "did this scan do work, or did
+    // it just re-find artifacts someone else is already processing" — the run statuses behind
+    // child_run_ids can't, since a scan that skipped everything now has an empty snapshot. Counts go
+    // into the pre-adapter stage summary; blocked artifacts additionally get a WARN and a metric,
+    // because nothing will touch them again until a human calls the retry endpoint.
+    private void recordDispositions(PipelineRun scan, Configuration config, Long stageLogId,
+                                     List<PipelineRunService.ChildOutcome> outcomes) {
+        Map<PipelineRunService.Disposition, List<PipelineRunService.ChildOutcome>> byDisposition =
+                outcomes.stream().collect(Collectors.groupingBy(PipelineRunService.ChildOutcome::disposition));
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("foundCount", outcomes.size());
+        for (PipelineRunService.Disposition disposition : PipelineRunService.Disposition.values()) {
+            summary.put(disposition.name().toLowerCase() + "Count",
+                    byDisposition.getOrDefault(disposition, List.of()).size());
+        }
+
+        List<PipelineRunService.ChildOutcome> blocked =
+                byDisposition.getOrDefault(PipelineRunService.Disposition.BLOCKED, List.of());
+        if (!blocked.isEmpty()) {
+            // Capped on purpose: a configuration can carry thousands of blocked artifacts, and this
+            // runs on every tick — the full list belongs in /admin/pipeline-runs/blocked, not in a
+            // log line or in every scan's summary_json.
+            List<Long> sample = blocked.stream().limit(BLOCKED_SAMPLE_SIZE).map(o -> o.run().getId()).toList();
+            summary.put("blockedRunIdsSample", sample);
+            log.warn("configId={} scanRunId={}: {} artifact(s) skipped — failed and out of auto-retries. "
+                            + "Full list: GET /admin/pipeline-runs/blocked?artifactType={}. First {}: {}",
+                    config.getId(), scan.getId(), blocked.size(), config.getArtifactType(), sample.size(),
+                    blocked.stream().limit(BLOCKED_SAMPLE_SIZE)
+                            .map(o -> o.artifactUid() + "(run=" + o.run().getId() + ")").toList());
+            meterRegistry.counter("staging_pipeline_artifacts_blocked_total",
+                    "artifact_type", config.getArtifactType()).increment(blocked.size());
+        }
+
+        pipelineRunService.updateStageSummary(stageLogId, summary);
     }
 
 
@@ -154,13 +198,20 @@ public class PipelineExecutionService {
         }
     }
 
+    // recordSeen runs for every found artifact regardless of disposition — source_artifacts tracks
+    // "what exists in the source right now", which is true even for an artifact whose run is blocked
+    // or still being worked by an earlier scan. Only runs this scan owns get dispatched: an
+    // in-flight run is already claimed elsewhere, and a blocked one would be refused by #claim().
     private void dispatchChildren(PipelineRun scan, Configuration config,
-                                   List<ArtifactPreAdapter.FoundArtifact> found, List<PipelineRun> children) {
+                                   List<ArtifactPreAdapter.FoundArtifact> found,
+                                   List<PipelineRunService.ChildOutcome> outcomes) {
         for (int i = 0; i < found.size(); i++) {
             ArtifactPreAdapter.FoundArtifact item = found.get(i);
-            PipelineRun child = children.get(i);
-            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), child.getId(), artifactNameOf(item));
-            submitArtifactChain(child.getId(), config.getArtifactType(), config.getCode());
+            PipelineRunService.ChildOutcome child = outcomes.get(i);
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), child.run().getId(), artifactNameOf(item));
+            if (child.ownedByThisScan()) {
+                submitArtifactChain(child.run().getId(), config.getArtifactType(), config.getCode());
+            }
         }
     }
 

@@ -57,12 +57,14 @@ public class RawDataContextService {
     // later, in artifact_batches) used to insert a fresh duplicate context row every time, since
     // nothing here ever checked for an existing one. jsonb equality ignores key order, so this
     // still matches regardless of how the position map was built.
-    // NOTE: no unique DB constraint on (raw_data_ref_id, position) yet — the existing duplicate
-    // rows have to be cleaned up first, or creating that index will fail. Until then this closes
-    // the common (sequential re-processing) case but not a same-instant concurrent race.
+    // NOTE: no unique DB constraint on (raw_data_ref_id, position) — nothing stops a same-instant
+    // concurrent race from inserting a second row, so the lookup is findFirst...OrderByIdAsc rather
+    // than a unique-result query: a leftover duplicate must not fail the whole transformer stage
+    // (that failure mode is defect QA-2). Measured on func 2026-09-07: 0 duplicate groups across
+    // 809k rows, so there is nothing to clean up before adding the index if it's ever wanted.
     private Long save(Long rawDataRefId, Map<String, Object> position) {
         String positionJson = toJson(position);
-        return repository.findByRawDataRefIdAndPosition(rawDataRefId, positionJson)
+        return repository.findFirstByRawDataRefIdAndPositionOrderByIdAsc(rawDataRefId, positionJson)
                 .map(RawDataContextEntity::getId)
                 .orElseGet(() -> {
                     RawDataContextEntity entity = new RawDataContextEntity();
@@ -71,7 +73,7 @@ public class RawDataContextService {
                     try {
                         return repository.save(entity).getId();
                     } catch (DataIntegrityViolationException e) {
-                        return repository.findByRawDataRefIdAndPosition(rawDataRefId, positionJson)
+                        return repository.findFirstByRawDataRefIdAndPositionOrderByIdAsc(rawDataRefId, positionJson)
                                 .map(RawDataContextEntity::getId)
                                 .orElseThrow(() -> e);
                     }

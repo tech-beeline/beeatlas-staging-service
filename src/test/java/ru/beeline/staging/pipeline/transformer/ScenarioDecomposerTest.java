@@ -205,6 +205,63 @@ class ScenarioDecomposerTest {
                 "transform.map_failed".equals(n.code()) && "warning".equals(n.level()));
     }
 
+    /**
+     * QA-5: снапшот должен быть замкнут на себя. systems[] содержит только системы, попавшие на
+     * диаграмму объектами, а владелец контейнера туда попадать не обязан — так у контейнера
+     * появляется productUid, которого нет в products[], и иерархия обрывается молча.
+     * Ссылка сохраняется (её резолвит сейвер по каноническому каталогу), но факт разрыва теперь
+     * виден как notice, а не только как NULL в container_versions.product_version_id.
+     */
+    @Test
+    void reportsContainerWhoseOwningSystemIsNotDescribedBySnapshot() throws Exception {
+        String json = """
+            {
+              "entrance_diagram_uid": "D1",
+              "diagrams": [
+                {
+                  "uid": "D1",
+                  "name": "Root scenario",
+                  "notes": "step_id=Step.01.00.00.00",
+                  "messages": [
+                    {"uid":"M1","name":"GET /web/info","start_object_id":1,"end_object_id":2,"operation_guid":"OP1","seqno":1,"pdata4":"0"}
+                  ]
+                }
+              ],
+              "objects": [ {"id":1,"name":"Actor","alias":"ACTOR"}, {"id":2,"name":"B","alias":"SYS_B"} ],
+              "systems": [ {"id":1,"code":"SYS_ON_DIAGRAM","name":"System on diagram"} ],
+              "containers": [
+                {"id":100,"code":"container.b.SYS_B","name":"Container B","system_code":"SYS_B"}
+              ],
+              "interfaces": [
+                {"id":10,"code":"iface.b.container.b.SYS_B","name":"Iface B","container_id":100,"tags":[{"property":"protocol","value":"rest"}]}
+              ],
+              "operations": [ {"uid":"OP1","name":"GET /web/info","interface_id":10,"tags":[]} ]
+            }
+            """;
+
+        ScenarioDecomposer.Result result = decomposer.decompose(objectMapper.readTree(json), "scenario-5");
+        E2ESequenceSnapshot snapshot = result.snapshot();
+
+        // Каждый containerUid интерфейса описан в containers[] — инвариант замкнутости.
+        List<String> containerUids = snapshot.getContainers().stream()
+                .map(E2ESequenceSnapshot.ContainerDraft::getUid).toList();
+        assertThat(snapshot.getInterfaces())
+                .extracting(E2ESequenceSnapshot.InterfaceDraft::getContainerUid)
+                .filteredOn(uid -> uid != null)
+                .allMatch(containerUids::contains);
+
+        // productUid не выброшен — он единственный след владельца.
+        assertThat(snapshot.getContainers()).filteredOn(c -> "container.b".equals(c.getUid()))
+                .extracting(E2ESequenceSnapshot.ContainerDraft::getProductUid)
+                .containsExactly("SYS_B");
+        assertThat(snapshot.getProducts()).extracting(E2ESequenceSnapshot.ProductDraft::getUid)
+                .doesNotContain("SYS_B");
+
+        assertThat(result.notices()).anyMatch(n -> "transform.map_failed".equals(n.code())
+                && "warning".equals(n.level())
+                && n.details() != null && n.details().contains("product_not_in_systems"));
+    }
+
     private void assertHasNotice(List<ArtifactNotice> notices, String code, String messageUid, String expectedReason) {
         Predicate<ArtifactNotice> matches = n -> {
             if (!code.equals(n.code())) return false;

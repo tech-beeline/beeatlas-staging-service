@@ -119,6 +119,15 @@ public class PipelineRunService {
         });
     }
 
+    /** Replaces a finished stage's summary — used by fan-out, whose per-artifact counts are only known after it. */
+    @Transactional
+    public void updateStageSummary(Long stageLogId, Map<String, Object> summary) {
+        stageLogRepository.findById(stageLogId).ifPresent(entry -> {
+            entry.setSummaryJson(summary);
+            stageLogRepository.save(entry);
+        });
+    }
+
     @Transactional
     public void failStage(Long stageLogId, Long runId, String stageName, String errorMessage) {
         stageLogRepository.findById(stageLogId).ifPresent(entry -> {
@@ -133,10 +142,29 @@ public class PipelineRunService {
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "failed").increment();
     }
 
+    /** What this scan decided to do with one artifact it found — see {@link #finishScanWithChildren}. */
+    public enum Disposition {
+        /** No run was queued for this artifact — a fresh one was created and belongs to this scan. */
+        CREATED,
+        /** A failed run with retries left was re-queued; ownership moved to this scan. */
+        REQUEUED,
+        /** A previous scan's run for this artifact is still in flight — it keeps that scan's ownership. */
+        IN_FLIGHT,
+        /** Failed and out of auto-retries: needs POST /admin/pipeline-runs/{id}/retry, nothing to dispatch. */
+        BLOCKED
+    }
+
+    public record ChildOutcome(String artifactUid, PipelineRun run, Disposition disposition) {
+        /** Runs this scan is responsible for executing — the ones that go into its child_run_ids. */
+        public boolean ownedByThisScan() {
+            return disposition == Disposition.CREATED || disposition == Disposition.REQUEUED;
+        }
+    }
+
     // One transaction: completeStage + completeRun + all children, so a crash mid-fan-out can't
     // leave a partial set of children behind.
     @Transactional
-    public List<PipelineRun> finishScanWithChildren(Long scanRunId, Long stageLogId, String outputData,
+    public List<ChildOutcome> finishScanWithChildren(Long scanRunId, Long stageLogId, String outputData,
                                                       Map<String, Object> summary, String artifactType,
                                                       Long configurationId, String batchId,
                                                       List<String> artifactUids) {
@@ -156,27 +184,58 @@ public class PipelineRunService {
         // NOT IN (completed,failed) check) — otherwise a failed run sitting between failure and
         // the next auto-retry sweep looked "not queued" to this check, so a new scan would create
         // a second copy for the same artifact right alongside it.
-        List<PipelineRun> children = new java.util.ArrayList<>(artifactUids.size());
+        //
+        // What reuse must NOT do is hand back a run that can never move again: a "failed" run past
+        // maxAutoRetries is terminal until someone retries it by hand, but it still matches the
+        // NOT IN ('completed') lookup, so every later scan re-adopted it, listed it as its own
+        // child and dispatched a chain that #claim() refuses (claim skips failed/completed). The
+        // artifact then stops being processed forever while hundreds of scans keep reporting it as
+        // their own failed child. Such runs are reported as BLOCKED here instead — visible, not
+        // silently re-adopted (defect QA-1).
+        List<ChildOutcome> outcomes = new java.util.ArrayList<>(artifactUids.size());
         for (String uid : artifactUids) {
             PipelineRun existing = runRepository
                     .findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(uid, artifactType, DONE_STATUSES)
                     .orElse(null);
             if (existing == null) {
-                children.add(createRun(uid, artifactType, configurationId, batchId, scanRunId));
+                outcomes.add(new ChildOutcome(uid, createRun(uid, artifactType, configurationId, batchId, scanRunId),
+                        Disposition.CREATED));
                 continue;
             }
-            if ("failed".equals(existing.getStatus()) && existing.getRetryCount() < maxAutoRetries) {
-                runRepository.markRetrying(existing.getId());
+            if (!"failed".equals(existing.getStatus())) {
+                outcomes.add(new ChildOutcome(uid, existing, Disposition.IN_FLIGHT));
+                continue;
             }
-            children.add(existing);
+            if (existing.getRetryCount() >= maxAutoRetries) {
+                outcomes.add(new ChildOutcome(uid, existing, Disposition.BLOCKED));
+                continue;
+            }
+            runRepository.markRetrying(existing.getId());
+            reassignParent(existing, scanRunId);
+            outcomes.add(new ChildOutcome(uid, existing, Disposition.REQUEUED));
         }
-        return children;
+        return outcomes;
+    }
+
+    // A re-queued run is executed on behalf of the scan that re-queued it, so ownership moves with
+    // it: parent_run_id is repointed and the run is dropped from the previous scan's child_run_ids.
+    // Keeping both sides in step is what makes "which scan did this work" answerable — without it a
+    // single run accumulated membership in hundreds of scans' snapshots (defect QA-4).
+    private void reassignParent(PipelineRun run, Long newParentRunId) {
+        Long previousParent = run.getParentRunId();
+        if (newParentRunId.equals(previousParent)) return;
+        if (previousParent != null) {
+            runRepository.removeChildFromSnapshot(previousParent, run.getId());
+        }
+        run.setParentRunId(newParentRunId);
+        runRepository.save(run);
     }
 
     // Written once, right after fan-out (see PipelineExecutionService#executeScan) — the only moment
-    // "which artifacts did this scan find" is unambiguous. Deliberately not kept in sync afterwards:
-    // an artifact rediscovered by a later scan still belongs to this snapshot, since this scan really
-    // did find it. Only each run's *status* (read live via child_run_ids at query time) changes.
+    // "which artifacts did this scan find" is unambiguous. Holds exactly the runs this scan owns
+    // (created or re-queued), so it always agrees with the parent_run_id back-references; artifacts
+    // whose run is still in flight from an earlier scan, or blocked awaiting a manual retry, are
+    // reported in the pre-adapter stage summary instead of being counted here as this scan's work.
     @Transactional
     public void snapshotChildRunIds(Long scanRunId, List<Long> childRunIds) {
         runRepository.findById(scanRunId).ifPresent(scan -> {

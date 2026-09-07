@@ -54,7 +54,7 @@ public class ArtifactNoticeService {
 
             Long finalRawDataContextId = rawDataContextId;
             ArtifactNoticeEntity persisted = artifactNoticeRepository
-                    .findByRawDataContextIdAndNoticeTypeIdAndDetails(rawDataContextId, type.getId(), notice.details())
+                    .findFirstByRawDataContextIdAndNoticeTypeIdAndDetailsOrderByIdAsc(rawDataContextId, type.getId(), notice.details())
                     .orElseGet(() -> {
                         ArtifactNoticeEntity entity = new ArtifactNoticeEntity();
                         entity.setNoticeTypeId(type.getId());
@@ -64,7 +64,7 @@ public class ArtifactNoticeService {
                             return artifactNoticeRepository.save(entity);
                         } catch (DataIntegrityViolationException e) {
                             return artifactNoticeRepository
-                                    .findByRawDataContextIdAndNoticeTypeIdAndDetails(finalRawDataContextId, type.getId(), notice.details())
+                                    .findFirstByRawDataContextIdAndNoticeTypeIdAndDetailsOrderByIdAsc(finalRawDataContextId, type.getId(), notice.details())
                                     .orElseThrow(() -> e);
                         }
                     });
