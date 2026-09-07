@@ -54,17 +54,22 @@ public class PlantUmlValidationEngine {
 
         if (diagram.participants().isEmpty()) {
             findings.add(Finding.error("e2e.validation.participants.missing",
-                    "Diagram does not contain any participants", null, null, null));
+                    "В диаграмме нет ни одного участника. Добавьте участников через 'participant Имя'"
+                            + " и сообщения между ними.",
+                    null, null, null));
         }
         if (diagram.messages().isEmpty()) {
             findings.add(Finding.info("e2e.validation.messages.empty",
-                    "Diagram does not contain any messages", null, null, null));
+                    "В диаграмме нет ни одного сообщения между участниками. Добавьте вызовы вида"
+                            + " 'УчастникА -> УчастникБ: METHOD /путь'.",
+                    null, null, null));
         }
 
         if (diagram.participants().size() > MAX_PARTICIPANTS) {
             findings.add(Finding.error("e2e.validation.diagram.too_many_participants",
-                    "Diagram has " + diagram.participants().size() + " participants, exceeding the limit of "
-                            + MAX_PARTICIPANTS, null, null, null));
+                    "В диаграмме " + diagram.participants().size() + " участников — это больше лимита в "
+                            + MAX_PARTICIPANTS + ". Разбейте диаграмму на несколько более мелких сценариев.",
+                    null, null, null));
             return new EngineResult(List.of(), List.of(), List.of(), List.of(), findings);
         }
 
@@ -95,7 +100,9 @@ public class PlantUmlValidationEngine {
             } else {
                 unrecognizedParticipants.add(new UnrecognizedParticipant(participant.alias(), participant.line()));
                 findings.add(Finding.warning("e2e.validation.participant.unrecognized",
-                        "Participant '" + participant.alias() + "' is not recognized by CMDB alias",
+                        "Участник '" + participant.alias() + "' не найден в CMDB. Проверьте мнемонику:"
+                                + " имя перед 'as' (или сам alias, если 'as' не используется) должно точно"
+                                + " совпадать с alias/кодом системы или контейнера в CMDB — сверьтесь с BeeAtlas.",
                         participant.line(), participant.line(), participant.alias()));
             }
         }
@@ -115,7 +122,9 @@ public class PlantUmlValidationEngine {
         Matcher matcher = REST_CALL.matcher(message.label());
         if (!matcher.find()) {
             findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
-                    "Message does not declare a REST endpoint (expected 'METHOD /path')",
+                    "В сообщении не указан REST-вызов (ожидается формат 'МЕТОД /путь', например"
+                            + " 'GET /api/v1/order'). Если это не REST-вызов, а обычный текст — предупреждение"
+                            + " можно игнорировать.",
                     message.line(), message.line(), elementRef));
             unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
             return;
@@ -128,8 +137,10 @@ public class PlantUmlValidationEngine {
         CmdbAliasLookup.ResolvedParticipant receiver = resolvedByPlantUmlAlias.get(message.toAlias());
         if (receiver == null) {
             findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
-                    "Cannot verify REST endpoint " + method + " " + path + ": receiver '" + message.toAlias()
-                            + "' is not recognized by CMDB", message.line(), message.line(), elementRef));
+                    "Не удалось проверить эндпоинт " + method + " " + path + ": получатель '" + message.toAlias()
+                            + "' не найден в CMDB. Сначала исправьте мнемонику участника '" + message.toAlias()
+                            + "' (см. предупреждение выше) — тогда эндпоинт будет проверен.",
+                    message.line(), message.line(), elementRef));
             unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
             return;
         }
@@ -143,8 +154,10 @@ public class PlantUmlValidationEngine {
             // unverifiable, the rest of the diagram is still worth validating
             log.warn("REST endpoint check failed for {} {} on '{}': {}", method, path, message.toAlias(), e.toString());
             findings.add(Finding.warning("e2e.validation.call.check_failed",
-                    "Could not verify REST endpoint " + method + " " + path + " on '" + message.toAlias()
-                            + "': lookup failed", message.line(), message.line(), elementRef));
+                    "Не удалось проверить эндпоинт " + method + " " + path + " у '" + message.toAlias()
+                            + "': сбой при обращении к CMDB. Повторите валидацию позже; если ошибка повторяется —"
+                            + " обратитесь в поддержку BeeAtlas.",
+                    message.line(), message.line(), elementRef));
             unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
             return;
         }
@@ -154,7 +167,9 @@ public class PlantUmlValidationEngine {
             return;
         }
         findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
-                "No matching REST endpoint " + method + " " + path + " on '" + message.toAlias() + "'",
+                "Эндпоинт " + method + " " + path + " не найден у '" + message.toAlias() + "' в CMDB. Проверьте"
+                        + " метод и путь (регистр, слэши) или убедитесь, что операция вообще зарегистрирована"
+                        + " в CMDB у этой системы/контейнера.",
                 message.line(), message.line(), elementRef));
         unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
     }

@@ -208,7 +208,7 @@ class PlantUmlValidationEngineTest {
         // "no endpoint declared" bucket
         assertThat(result.findings())
                 .extracting(Finding::message)
-                .anyMatch(message -> message.contains("No matching REST endpoint POST tratata"));
+                .anyMatch(message -> message.contains("Эндпоинт POST tratata не найден"));
     }
 
     @Test

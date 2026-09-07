@@ -33,13 +33,18 @@ public class PlantUmlDiagramParser {
             blocks = new SourceStringReader(source).getBlocks();
         } catch (Exception e) {
             return ParseOutcome.failed(List.of(Finding.error(
-                    "e2e.validation.syntax.invalid", "PlantUML text could not be parsed: " + e.getMessage(),
+                    "e2e.validation.syntax.invalid",
+                    "Не удалось разобрать текст PlantUML: " + e.getMessage()
+                            + ". Проверьте синтаксис диаграммы и исправьте ошибку.",
                     null, null, null)));
         }
 
         if (blocks.isEmpty()) {
             return ParseOutcome.failed(List.of(Finding.error(
-                    "e2e.validation.syntax.invalid", "No @startuml/@enduml block found", null, null, null)));
+                    "e2e.validation.syntax.invalid",
+                    "Не найден блок @startuml/@enduml. Диаграмма должна начинаться со строки @startuml"
+                            + " и заканчиваться строкой @enduml.",
+                    null, null, null)));
         }
 
         Diagram diagram = blocks.get(0).getDiagram();
@@ -51,7 +56,10 @@ public class PlantUmlDiagramParser {
         if (!(diagram instanceof SequenceDiagram sequenceDiagram)) {
             return ParseOutcome.failed(List.of(Finding.error(
                     "e2e.validation.diagram.not_sequence",
-                    "Diagram is not a Sequence Diagram", null, null, null)));
+                    "Это не Sequence-диаграмма. Валидатор проверяет только PlantUML Sequence Diagram —"
+                            + " используйте participant/actor и стрелки сообщений (->), без rectangle,"
+                            + " database и других типов диаграмм.",
+                    null, null, null)));
         }
 
         return ParseOutcome.ok(toParsedDiagram(sequenceDiagram, source));
@@ -61,10 +69,15 @@ public class PlantUmlDiagramParser {
         List<Finding> findings = new ArrayList<>();
         for (ErrorUml error : errorDiagram.getErrorsUml()) {
             Integer line = error.getLineLocation() != null ? error.getLineLocation().getPosition() + 1 : null;
-            findings.add(Finding.error("e2e.validation.syntax.invalid", error.getError(), line, line, null));
+            findings.add(Finding.error("e2e.validation.syntax.invalid",
+                    "Ошибка синтаксиса PlantUML: " + error.getError()
+                            + ". Исправьте синтаксис в указанной строке и повторите загрузку.",
+                    line, line, null));
         }
         if (findings.isEmpty()) {
-            findings.add(Finding.error("e2e.validation.syntax.invalid", "Invalid PlantUML syntax", null, null, null));
+            findings.add(Finding.error("e2e.validation.syntax.invalid",
+                    "Некорректный синтаксис PlantUML. Проверьте текст диаграммы и исправьте ошибки.",
+                    null, null, null));
         }
         return findings;
     }
