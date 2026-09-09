@@ -131,10 +131,12 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             """, nativeQuery = true)
     void removeChildFromSnapshot(@Param("scanRunId") Long scanRunId, @Param("childId") Long childId);
 
-    // Also clears the lease, otherwise a retry inside the previous attempt's lease window would fail claim().
+    // Also clears the lease, otherwise a retry inside the previous attempt's lease window would fail
+    // claim(). blockedAt goes too: the run is moving again, so "blocked since" would be a lie — and
+    // if it fails its way back into a block, the next scan stamps a fresh, honest timestamp.
     @Transactional
     @Modifying
     @Query("UPDATE PipelineRun r SET r.status = 'pending', r.failureReason = NULL, r.failedStage = NULL, " +
-           "r.completedAt = NULL, r.ownerId = NULL, r.leaseExpiresAt = NULL WHERE r.id = :id")
+           "r.completedAt = NULL, r.ownerId = NULL, r.leaseExpiresAt = NULL, r.blockedAt = NULL WHERE r.id = :id")
     void markRetrying(@Param("id") Long id);
 }

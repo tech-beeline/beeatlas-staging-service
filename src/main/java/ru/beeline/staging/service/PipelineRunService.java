@@ -192,6 +192,10 @@ public class PipelineRunService {
         // artifact then stops being processed forever while hundreds of scans keep reporting it as
         // their own failed child. Such runs are reported as BLOCKED here instead — visible, not
         // silently re-adopted (defect QA-1).
+        // A block stays until a human clears it (POST /admin/pipeline-runs/{id}/retry) — auto-retry
+        // here would only pile up runs that fail the same way. What the block does carry is
+        // blockedAt: how long the artifact has been stuck, so the UI can show it instead of leaving
+        // it to be noticed by accident 11 days later.
         List<ChildOutcome> outcomes = new java.util.ArrayList<>(artifactUids.size());
         for (String uid : artifactUids) {
             PipelineRun existing = runRepository
@@ -207,6 +211,14 @@ public class PipelineRunService {
                 continue;
             }
             if (existing.getRetryCount() >= maxAutoRetries) {
+                // Stamped by whichever scan first meets the block, not at failure time: what the
+                // operator needs to see is how long the artifact has been stuck, and a run can fail
+                // its last attempt long before any scan re-finds the artifact. Written once — later
+                // scans keep re-finding the same run and must not keep resetting its age.
+                if (existing.getBlockedAt() == null) {
+                    existing.setBlockedAt(LocalDateTime.now());
+                    runRepository.save(existing);
+                }
                 outcomes.add(new ChildOutcome(uid, existing, Disposition.BLOCKED));
                 continue;
             }

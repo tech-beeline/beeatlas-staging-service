@@ -11,6 +11,7 @@ import ru.beeline.staging.repository.PipelineDefinitionEntryRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.PipelineStageLogRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -99,6 +100,44 @@ class PipelineRunServiceFanOutTest {
         verify(runRepository, never()).markRetrying(42L);
         verify(runRepository, never()).removeChildFromSnapshot(anyLong(), anyLong());
         assertThat(zombie.getParentRunId()).isEqualTo(100L);
+    }
+
+    @Test
+    @DisplayName("Первый скан, встретивший блокировку, проставляет blocked_at — от него считается срок")
+    void stampsBlockedAtOnTheFirstScanThatMeetsTheBlock() {
+        PipelineRun zombie = existingRunFor("uid-1", run -> {
+            run.setId(42L);
+            run.setStatus("failed");
+            run.setRetryCount(3);
+        });
+        LocalDateTime before = LocalDateTime.now();
+
+        fanOut("uid-1");
+
+        assertThat(zombie.getBlockedAt()).isNotNull().isAfterOrEqualTo(before);
+        verify(runRepository).save(zombie);
+        verify(runRepository, never()).markRetrying(42L);
+    }
+
+    @Test
+    @DisplayName("Следующие сканы не переписывают blocked_at — возраст блокировки не обнуляется")
+    void keepsTheOriginalBlockedAtOnLaterScans() {
+        LocalDateTime blockedAt = LocalDateTime.now().minusHours(5);
+        PipelineRun zombie = existingRunFor("uid-1", run -> {
+            run.setId(42L);
+            run.setStatus("failed");
+            run.setRetryCount(3);
+            run.setBlockedAt(blockedAt);
+        });
+
+        List<PipelineRunService.ChildOutcome> outcomes = fanOut("uid-1");
+
+        assertThat(outcomes).singleElement()
+                .extracting(PipelineRunService.ChildOutcome::disposition)
+                .isEqualTo(PipelineRunService.Disposition.BLOCKED);
+        assertThat(zombie.getBlockedAt()).isEqualTo(blockedAt);
+        verify(runRepository, never()).save(zombie);
+        verify(runRepository, never()).markRetrying(42L);
     }
 
     @Test

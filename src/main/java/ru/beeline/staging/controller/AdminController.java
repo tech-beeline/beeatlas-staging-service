@@ -107,6 +107,9 @@ public class AdminController {
                     item.put("failureReason", run.getFailureReason());
                     item.put("retryCount", run.getRetryCount());
                     item.put("startedAt", run.getStartedAt());
+                    // Since when the artifact has been stuck — NULL until a scan meets the run and
+                    // stamps it, which for an artifact still present in the source is the next tick
+                    item.put("blockedAt", run.getBlockedAt());
                     return item;
                 })
                 .toList();

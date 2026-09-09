@@ -82,6 +82,14 @@ public class PipelineRun {
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount = 0;
 
+    // When a scan first found this run failed and out of auto-retries — i.e. when this artifact
+    // stopped being processed. Cleared by markRetrying, so it is only ever set on a run that is
+    // blocked right now. staging.recovery.blocked-recheck-interval is measured from here, not from
+    // completedAt: the point is how long the artifact has been stuck, and a run can fail its last
+    // attempt long before any scan re-finds the artifact (see PipelineRunService#finishScanWithChildren).
+    @Column(name = "blocked_at")
+    private LocalDateTime blockedAt;
+
     // Snapshot of this scan's own children, written once at fan-out time (see
     // PipelineRunService#snapshotChildRunIds). NULL for child runs and for scans predating V0014.
     // @JdbcTypeCode required — columnDefinition alone is DDL-only (ddl-auto: none, so it's never even

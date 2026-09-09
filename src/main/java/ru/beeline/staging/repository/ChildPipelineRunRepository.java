@@ -53,7 +53,8 @@ public class ChildPipelineRunRepository {
                 adapter_log.started_at AS processing_started_at,
                 r.completed_at,
                 r.failure_reason,
-                r.failed_stage
+                r.failed_stage,
+                r.blocked_at
             FROM staging.pipeline_runs r
                 JOIN staging.configurations c ON c.id=r.configuration_id
                 JOIN staging.source_systems s ON s.id=c.source_system_id
@@ -101,7 +102,8 @@ public class ChildPipelineRunRepository {
                 rs.getTimestamp("processing_started_at") != null ? rs.getTimestamp("processing_started_at").toLocalDateTime() : null,
                 rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
                 rs.getString("failure_reason"),
-                rs.getString("failed_stage")
+                rs.getString("failed_stage"),
+                rs.getTimestamp("blocked_at") != null ? rs.getTimestamp("blocked_at").toLocalDateTime() : null
         ), parentId, status, status, artifactQuery, artifactQuery, artifactQuery, limit, offset);
 
         return new ChildPipelineRunPage(totalCount != null ? totalCount : 0, results);
