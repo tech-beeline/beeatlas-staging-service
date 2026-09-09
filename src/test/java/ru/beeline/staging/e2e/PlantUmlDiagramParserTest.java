@@ -65,6 +65,36 @@ class PlantUmlDiagramParserTest {
     }
 
     @Test
+    void treatsAnEmptyBlockAsAParsedDiagramWithNoParticipants() {
+        // PlantUML itself resolves "@startuml\n@enduml" to its welcome easter egg, which is neither an
+        // error nor a SequenceDiagram — reporting that as not_sequence gave the user the wrong reason
+        ParseOutcome outcome = parser.parse(fixture("empty_body.puml"));
+
+        assertThat(outcome.isParsed()).isTrue();
+        assertThat(outcome.diagram().participants()).isEmpty();
+        assertThat(outcome.diagram().messages()).isEmpty();
+    }
+
+    @Test
+    void treatsABlockHoldingOnlyCommentsAndBlankLinesAsEmpty() {
+        ParseOutcome outcome = parser.parse("@startuml\n\n' a line comment\n   \n/' a block\n comment '/\n@enduml\n");
+
+        assertThat(outcome.isParsed()).isTrue();
+        assertThat(outcome.diagram().participants()).isEmpty();
+    }
+
+    @Test
+    void stillRejectsANonEmptyBlockThatIsNotASequenceDiagram() {
+        // the empty-body shortcut must not swallow real content: "title" alone parses as a ClassDiagram
+        ParseOutcome outcome = parser.parse("@startuml\ntitle Hello\n@enduml\n");
+
+        assertThat(outcome.isParsed()).isFalse();
+        assertThat(outcome.findings())
+                .extracting(Finding::code)
+                .containsExactly("e2e.validation.diagram.not_sequence");
+    }
+
+    @Test
     void rejectsInvalidPlantUmlSyntax() {
         ParseOutcome outcome = parser.parse(fixture("syntax_error.puml"));
 

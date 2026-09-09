@@ -259,23 +259,28 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
-    void diagramWithoutParticipantsIsInvalid() {
-        // A Sequence Diagram with zero participants isn't producible through real PlantUML text
-        // (any construct that commits the parser to the Sequence type also creates a participant),
-        // so this rule is exercised against a stubbed parse outcome instead of a .puml fixture.
-        PlantUmlDiagramParser stubParser = mock(PlantUmlDiagramParser.class);
-        when(stubParser.parse(anyString())).thenReturn(ParseOutcome.ok(new ParsedDiagram(List.of(), List.of())));
+    void emptyDiagramIsReportedAsMissingParticipantsNotAsAWrongDiagramType() {
+        // An empty @startuml/@enduml block is the one real input that reaches this rule: no construct
+        // that commits PlantUML to the Sequence type leaves the diagram without a participant (note
+        // over X / activate A / create A all auto-create one). Before SFDM-4087's fix this input came
+        // back as e2e.validation.diagram.not_sequence, telling the user the wrong reason.
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
 
-        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(stubParser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate("@startuml\n@enduml\n");
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(fixture("empty_body.puml"));
 
         assertThat(result.valid()).isFalse();
         assertThat(result.findings())
                 .extracting(Finding::code)
-                .contains("e2e.validation.participants.missing");
+                .contains("e2e.validation.participants.missing")
+                .doesNotContain("e2e.validation.diagram.not_sequence", "e2e.validation.syntax.invalid");
+        assertThat(result.recognizedParticipants()).isEmpty();
+        assertThat(result.unrecognizedParticipants()).isEmpty();
+        assertThat(result.recognizedCalls()).isEmpty();
+        assertThat(result.unrecognizedCalls()).isEmpty();
+        // there is no participant to resolve and no call to check
+        verifyNoInteractions(restEndpointLookup);
     }
 
     @Test

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Parses PlantUML source with the {@code net.sourceforge.plantuml} library (the sole parsing
@@ -26,6 +27,9 @@ import java.util.List;
  */
 @Component
 public class PlantUmlDiagramParser {
+
+    /** PlantUML's block comment: {@code /' ... '/}, possibly spanning lines. */
+    private static final Pattern BLOCK_COMMENT = Pattern.compile("/'.*?'/", Pattern.DOTALL);
 
     public ParseOutcome parse(String source) {
         List<BlockUml> blocks;
@@ -47,6 +51,14 @@ public class PlantUmlDiagramParser {
                     null, null, null)));
         }
 
+        if (hasEmptyBody(source)) {
+            // PlantUML has nothing to infer a type from here, and answers inconsistently (a welcome
+            // easter egg for a bare block, a syntax error when the block holds whitespace-only lines).
+            // Neither answer is honest for the user: an empty diagram isn't "some other diagram type",
+            // it's a diagram with no participants — report it as such (e2e.validation.participants.missing).
+            return ParseOutcome.ok(new ParsedDiagram(List.of(), List.of()));
+        }
+
         Diagram diagram = blocks.get(0).getDiagram();
 
         if (diagram instanceof PSystemError errorDiagram) {
@@ -63,6 +75,31 @@ public class PlantUmlDiagramParser {
         }
 
         return ParseOutcome.ok(toParsedDiagram(sequenceDiagram, source));
+    }
+
+    /** True when the first @startuml/@enduml block carries nothing but blank lines and comments. */
+    private static boolean hasEmptyBody(String source) {
+        String withoutBlockComments = BLOCK_COMMENT.matcher(source).replaceAll("");
+        boolean insideBlock = false;
+        for (String rawLine : withoutBlockComments.split("\\R")) {
+            String line = rawLine.trim();
+            if (!insideBlock) {
+                insideBlock = startsWithIgnoreCase(line, "@startuml");
+                continue;
+            }
+            if (startsWithIgnoreCase(line, "@enduml")) {
+                return true;
+            }
+            if (!line.isEmpty() && !line.startsWith("'")) {
+                return false;
+            }
+        }
+        // no @enduml at all — not our case to judge, let PlantUML report the unterminated block
+        return false;
+    }
+
+    private static boolean startsWithIgnoreCase(String line, String prefix) {
+        return line.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 
     private List<Finding> toSyntaxErrorFindings(PSystemError errorDiagram) {
