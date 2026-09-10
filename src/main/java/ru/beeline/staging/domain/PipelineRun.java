@@ -73,6 +73,19 @@ public class PipelineRun {
     @Column(name = "parent_run_id")
     private Long parentRunId;
 
+    @Column(name = "payload", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String payload;
+
+    @Column(name = "source_id")
+    private Integer sourceId;
+
+    @Column(name = "branch")
+    private String branch;
+
+    @Column(name = "supersedes_run_id")
+    private Long supersedesRunId;
+
     @Column(name = "owner_id")
     private String ownerId;
 
