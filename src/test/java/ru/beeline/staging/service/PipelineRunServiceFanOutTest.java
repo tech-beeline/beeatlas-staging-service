@@ -157,7 +157,12 @@ class PipelineRunServiceFanOutTest {
                 .isEqualTo(PipelineRunService.Disposition.REQUEUED);
         verify(runRepository).markRetrying(42L);
         verify(runRepository).removeChildFromSnapshot(100L, 42L);
-        assertThat(failed.getParentRunId()).isEqualTo(SCAN_ID);
+        // Смена владельца — тоже bulk UPDATE, и сущность намеренно НЕ трогается: markRetrying уже
+        // переписал строку, а `failed` всё ещё держит состояние до ретрая. Мутация + save() слили бы
+        // это состояние поверх markRetrying на коммите, и переочередь молча не применилась бы.
+        verify(runRepository).updateParentRunId(42L, SCAN_ID);
+        verify(runRepository, never()).save(failed);
+        assertThat(failed.getParentRunId()).isEqualTo(100L);
     }
 
     @Test

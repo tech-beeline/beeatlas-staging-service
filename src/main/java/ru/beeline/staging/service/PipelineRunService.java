@@ -237,14 +237,19 @@ public class PipelineRunService {
     // it: parent_run_id is repointed and the run is dropped from the previous scan's child_run_ids.
     // Keeping both sides in step is what makes "which scan did this work" answerable — without it a
     // single run accumulated membership in hundreds of scans' snapshots (defect QA-4).
+    // The entity passed in here is stale by construction: markRetrying() has just bulk-UPDATEd this
+    // row to 'pending' with a cleared lease, while `run` still carries the 'failed' state it was
+    // loaded with. Mutating it and calling save() would flush that stale state on commit and quietly
+    // undo the re-queue — the run would stay failed and never be picked up. So the repoint goes
+    // through a bulk UPDATE too, and the entity is left untouched. Callers only read run.getId()
+    // (ownedByThisScan works off the disposition), so nothing downstream sees the stale fields.
     private void reassignParent(PipelineRun run, Long newParentRunId) {
         Long previousParent = run.getParentRunId();
         if (newParentRunId.equals(previousParent)) return;
         if (previousParent != null) {
             runRepository.removeChildFromSnapshot(previousParent, run.getId());
         }
-        run.setParentRunId(newParentRunId);
-        runRepository.save(run);
+        runRepository.updateParentRunId(run.getId(), newParentRunId);
     }
 
     // Written once, right after fan-out (see PipelineExecutionService#executeScan) — the only moment

@@ -157,16 +157,38 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     // `jsonb - text` operator: that operator only removes *string* elements, and this array holds
     // numbers. COALESCE keeps an emptied snapshot as [] instead of NULL, which would read as
     // "pre-V0014 scan, no snapshot taken" in ScanRunRepository.
+    //
+    // CAST(...) rather than PostgreSQL's `::` shorthand, and this is not a style choice: in a native
+    // @Query with *named* parameters Spring Data scans the statement for `:name` and consumes one
+    // colon of `::text`, so Postgres received `e:` and answered
+    //   ERROR: syntax error at or near ":"  Position: 199
+    // — position 199 being exactly this cast. The whole finishScanWithChildren transaction then
+    // rolled back, leaving the scan non-terminal, and the resume loop retried it forever. That is
+    // the FUNC hang (runs 1571951 / 1595194): it only triggered once a scan first met a REQUEUED
+    // child, which is why each configuration died on a different day and metric-queries, which had
+    // never re-queued anything, looked healthy. The `::` casts elsewhere in the codebase are safe —
+    // they live in JdbcTemplate repositories with positional `?`, which nothing pre-parses.
     @Transactional
     @Modifying
     @Query(value = """
             UPDATE staging.pipeline_runs
                SET child_run_ids = COALESCE((SELECT jsonb_agg(e)
                                              FROM jsonb_array_elements(child_run_ids) e
-                                             WHERE e::text::bigint <> :childId), '[]'::jsonb)
+                                             WHERE CAST(CAST(e AS text) AS bigint) <> :childId),
+                                            CAST('[]' AS jsonb))
              WHERE id = :scanRunId AND child_run_ids IS NOT NULL
             """, nativeQuery = true)
     void removeChildFromSnapshot(@Param("scanRunId") Long scanRunId, @Param("childId") Long childId);
+
+    // Repoints a re-queued run at the scan that adopted it. A bulk UPDATE rather than a setter plus
+    // save(): markRetrying has just rewritten this row with its own bulk UPDATE, while the entity
+    // still sitting in the persistence context holds the pre-retry state. Dirtying that entity would
+    // flush the stale status/lease/blockedAt back over markRetrying on commit — see
+    // PipelineRunService#reassignParent.
+    @Transactional
+    @Modifying
+    @Query("UPDATE PipelineRun r SET r.parentRunId = :parentRunId WHERE r.id = :id")
+    void updateParentRunId(@Param("id") Long id, @Param("parentRunId") Long parentRunId);
 
     // Also clears the lease, otherwise a retry inside the previous attempt's lease window would fail
     // claim(). blockedAt goes too: the run is moving again, so "blocked since" would be a lie — and
