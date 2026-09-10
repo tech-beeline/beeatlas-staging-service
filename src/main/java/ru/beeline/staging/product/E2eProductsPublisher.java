@@ -28,13 +28,7 @@ public class E2eProductsPublisher {
     private final ArtifactNoticeService artifactNoticeService;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Publishes the current saved state of one e2e_scenario to fdm-products (POST /api/v2/e2e — Sparx
-     * source, no containers layer; see E2eV2PublishRequestMapper). Called from the Save stage right
-     * after the canonical model has been persisted, so the "actual state" query below sees this run's
-     * writes (same DB transaction/connection).
-     */
-    public void publish(String artifactUid, Long rawDataRefId, Long pipelineRunId) {
+    public void publish(String artifactUid, String artifactType, Long rawDataRefId, Long pipelineRunId) {
         String actualScenarioJson = actualE2eScenarioRepository.fetchActualScenarioRaw(artifactUid);
         if (actualScenarioJson == null) {
             log.warn("No actual e2e_scenario state found for uid={}, relationId={}, pipelineRunId={} — skipping fdm-products publish",
@@ -57,8 +51,9 @@ public class E2eProductsPublisher {
         }
 
         E2eV2PublishRequest request = e2ePublishRequestMapper.map(root);
+        E2ePublishSource source = E2ePublishSource.forArtifactType(artifactType);
         try {
-            e2eProductsClient.upsertE2e(request, rawDataRefId, pipelineRunId);
+            e2eProductsClient.upsertE2e(request, rawDataRefId, pipelineRunId, source.name());
         } catch (RuntimeException e) {
             recordPublishFailure(artifactUid, rawDataRefId, pipelineRunId, e);
             throw e;
