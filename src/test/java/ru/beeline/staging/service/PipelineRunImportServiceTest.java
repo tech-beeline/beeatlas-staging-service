@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import ru.beeline.staging.client.DocumentServiceClient;
+import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.domain.DataType;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.SourceSystem;
@@ -14,6 +15,7 @@ import ru.beeline.staging.exception.ActivePipelineRunException;
 import ru.beeline.staging.exception.DocumentNotFoundException;
 import ru.beeline.staging.exception.PipelineRunBadRequestException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
+import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.DataTypeRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
@@ -43,6 +45,7 @@ class PipelineRunImportServiceTest {
     private PipelineRunRepository pipelineRunRepository;
     private DataTypeRepository dataTypeRepository;
     private SourceSystemRepository sourceSystemRepository;
+    private ConfigurationRepository configurationRepository;
     private DocumentServiceClient documentServiceClient;
     private PipelineExecutionService pipelineExecutionService;
     private PipelineRunImportService service;
@@ -52,11 +55,14 @@ class PipelineRunImportServiceTest {
         pipelineRunRepository = mock(PipelineRunRepository.class);
         dataTypeRepository = mock(DataTypeRepository.class);
         sourceSystemRepository = mock(SourceSystemRepository.class);
+        configurationRepository = mock(ConfigurationRepository.class);
         documentServiceClient = mock(DocumentServiceClient.class);
         pipelineExecutionService = mock(PipelineExecutionService.class);
         service = new PipelineRunImportService(pipelineRunRepository, dataTypeRepository, sourceSystemRepository,
-                documentServiceClient, pipelineExecutionService);
+                configurationRepository, documentServiceClient, pipelineExecutionService);
 
+        when(configurationRepository.findByArtifactTypeAndIsActiveTrue(anyString()))
+                .thenReturn(List.of(manualConfiguration()));
         when(dataTypeRepository.findByCode(anyString())).thenReturn(Optional.of(dataType()));
         when(sourceSystemRepository.findByCode(anyString())).thenReturn(Optional.of(sourceSystem()));
         when(pipelineRunRepository.findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(
@@ -82,6 +88,7 @@ class PipelineRunImportServiceTest {
         PipelineRun saved = savedRun();
         assertThat(saved.getBranch()).isEqualTo("main");
         assertThat(saved.getSourceId()).isEqualTo(5);
+        assertThat(saved.getConfigurationId()).isEqualTo(9L);
         assertThat(saved.getPayload()).contains("Смена тарифа");
     }
 
@@ -266,6 +273,15 @@ class PipelineRunImportServiceTest {
         type.setId(1);
         type.setCode(E2E_PLANTUML);
         return type;
+    }
+
+    private Configuration manualConfiguration() {
+        Configuration configuration = new Configuration();
+        configuration.setId(9L);
+        configuration.setCode("e2e-plantuml-manual");
+        configuration.setArtifactType(E2E_PLANTUML);
+        configuration.setScheduleIntervalSeconds(null);
+        return configuration;
     }
 
     private SourceSystem sourceSystem() {

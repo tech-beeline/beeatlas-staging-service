@@ -15,7 +15,12 @@ public interface CmdbAliasLookup {
 
     Map<String, ResolvedParticipant> resolveAll(Set<String> aliases);
 
-    record ResolvedParticipant(String alias, String name, Kind kind) {
+    record ResolvedParticipant(String alias, String name, Kind kind, String productAlias) {
+
+        public ResolvedParticipant(String alias, String name, Kind kind) {
+            this(alias, name, kind, alias);
+        }
+
         public enum Kind { SYSTEM, CONTAINER }
     }
 }

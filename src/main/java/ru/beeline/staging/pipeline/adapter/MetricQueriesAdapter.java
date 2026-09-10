@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.adapter;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +63,7 @@ public class MetricQueriesAdapter implements ArtifactAdapter {
     public String description() { return "Loads a Grafana dashboard (Full Export) by the object's api-metric-template URL"; }
 
     @Override
-    public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {
+    public Map<String, Object> load(String artifactUid, String sourceId, StageContext context) throws Exception {
         MetricQueriesSourceMeta source = sparxMetricQueriesRepository.findByUid(artifactUid)
                 .orElseThrow(() -> new IllegalStateException(
                         "Object no longer carries api-metric-template in Sparx EA: uid=" + artifactUid));

@@ -14,6 +14,8 @@ import ru.beeline.staging.product.dto.ContainerByCodeSummary;
 import ru.beeline.staging.product.dto.OperationSearchResponse;
 import ru.beeline.staging.product.dto.ProductAliasSummary;
 import ru.beeline.staging.product.dto.ProductSummary;
+import ru.beeline.staging.product.dto.search.MatchedArchOperation;
+import ru.beeline.staging.product.dto.search.OperationMatchCandidate;
 
 import java.util.List;
 import java.util.Optional;
@@ -91,6 +93,26 @@ public class ProductServiceClient {
             return containers != null ? List.of(containers) : List.of();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to fetch containers by codes: url=" + url + " — " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Batch match of diagram calls against architecture operations (POST /api/v1/operation/search-matched).
+     * The response is flat: candidates without a match simply contribute nothing, so callers re-associate
+     * entries by productCode + operation name/type rather than by position.
+     */
+    public List<MatchedArchOperation> searchMatchedOperations(List<OperationMatchCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return List.of();
+        }
+        String url = baseUrl + "/api/v1/operation/search-matched";
+        log.info("Searching matched operations: candidates={} url={}", candidates.size(), url);
+        try {
+            MatchedArchOperation[] matched = restTemplate.postForObject(url, candidates, MatchedArchOperation[].class);
+            return matched != null ? List.of(matched) : List.of();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to search matched operations: url=" + url
+                    + " candidates=" + candidates.size() + " — " + e.getMessage(), e);
         }
     }
 

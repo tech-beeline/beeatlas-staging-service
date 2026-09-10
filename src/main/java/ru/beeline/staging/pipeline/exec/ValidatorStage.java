@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.exec;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,9 +13,11 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.ValidateResult;
+import ru.beeline.staging.pipeline.StageContext;
 import ru.beeline.staging.pipeline.validator.ArtifactValidator;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
@@ -34,6 +37,8 @@ public class ValidatorStage implements ArtifactPipelineStage {
     private final PipelineRunRepository   pipelineRunRepository;
     private final ModuleResolver          moduleResolver;
     private final PipelineRunService      pipelineRunService;
+    private final SourceSystemRepository  sourceSystemRepository;
+    private final ObjectMapper            objectMapper;
 
     private Map<String, ArtifactValidator> registry;
 
@@ -88,7 +93,8 @@ public class ValidatorStage implements ArtifactPipelineStage {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
-            ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
+            ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8),
+                    StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
 
             List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
 

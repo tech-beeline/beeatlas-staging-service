@@ -15,9 +15,11 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.TransformResult;
+import ru.beeline.staging.pipeline.StageContext;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
@@ -42,6 +44,7 @@ public class TransformerStage implements ArtifactPipelineStage {
     private final ObjectMapper              objectMapper;
     private final ModuleResolver            moduleResolver;
     private final PipelineRunService        pipelineRunService;
+    private final SourceSystemRepository    sourceSystemRepository;
 
     private Map<String, ArtifactTransformer> registry;
 
@@ -84,7 +87,8 @@ public class TransformerStage implements ArtifactPipelineStage {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
-            TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
+            TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8),
+                    StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
 
             ref.setCanonicalSnapshotJson(snapshotJson);

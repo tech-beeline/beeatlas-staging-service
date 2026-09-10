@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.adapter;
 
+import ru.beeline.staging.pipeline.StageContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -35,7 +36,7 @@ public class StructurizrSequenceAdapter implements ArtifactAdapter {
     public String description() { return "Downloads a product's Structurizr workspace export (structurizrApiUrl + /json)"; }
 
     @Override
-    public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {
+    public Map<String, Object> load(String artifactUid, String sourceId, StageContext context) throws Exception {
         ProductSummary product = productServiceClient.getProductInfo(artifactUid)
                 .orElseThrow(() -> new IllegalStateException("Product not found in fdm-products: alias=" + artifactUid));
 

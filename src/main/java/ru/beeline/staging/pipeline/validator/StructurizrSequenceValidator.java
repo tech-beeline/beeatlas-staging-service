@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.validator;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,7 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
     public String description() { return "Validates a Structurizr workspace export: structure, and that at least one dynamic_view calls a method that exists on a product interface"; }
 
     @Override
-    public ValidateResult validate(String artifactUid, String rawContent) throws Exception {
+    public ValidateResult validate(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         List<ArtifactNotice> notices = new ArrayList<>();
 

@@ -68,7 +68,8 @@ public class FdmProductsCmdbAliasLookup implements CmdbAliasLookup {
             for (String alias : remaining) {
                 ContainerByCodeSummary container = containersByLowerCode.get(alias.toLowerCase(Locale.ROOT));
                 if (container != null) {
-                    result.put(alias, new ResolvedParticipant(alias, container.getName(), Kind.CONTAINER));
+                    result.put(alias, new ResolvedParticipant(alias, container.getName(), Kind.CONTAINER,
+                            container.getProductAlias()));
                 }
             }
         }

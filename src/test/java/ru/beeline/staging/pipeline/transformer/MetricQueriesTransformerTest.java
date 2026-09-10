@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ class MetricQueriesTransformerTest {
             }
             """;
 
-        TransformResult result = transformer.transform("beeatlas", raw);
+        TransformResult result = transformer.transform("beeatlas", raw, StageContext.empty());
         MetricQueriesObjectPublish snapshot = (MetricQueriesObjectPublish) result.snapshot();
 
         assertThat(snapshot.entityType()).isEqualTo("product");
@@ -121,7 +122,7 @@ class MetricQueriesTransformerTest {
             }
             """;
 
-        TransformResult result = transformer.transform("grafana-source-1", raw);
+        TransformResult result = transformer.transform("grafana-source-1", raw, StageContext.empty());
         MetricQueriesObjectPublish snapshot = (MetricQueriesObjectPublish) result.snapshot();
 
         assertThat(snapshot.metricTemplates()).hasSize(4);
@@ -156,7 +157,7 @@ class MetricQueriesTransformerTest {
             }
             """;
 
-        TransformResult result = transformer.transform("uid-1", raw);
+        TransformResult result = transformer.transform("uid-1", raw, StageContext.empty());
         MetricQueriesObjectPublish snapshot = (MetricQueriesObjectPublish) result.snapshot();
 
         assertThat(snapshot.metricTemplates()).isEmpty();

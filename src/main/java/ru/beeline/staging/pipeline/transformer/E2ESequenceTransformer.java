@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +29,7 @@ public class E2ESequenceTransformer implements ArtifactTransformer {
     public String description() { return "Builds the call tree from the raw Sparx EA export and decomposes it into bi_step/interface/operation drafts"; }
 
     @Override
-    public TransformResult transform(String artifactUid, String rawContent) throws Exception {
+    public TransformResult transform(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         ScenarioDecomposer.Result result = decomposer.decompose(root, artifactUid);
         E2ESequenceSnapshot snapshot = result.snapshot();

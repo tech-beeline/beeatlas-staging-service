@@ -10,6 +10,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 import ru.beeline.staging.pipeline.adapter.MetricQueriesAdapter;
+import ru.beeline.staging.pipeline.adapter.PlantUmlE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.SparxE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.StructurizrSequenceAdapter;
 import ru.beeline.staging.pipeline.preadapter.MetricQueriesPreAdapter;
@@ -20,9 +21,11 @@ import ru.beeline.staging.pipeline.saver.MetricQueriesSaver;
 import ru.beeline.staging.pipeline.saver.StructurizrSequenceCanonicalSaver;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceTransformer;
 import ru.beeline.staging.pipeline.transformer.MetricQueriesTransformer;
+import ru.beeline.staging.pipeline.transformer.PlantUmlE2ETransformer;
 import ru.beeline.staging.pipeline.transformer.StructurizrSequenceTransformer;
 import ru.beeline.staging.pipeline.validator.E2ESequenceValidator;
 import ru.beeline.staging.pipeline.validator.MetricQueriesValidator;
+import ru.beeline.staging.pipeline.validator.PlantUmlE2EValidator;
 import ru.beeline.staging.pipeline.validator.StructurizrSequenceValidator;
 
 @Component
@@ -33,6 +36,11 @@ public class PipelineDefinitions {
 
         private static final Map<String, Map<String, String>> DEFINITIONS = Map.of(
 
+                        "e2e-plantuml", Map.of(
+                                        "adapter", PlantUmlE2EAdapter.MODULE_CODE,
+                                        "validator", PlantUmlE2EValidator.MODULE_CODE,
+                                        "transformer", PlantUmlE2ETransformer.MODULE_CODE,
+                                        "saver", E2ECanonicalSaver.MODULE_CODE),
                         "e2e-sequence", Map.of(
                                         "pre-adapter", SparxE2EPreAdapter.MODULE_CODE,
                                         "adapter", SparxE2EAdapter.MODULE_CODE,

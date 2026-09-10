@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -73,7 +74,7 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
     public String description() { return "Extracts panels[0] targets into a parameterized MetricQueriesObjectPublish snapshot"; }
 
     @Override
-    public TransformResult transform(String artifactUid, String rawContent) throws Exception {
+    public TransformResult transform(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         JsonNode sparxMetadata = root.path("sparxMetadata");
         JsonNode dashboard = root.path("grafanaDashboard").path("dashboard");

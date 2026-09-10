@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.validator;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +41,7 @@ public class E2ESequenceValidator implements ArtifactValidator {
     public String description() { return "Structurally validates the raw Sparx EA scenario export"; }
 
     @Override
-    public ValidateResult validate(String artifactUid, String rawContent) throws Exception {
+    public ValidateResult validate(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         List<ArtifactNotice> notices = new ArrayList<>();
 

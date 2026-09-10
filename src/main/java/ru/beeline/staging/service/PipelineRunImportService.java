@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.client.DocumentServiceClient;
+import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.SourceSystem;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunRequest;
@@ -18,6 +19,7 @@ import ru.beeline.staging.exception.ActivePipelineRunException;
 import ru.beeline.staging.exception.DocumentNotFoundException;
 import ru.beeline.staging.exception.PipelineRunBadRequestException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
+import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.DataTypeRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.SourceSystemRepository;
@@ -51,6 +53,7 @@ public class PipelineRunImportService {
     private final PipelineRunRepository pipelineRunRepository;
     private final DataTypeRepository dataTypeRepository;
     private final SourceSystemRepository sourceSystemRepository;
+    private final ConfigurationRepository configurationRepository;
     private final DocumentServiceClient documentServiceClient;
     private final PipelineExecutionService pipelineExecutionService;
 
@@ -85,6 +88,7 @@ public class PipelineRunImportService {
         run.setSourceId(sourceSystem.getId());
         run.setBranch(branch);
         run.setSupersedesRunId(supersededRunId);
+        run.setConfigurationId(manualConfigurationId(artifactType));
         run = pipelineRunRepository.save(run);
 
         log.info("Created manual import run {}: artifactType={} artifactUid={} source={} branch={} supersedes={}",
@@ -94,6 +98,14 @@ public class PipelineRunImportService {
 
         return new CreatePipelineRunResponse(run.getId(), artifactType, artifactUid, run.getStatus(),
                 statusUrl(run.getId(), artifactType));
+    }
+
+    private Long manualConfigurationId(String artifactType) {
+        return configurationRepository.findByArtifactTypeAndIsActiveTrue(artifactType).stream()
+                .filter(configuration -> configuration.getScheduleIntervalSeconds() == null)
+                .map(Configuration::getId)
+                .findFirst()
+                .orElse(null);
     }
 
     private SourceSystem resolveSourceSystem(String artifactType, String source) {

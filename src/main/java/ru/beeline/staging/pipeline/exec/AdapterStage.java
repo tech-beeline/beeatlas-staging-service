@@ -4,14 +4,17 @@
 
 package ru.beeline.staging.pipeline.exec;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.pipeline.StageContext;
 import ru.beeline.staging.pipeline.adapter.ArtifactAdapter;
 import ru.beeline.staging.repository.ConfigurationRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.service.SourceArtefactService;
@@ -32,6 +35,8 @@ public class AdapterStage implements ArtifactPipelineStage {
     private final PipelineRunRepository   pipelineRunRepository;
     private final ConfigurationRepository configurationRepository;
     private final SourceArtefactService   sourceArtefactService;
+    private final SourceSystemRepository  sourceSystemRepository;
+    private final ObjectMapper            objectMapper;
 
     private Map<String, ArtifactAdapter> registry;
 
@@ -53,7 +58,8 @@ public class AdapterStage implements ArtifactPipelineStage {
         String uid = run.getArtifactUid();
         String artifactType = run.getArtifactType();
         Long configurationId = run.getConfigurationId();
-        String sourceId = String.valueOf(configurationId);
+        StageContext context = StageSupport.contextOf(run, objectMapper, sourceSystemRepository);
+        String sourceId = configurationId != null ? String.valueOf(configurationId) : context.sourceCode();
 
         Long stageLogId = pipelineRunService.startStage(runId, stageName(), uid);
         try {
@@ -64,13 +70,19 @@ public class AdapterStage implements ArtifactPipelineStage {
             }
 
             log.info("stage=adapter, module={}, uid={}", moduleCode, uid);
-            Map<String, Object> result = adapter.load(uid, sourceId, null);
+            Map<String, Object> result = adapter.load(uid, sourceId, context);
 
             if (result != null && result.get("rawDataRefId") != null) {
                 Long rawDataRefId = ((Number) result.get("rawDataRefId")).longValue();
                 pipelineRunService.setRawDataRefId(runId, rawDataRefId);
-                configurationRepository.findById(configurationId)
-                        .ifPresent(config -> sourceArtefactService.recordLoaded(config, uid, rawDataRefId));
+                if (configurationId != null) {
+                    configurationRepository.findById(configurationId).ifPresent(config -> {
+                        if (run.getParentRunId() == null) {
+                            sourceArtefactService.recordSeen(config, uid, null, runId, context.payloadText("name"));
+                        }
+                        sourceArtefactService.recordLoaded(config, uid, rawDataRefId);
+                    });
+                }
             }
             String outputSummary = result != null ? "rawDataRefId=" + result.get("rawDataRefId") : null;
             pipelineRunService.completeStage(stageLogId, outputSummary, StageSupport.buildSummary(result));

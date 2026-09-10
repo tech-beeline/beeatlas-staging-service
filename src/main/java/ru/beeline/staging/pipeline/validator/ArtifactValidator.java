@@ -5,6 +5,7 @@
 package ru.beeline.staging.pipeline.validator;
 
 import ru.beeline.staging.dto.notice.ValidateResult;
+import ru.beeline.staging.pipeline.StageContext;
 
 public interface ArtifactValidator {
 
@@ -12,5 +13,5 @@ public interface ArtifactValidator {
 
     String description();
 
-    ValidateResult validate(String artifactUid, String rawContent) throws Exception;
+    ValidateResult validate(String artifactUid, String rawContent, StageContext context) throws Exception;
 }

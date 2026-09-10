@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.validator;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +37,7 @@ public class MetricQueriesValidator implements ArtifactValidator {
     public String description() { return "Validates the grafanaDashboard section (dashboard JSON structure, panels[0] targets)"; }
 
     @Override
-    public ValidateResult validate(String artifactUid, String rawContent) throws Exception {
+    public ValidateResult validate(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         JsonNode dashboardWrapper = root.path("grafanaDashboard");
         List<ArtifactNotice> notices = new ArrayList<>();
