@@ -31,11 +31,6 @@ public class ProductVersion {
     @Column(name = "name")
     private String name;
 
-    /**
-     * Неосновные атрибуты продукта в JSONB-колонке json_data (BLG-004/ADR-011, V0008).
-     * Ключи snake_case: description, author. NULL/{} семантически равны пустому набору
-     * (FR-003-22, BR-18). CHECK (json_data IS NULL OR jsonb_typeof(json_data) = 'object').
-     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "json_data", columnDefinition = "jsonb")
     private String jsonData;
@@ -48,4 +43,7 @@ public class ProductVersion {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "branch_name")
+    private String branchName;
 }

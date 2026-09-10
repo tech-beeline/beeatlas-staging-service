@@ -37,7 +37,6 @@ public class PipelineRunImportService {
     public static final String USECASE_TYPE = "usecase";
     public static final String E2E_PLANTUML_TYPE = "e2e-plantuml";
 
-    private static final String DEFAULT_BRANCH = "main";
     private static final int MAX_BRANCH_LENGTH = 64;
     private static final int MAX_PLANT_UML_BYTES = 512 * 1024;
     private static final String MANUAL_SOURCE = "manual";
@@ -200,7 +199,7 @@ public class PipelineRunImportService {
 
     private String resolveBranch(String branch) {
         if (branch == null || branch.isBlank()) {
-            return DEFAULT_BRANCH;
+            return RunBranchResolver.DEFAULT_BRANCH;
         }
         String trimmed = branch.trim();
         if (trimmed.length() > MAX_BRANCH_LENGTH) {

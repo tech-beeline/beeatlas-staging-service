@@ -13,10 +13,6 @@ import ru.beeline.staging.service.PipelineRunService;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-save-spec.md
- * — keep in sync with that spec.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -45,9 +41,6 @@ public class MetricQueriesSaver implements ArtifactSaver {
 
         MetricQueriesObjectPublish snapshot = objectMapper.readValue(canonicalSnapshotJson, MetricQueriesObjectPublish.class);
 
-        // Same idempotency guard as E2ECanonicalSaver: if a previous attempt already committed the
-        // canonical save and only failed later at publish, don't insert a second version — retry
-        // only the publish.
         Optional<ArtifactBatch> existingBatch = pipelineRunService.findExistingBatchForRef(artifactUid, artifactType, rawDataRefId);
         Long batchId;
         if (existingBatch.isPresent()) {

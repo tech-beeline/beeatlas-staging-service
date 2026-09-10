@@ -19,11 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Find-or-create + versioning for the container identity (BLG-004/ADR-011, CMP-03).
- * Non-primary attributes (version, description, technology) are serialized into {@code json_data}
- * via {@link JsonDataValidator} instead of individual column setters.
- */
 @Service
 @RequiredArgsConstructor
 public class ContainerMatchService {
@@ -35,7 +30,7 @@ public class ContainerMatchService {
     @Transactional
     public ContainerVersion matchOrCreate(String uid, String extUid, String name, String version, String description,
                                            String technology, Long productVersionId,
-                                           String jsonPointer, Long rawDataRefId, Long batchId) {
+                                           String jsonPointer, Long rawDataRefId, Long batchId, String branch) {
         boolean[] created = {false};
         Container entity = containerRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -53,7 +48,6 @@ public class ContainerMatchService {
         containerVersion.setProductVersionId(productVersionId);
         containerVersion.setExtUid(extUid);
         containerVersion.setName(name);
-        // CMP-03: serialize non-primary attributes into json_data instead of column setters
         Map<String, Object> attrs = new HashMap<>();
         if (version != null) attrs.put("version", version);
         if (description != null) attrs.put("description", description);
@@ -64,6 +58,7 @@ public class ContainerMatchService {
         containerVersion.setCreatedAt(LocalDateTime.now());
         containerVersion.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         containerVersion.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        containerVersion.setBranchName(branch);
         return containerVersionRepository.save(containerVersion);
     }
 

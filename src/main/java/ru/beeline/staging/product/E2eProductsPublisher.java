@@ -66,8 +66,6 @@ public class E2eProductsPublisher {
                 artifactUid, rawDataRefId, pipelineRunId);
     }
 
-    // Saved in its own transaction (see ArtifactNoticeService.saveNoticeInNewTransaction) so the notice
-    // survives the rollback the caller's @Transactional save method triggers by rethrowing.
     private void recordPublishFailure(String artifactUid, Long rawDataRefId, Long pipelineRunId, Exception e) {
         log.error("fdm-products publish failed for uid={}, relationId={}, pipelineRunId={}: {}",
                 artifactUid, rawDataRefId, pipelineRunId, e.getMessage());

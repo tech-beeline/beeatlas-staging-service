@@ -16,15 +16,6 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Builds the call tree from a raw Sparx EA scenario export and filters internal
- * calls, mirroring
- * dashboard-service's collapsing rules
- * (src/api/services/scenarios-service/build-call-tree.mjs).
- * Every fragment that gets filtered out or fails to map is recorded as a
- * transform.* ArtifactNotice
- * instead of silently disappearing.
- */
 @Component
 @RequiredArgsConstructor
 public class ScenarioDecomposer {
@@ -48,15 +39,10 @@ public class ScenarioDecomposer {
         Map<Integer, JsonNode> interfacesById = indexByIntField(root.path("interfaces"), "id");
         Map<Integer, JsonNode> containersById = indexByIntField(root.path("containers"), "id");
         Map<String, JsonNode> operationsByUid = indexByStringField(root.path("operations"), "uid");
-        // RFC6901 pointers into root.diagrams[]/interfaces[]/operations[] by array
-        // position — stored
-        // as the json_path in raw_data_context for bi_step/interface/operation drafts
-        // and notices.
         Map<String, Integer> diagramArrayIndexByUid = arrayIndexByStringField(root.path("diagrams"), "uid");
         Map<Integer, Integer> interfaceArrayIndexById = arrayIndexByIntField(root.path("interfaces"), "id");
         Map<String, Integer> operationArrayIndexByUid = arrayIndexByStringField(root.path("operations"), "uid");
 
-        // Product (systems[] -> products/product_versions, per transform-spec §4.2)
         Set<String> seenProductCodes = new HashSet<>();
         int systemIdx = 0;
         for (JsonNode system : root.path("systems")) {
@@ -81,20 +67,6 @@ public class ScenarioDecomposer {
             snapshot.getProducts().add(product);
         }
 
-        // Container (containers[] -> containers/container_versions, per transform-spec
-        // §4.2.1: uid is
-        // containers[].code with the trailing ".<cmdb>" suffix stripped,
-        // case-insensitively, where cmdb
-        // is the owning system's code — denormalized onto the container row as
-        // system_code, since
-        // containers[].system_id doesn't reliably resolve against systems[] (systems[]
-        // is scoped to
-        // systems that appear as diagram objects; a container's owning system may never
-        // appear on the
-        // diagram itself even though its interface does). cleanedContainerCodeById is
-        // reused below when
-        // resolving an interface's owning container (§4.2.2), so both places agree on
-        // the same uid.
         Set<String> seenContainerCodes = new HashSet<>();
         Map<Integer, String> cleanedContainerCodeById = new LinkedHashMap<>();
         int containerIdx = 0;
@@ -135,8 +107,6 @@ public class ScenarioDecomposer {
             }
             E2ESequenceSnapshot.ContainerDraft containerDraft = new E2ESequenceSnapshot.ContainerDraft();
             containerDraft.setUid(code);
-            // ext_uid = <container_code> (cmdb suffix stripped) — per transform-spec
-            // §4.2.1/§4.3.1.
             containerDraft.setExtUid(code);
             containerDraft.setName(textOrNull(container, "name"));
             containerDraft.setProductUid(productUid);
@@ -161,8 +131,6 @@ public class ScenarioDecomposer {
                     "diagram_uid", entranceDiagramUid), rootDiagramPointer + "/notes"));
         }
 
-        // Step 3: per-diagram local call trees (seqno order, is_ret/use/self-call
-        // dropped)
         Map<String, CallNode> diagramRoots = new LinkedHashMap<>();
         for (JsonNode diagram : root.path("diagrams")) {
             String diagramUid = textOrNull(diagram, "uid");
@@ -173,8 +141,6 @@ public class ScenarioDecomposer {
                     interfacesById, operationsByUid, notices));
         }
 
-        // Step 4: merge child diagrams via linked_diagram_uid — one flat pass over
-        // every node
         List<CallNode> allNodes = new ArrayList<>();
         for (CallNode dr : diagramRoots.values())
             collectAll(dr, allNodes);
@@ -182,13 +148,6 @@ public class ScenarioDecomposer {
             linkChildDiagram(node, diagramRoots, notices);
         }
 
-        // Step 6/7: decompose the surviving tree into canonical drafts
-        // bi_steps.uid/ext_uid is the business key (step_id, e.g. "Step.01.00.00.00");
-        // the Sparx
-        // diagram GUID (entrance_diagram_uid) is now the e2e_scenario's own identity,
-        // linked to the
-        // bi_step via e2e_scenario_versions.bi_step_version_id instead of the other way
-        // around.
         if (stepId != null) {
             BiStepDraft biStep = new BiStepDraft();
             biStep.setUid(stepId);
@@ -250,25 +209,6 @@ public class ScenarioDecomposer {
         return new Result(snapshot, notices, stepId);
     }
 
-    /**
-     * Closes the snapshot over its own references: every {@code interfaces[].containerUid} must be
-     * described in {@code containers[]}, and every {@code containers[].productUid} in
-     * {@code products[]}.
-     *
-     * <p>The two blocks are built from different parts of the export and by different rules, so they
-     * can disagree: containers[]/systems[] are emitted by their own top-level loops (which drop
-     * entries on a missing/duplicate code), while an interface's owning container is resolved
-     * separately, per operation, while walking the call tree. A container dropped by the first loop
-     * but still referenced by the second left a dangling containerUid, and — since systems[] only
-     * lists systems that appear as diagram objects, while a container's owning system need not — a
-     * container's productUid regularly points at a product the snapshot never describes. Both leave
-     * the saver unable to resolve the hierarchy (container_versions.product_version_id stays NULL),
-     * which is defect QA-5.
-     *
-     * <p>Backfill only ever copies what the raw export already says; nothing is invented. A
-     * reference that can't be backfilled is recorded as a notice, and a dangling containerUid is
-     * cleared rather than published as a broken link.
-     */
     private void ensureSelfContained(E2ESequenceSnapshot snapshot, JsonNode root,
             Map<Integer, JsonNode> containersById, Map<Integer, String> cleanedContainerCodeById,
             List<ArtifactNotice> notices) {
@@ -323,8 +263,6 @@ public class ScenarioDecomposer {
 
             JsonNode system = systemsByCode.get(productUid);
             if (system == null) {
-                // Deliberately keeps productUid: it is the container's only recorded owner, and the
-                // saver resolves it against products already in the canonical catalog.
                 notices.add(mapFailed("warning", details("product_not_in_systems",
                         "container_uid", container.getUid(), "product_uid", productUid),
                         container.getContext()));
@@ -365,19 +303,6 @@ public class ScenarioDecomposer {
 
     }
 
-    // A CallNode can end up reachable from more than one parent (linkChildDiagram
-    // merges a child
-    // diagram's root children by reference into every calling message that resolves
-    // to the same
-    // operation_guid — if that happens more than once, e.g. because of an
-    // ambiguous_entry_point match,
-    // the same child gets walked and re-emitted once per parent). Rather than
-    // untangle that sharing in
-    // the tree itself, dedupe the flattened relations by (caller, callee,
-    // call_order): two genuinely
-    // distinct calls between the same pair never share a call_order, since that's a
-    // per-parent
-    // positional index — only true duplicates do.
     private void dedupeOperationRelations(E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
         Set<String> seen = new HashSet<>();
         List<OperationRelationDraft> deduped = new ArrayList<>();
@@ -396,10 +321,6 @@ public class ScenarioDecomposer {
         snapshot.getOperationRelations().clear();
         snapshot.getOperationRelations().addAll(deduped);
     }
-
-    // ------------------------------------------------------------------
-    // Step 3 — per-diagram local tree (mirrors build-call-tree.mjs addMessage)
-    // ------------------------------------------------------------------
 
     private CallNode buildLocalTree(JsonNode diagram, String diagramUid, Integer diagramIdx,
                                     Map<Integer, JsonNode> objectsById,
@@ -538,10 +459,6 @@ public class ScenarioDecomposer {
                 details(reason, "message_uid", node.uid, "message_name", node.name), node.pointer));
     }
 
-    // ------------------------------------------------------------------
-    // Step 4 — child diagram merge (mirrors build-call-tree.mjs Pass 2/3)
-    // ------------------------------------------------------------------
-
     private void collectAll(CallNode node, List<CallNode> out) {
         out.add(node);
         for (CallNode ch : node.children)
@@ -634,14 +551,6 @@ public class ScenarioDecomposer {
                       Map<String, Integer> operationArrayIndexByUid, Map<Integer, Integer> interfaceArrayIndexById,
                       Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
                       Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
-        /*
-         * notices.add(notice("transform.include", "info",
-         * details(reason, "message_uid", ch.uid, "message_name", ch.name,
-         * "operation_guid", ch.operationGuid, "callee", ch.serverAppCode,
-         * "parent_message_name",
-         * parent.name, "parent_message_uid", parent.uid),
-         * ch.pointer));
-         */
 
         decomposeChildren(ch, operationsByUid,
                 interfacesById,
@@ -652,10 +561,6 @@ public class ScenarioDecomposer {
 
         result.add(ch);
     }
-
-    // ------------------------------------------------------------------
-    // Step 6/7 — decompose the surviving tree into canonical drafts
-    // ------------------------------------------------------------------
 
     private void decomposeChildren(CallNode parent, Map<String, JsonNode> operationsByUid,
                                    Map<Integer, JsonNode> interfacesById,
@@ -763,12 +668,6 @@ public class ScenarioDecomposer {
             Map<String, OperationDraft> operationDrafts, Set<String> registeredInterfaces,
             Set<String> skippedOperations, E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {
 
-        // G2: operation_guid present on the message but not found in operations[] —
-        // distinct from G1
-        // below (operation exists but its interface doesn't); conflating the two under
-        // one reason
-        // made root-causing confusing (a bogus operation_guid was being reported as
-        // "missing_interface").
         JsonNode op = operationsByUid.get(node.operationGuid);
         if (op == null) {
             skippedOperations.add(node.operationGuid);
@@ -776,10 +675,6 @@ public class ScenarioDecomposer {
             return;
         }
 
-        // operations[].c4_methods[] — приоритетный источник SLA и привязки к
-        // интерфейсу (по c4_methods[].interface_id = api_id). C4-метод «заменяет»
-        // изначальную операцию: имя остаётся из operations[].name, а SLA и
-        // interface_id берутся из выбранного C4-метода (см. transform-spec §4.5).
         JsonNode c4Method = selectC4Method(op);
         Map<String, String> opTags = tagsOf(op);
         Map<String, String> slaTags = opTags;
@@ -793,7 +688,6 @@ public class ScenarioDecomposer {
 
             node.operationGuid = c4MethodUid;
             Map<String, String> c4Tags = tagsOf(c4Method);
-            // SLA: приоритет у C4-метода, fallback на operations[].tags.
             slaTags = new LinkedHashMap<>(c4Tags);
             opTags.forEach(slaTags::putIfAbsent);
             c4InterfaceId = intOrNull(c4Method, "interface_id");
@@ -805,24 +699,12 @@ public class ScenarioDecomposer {
         Integer ifaceId = c4InterfaceId != null ? c4InterfaceId : intOrNull(op, "interface_id");
         JsonNode iface = ifaceId != null ? interfacesById.get(ifaceId) : null;
 
-        // G1: the operation resolved, but its interface_id doesn't — or the interface
-        // exists but has no
-        // code (the Sparx extract query LEFT JOINs the api wiring now, so an interface
-        // with
-        // unresolvable wiring still appears in interfaces[], just with code=null).
-        // Dropped entirely, not
-        // just left with a null interfaceUid — fdm-products rejects
-        // operations.parentInterfaceCode == null.
         if (iface == null || textOrNull(iface, "code") == null) {
             skippedOperations.add(node.operationGuid);
             notices.add(missingInterfaceNotice(node.operationGuid, ifaceId, node.pointer));
             return;
         }
 
-        // fdm-products (POST /api/v2/e2e) requires interfaces[].name on every interface in the
-        // payload, not just newly created ones — a single blank name (e.g. an EA object the
-        // architect never named) rejects the whole e2e with 400 BAD_REQUEST, blocking every other
-        // interface/operation in the scenario too. Drop just this operation instead, same as G1.
         String ifaceName = textOrNull(iface, "name");
         if (ifaceName == null || ifaceName.isBlank()) {
             skippedOperations.add(node.operationGuid);
@@ -833,7 +715,6 @@ public class ScenarioDecomposer {
         OperationDraft draft = new OperationDraft();
         draft.setExtUid(node.operationGuid);
         String rawName = textOrNull(op, "name");
-        // Points at root.operations[N] itself, not the calling message.
         Integer opIdx = operationArrayIndexByUid.get(node.operationGuid);
         draft.setContext(opIdx != null ? "/operations/" + opIdx : node.pointer);
 
@@ -847,7 +728,6 @@ public class ScenarioDecomposer {
         if (c4MethodUid != null) {
             draft.setC4MethodUid(c4MethodUid);
             draft.setC4MethodInterfaceId(c4InterfaceId);
-            // C4-метод заменил изначальную операцию: SLA и привязка взяты из него.
             notices.add(c4MethodAppliedNotice(node, c4MethodUid, c4InterfaceId, ifaceId, c4InterfaceId != null));
         } else if (!tags.isEmpty()) {
             notices.add(implicitCastNotice(node, tags, rps, latency, errorRate));
@@ -864,12 +744,6 @@ public class ScenarioDecomposer {
             return;
         }
 
-        // interface uid — per transform-spec §4.2.2 (v6): strip the trailing
-        // ".<original container
-        // code>" suffix (case-insensitive) from interfaces[].code. Uses the container's
-        // ORIGINAL
-        // (uncleaned) code, since that's what the interface's own code was suffixed
-        // with in Sparx.
         String rawIfaceCode = textOrNull(iface, "code");
         String ifaceUid = rawIfaceCode;
         if (rawIfaceCode == null) {
@@ -892,8 +766,6 @@ public class ScenarioDecomposer {
             if (endsWithIgnoreCase(rawIfaceCode, containerSuffix)) {
                 String extracted = rawIfaceCode.substring(0, rawIfaceCode.length() - containerSuffix.length());
                 if (extracted.isEmpty()) {
-                    // G13: empty interface_code after suffix strip is fatal for this interface —
-                    // the operation (and its subtree) is dropped, same as G1.
                     skippedOperations.add(node.operationGuid);
                     notices.add(emptyInterfaceCodeNotice(rawIfaceCode, containerSuffix, node.pointer));
                     return;
@@ -919,15 +791,11 @@ public class ScenarioDecomposer {
         draft.setInterfaceUid(ifaceUid);
 
         String rawProtocol = tagsOf(iface).get("protocol");
-        // Default to UNKNOWN when the source has no protocol tag at all — per
-        // transform-spec §4.4.
         String protocol = (rawProtocol == null || rawProtocol.isBlank()) ? "UNKNOWN" : rawProtocol;
 
         if (registeredInterfaces.add(ifaceUid)) {
             InterfaceDraft ifaceDraft = new InterfaceDraft();
             ifaceDraft.setUid(ifaceUid);
-            // ext_uid = <interface_code> (container suffix stripped) — per transform-spec
-            // §4.2.2/§4.4.
             ifaceDraft.setExtUid(ifaceUid);
             ifaceDraft.setProtocol(protocol);
             ifaceDraft.setName(textOrNull(iface, "name"));
@@ -949,9 +817,6 @@ public class ScenarioDecomposer {
             }
         }
 
-        // name — per transform-spec §4.5: if the raw name has a space, name becomes
-        // everything after
-        // the first word (regardless of protocol).
         String name = rawName;
         if (rawName != null && rawName.indexOf(' ') >= 0) {
             name = rawName.substring(rawName.indexOf(' ') + 1);
@@ -959,13 +824,6 @@ public class ScenarioDecomposer {
         }
         draft.setName(name);
 
-        // type — per transform-spec §4.5.1 (v6): REST derives type from the first word
-        // of the raw name
-        // (or UNKNOWN if there's no space, warning). UNKNOWN protocol now attempts the
-        // same extraction
-        // (assuming REST, warning either way) instead of just inheriting "UNKNOWN". Any
-        // other known
-        // protocol (SOAP, gRPC, ...) is inherited directly.
         boolean hasSpace = rawName != null && rawName.indexOf(' ') >= 0;
         String type;
         if ("REST".equalsIgnoreCase(protocol)) {
@@ -994,21 +852,9 @@ public class ScenarioDecomposer {
                 details("operation_found", "operation_uid", node.operationGuid, "operation_name", draft.getName()),
                 node.pointer));
 
-        // Not added to snapshot.getOperations() here: registration runs before
-        // decomposeChildren's
-        // keep/skip decision, so a call later collapsed as purely-internal (e.g. same
-        // app code as its
-        // parent) would otherwise leak its operation into the output as an orphan with
-        // no relation
-        // pointing to it. decompose() adds only operations actually reachable via a
-        // surviving relation.
         operationDrafts.put(node.operationGuid, draft);
     }
 
-    // Выбор C4-метода из operations[].c4_methods[] (transform-spec §4.5).
-    // Приоритет: 1) есть SLA; 2) нет removedDate; 3) первый из оставшихся;
-    // 4) если ни одного без removedDate — любой с removedDate; 5) если SLA ни у
-    // одного — любой.
     private JsonNode selectC4Method(JsonNode op) {
         JsonNode c4Methods = op.path("c4_methods");
         if (c4Methods == null || !c4Methods.isArray() || c4Methods.isEmpty())
@@ -1032,16 +878,12 @@ public class ScenarioDecomposer {
                 withSlaNoRemoved.add(m);
         }
 
-        // 1) с SLA, без removedDate
         if (!withSlaNoRemoved.isEmpty())
             return withSlaNoRemoved.get(0);
-        // 2) с SLA (в т.ч. с removedDate)
         if (!withSla.isEmpty())
             return withSla.get(0);
-        // 3) без removedDate (SLA нет ни у одного)
         if (!noRemoved.isEmpty())
             return noRemoved.get(0);
-        // 4) любой (только removedDate без SLA, либо без SLA вовсе)
         return all.get(0);
     }
 
@@ -1229,10 +1071,6 @@ public class ScenarioDecomposer {
                     Map.of("source_value", tags.get("error_rate"), "target_value", String.valueOf(errorRate)));
         return notice("transform.implicit_cast", "info", d, node.pointer);
     }
-
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
 
     private String parseStepId(String notes) {
         if (notes == null)

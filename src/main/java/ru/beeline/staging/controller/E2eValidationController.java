@@ -30,17 +30,13 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-/**
- * Synchronous PlantUML e2e validation (STG-01/STG-02): no pipeline/Camunda side effects, no
- * canonical-model writes — both methods just parse and report (STG-06: same text, same report).
- */
 @Slf4j
 @RestController
 @RequestMapping(value = "/api/v1/e2e", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class E2eValidationController {
 
-    private static final int MAX_PLANTUML_LENGTH = 500_000; // ~500 KB (STG-08)
+    private static final int MAX_PLANTUML_LENGTH = 500_000;
     private static final long VALIDATION_TIMEOUT_MS = 10_000;
 
     private final PlantUmlValidationEngine engine;
@@ -86,8 +82,6 @@ public class E2eValidationController {
                 return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT)
                         .body(Map.of("errorMessage", "Validation timed out"));
             }
-            // never forward e.getCause().getMessage() to the client — it can carry internal
-            // infrastructure details (e.g. an upstream service URL)
             log.error("e2e validation failed", e.getCause());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("errorMessage", "Validation failed due to an internal error, try again later"));

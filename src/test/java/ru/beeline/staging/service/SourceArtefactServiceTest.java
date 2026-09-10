@@ -18,14 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.*;
 
-/**
- * Unit-тесты для {@link SourceArtefactService#recordSeen} в контексте поля name (BLG-002).
- *
- * Покрывают критерии приёмки:
- *  - CR2: name заполняется при обработке артефакта (recordSeen ... из metadata);
- *  - CR3: name опционален, защита от перезаписи непустого пустым (BR-13/FR-003-17);
- *  - CR5: обратная совместимость — обработка без name не падает (FR-003-17, EC-005).
- */
 class SourceArtefactServiceTest {
 
     private SourceArtefactTypeRepository typeRepository;
@@ -35,7 +27,6 @@ class SourceArtefactServiceTest {
     private final AtomicLong typeSeq = new AtomicLong(1);
     private final AtomicLong artefactSeq = new AtomicLong(1);
 
-    /** In-memory fake, имитирующий JPA-репозиторий (ключ: typeId|extUid). */
     private final Map<String, SourceArtefact> store = new HashMap<>();
 
     @BeforeEach
@@ -53,7 +44,6 @@ class SourceArtefactServiceTest {
                     return Optional.ofNullable(store.get(key(typeId, extUid)));
                 });
 
-        // save(): кладём сущность в store с сохранением id (как это делает JPA persistence context).
         when(artefactRepository.save(any(SourceArtefact.class)))
                 .thenAnswer(inv -> {
                     SourceArtefact a = inv.getArgument(0);
@@ -97,9 +87,6 @@ class SourceArtefactServiceTest {
                 .orElse(null);
     }
 
-    // ------------------------------------------------------------------
-    // 1. recordSeen с непустым name — новый артефакт (FR-003-16, CR2)
-    // ------------------------------------------------------------------
     @Test
     @DisplayName("recordSeen с непустым name сохраняет name для нового артефакта")
     void recordSeenWithNamePersistsNameForNewArtefact() {
@@ -114,9 +101,6 @@ class SourceArtefactServiceTest {
         assertThat(a.getLastSeenScanRunId()).isEqualTo(100L);
     }
 
-    // ------------------------------------------------------------------
-    // 2. Повторный скан: non-empty name перезаписывает непустое имя
-    // ------------------------------------------------------------------
     @Test
     @DisplayName("recordSeen с новым непустым name перезаписывает существующее (переименование в источнике)")
     void recordSeenWithNewNonEmptyNameOverwritesExisting() {
@@ -128,18 +112,15 @@ class SourceArtefactServiceTest {
         assertThat(a.getLastSeenScanRunId()).isEqualTo(101L);
     }
 
-    // ------------------------------------------------------------------
-    // 3. Защита от перезаписи непустого пустым (BR-13/FR-003-17, CR3)
-    // ------------------------------------------------------------------
     @Test
     @DisplayName("recordSeen с пустой строкой НЕ перезаписывает существующее непустое name")
     void recordSeenWithBlankDoesNotOverwriteExistingName() {
         service.recordSeen(config(), "scenario-1", 100L, 200L, "Старое имя");
-        service.recordSeen(config(), "scenario-1", 101L, 201L, "   "); // blank
+        service.recordSeen(config(), "scenario-1", 101L, 201L, "   ");
 
         SourceArtefact a = saved("scenario-1");
         assertThat(a.getName()).isEqualTo("Старое имя");
-        assertThat(a.getLastSeenScanRunId()).isEqualTo(101L); // остальные поля штатно обновлены
+        assertThat(a.getLastSeenScanRunId()).isEqualTo(101L);
     }
 
     @Test
@@ -162,9 +143,6 @@ class SourceArtefactServiceTest {
         assertThat(a.getName()).isEqualTo("Старое имя");
     }
 
-    // ------------------------------------------------------------------
-    // 4. Непустой name поверх null/null поверх null (обратная совместимость)
-    // ------------------------------------------------------------------
     @Test
     @DisplayName("recordSeen с непустым name заполняет name после первого скана без name")
     void recordSeenWithNameFillsAfterNull() {
@@ -175,9 +153,6 @@ class SourceArtefactServiceTest {
         assertThat(saved("scenario-1").getName()).isEqualTo("Имя появилось");
     }
 
-    // ------------------------------------------------------------------
-    // 5. Без name (null/blank) для нового артефакта — не падает (FR-003-17, CR12/CR5)
-    // ------------------------------------------------------------------
     @Test
     @DisplayName("recordSeen без name (null) для нового артефакта не падает, name остаётся null")
     void recordSeenWithoutNameForNewArtefactDoesNotFail() {
@@ -215,9 +190,6 @@ class SourceArtefactServiceTest {
         assertThat(a.getName()).isNull();
     }
 
-    // ------------------------------------------------------------------
-    // 6. Инварианты: поля bookkeeping обновляются независимо от name
-    // ------------------------------------------------------------------
     @Test
     @DisplayName("recordSeen вызывает save один раз и обновляет updatedAt")
     void recordSeenSavesAndUpdatesTimestamps() {

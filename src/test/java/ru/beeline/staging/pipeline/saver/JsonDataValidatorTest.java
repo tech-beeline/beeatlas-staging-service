@@ -9,21 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Юнит-тесты {@link JsonDataValidator} (BLG-004/ADR-011, FR-003-22, FR-003-24).
- *
- * <p>Покрывает три операции утилиты:</p>
- * <ul>
- *   <li>{@code toJsonData} — сериализация Map → JSON-строка, исключение NULL-ключей (FR-003-22)</li>
- *   <li>{@code validate} — валидация json_data как JSON-объекта (FR-003-24, EC-007)</li>
- *   <li>{@code fromJsonData} — десериализация json_data → Map, обработка null/{} (FR-003-22)</li>
- * </ul>
- */
 class JsonDataValidatorTest {
-
-    // ---------------------------------------------------------------
-    // toJsonData — сериализация Map в JSON-строку
-    // ---------------------------------------------------------------
 
     @Test
     void toJsonData_nullMap_returnsNull() {
@@ -47,14 +33,13 @@ class JsonDataValidatorTest {
     void toJsonData_mixedMap_nullKeysExcluded() throws Exception {
         Map<String, Object> attrs = new HashMap<>();
         attrs.put("rps", 100);
-        attrs.put("watermark", null); // должен быть исключён
+        attrs.put("watermark", null);
         attrs.put("latency", 11.2);
         attrs.put("description", "text");
 
         String json = JsonDataValidator.toJsonData(attrs);
 
         assertThat(json).isNotNull();
-        // NULL-ключ исключён, остальные присутствуют
         assertThat(json)
                 .contains("\"rps\":100")
                 .contains("\"latency\":11.2")
@@ -68,13 +53,8 @@ class JsonDataValidatorTest {
         assertThat(json).isEqualTo("{\"stereotype\":\"«Обращение»\"}");
     }
 
-    // ---------------------------------------------------------------
-    // validate — проверка корректности json_data
-    // ---------------------------------------------------------------
-
     @Test
     void validate_null_isValid() {
-        // null json_data валидно по BR-18 / FR-003-22 (нет неосновных атрибутов)
         assertThatCode(() -> JsonDataValidator.validate(null)).doesNotThrowAnyException();
     }
 
@@ -109,10 +89,6 @@ class JsonDataValidatorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("expected JSON object");
     }
-
-    // ---------------------------------------------------------------
-    // fromJsonData — десериализация json_data в Map
-    // ---------------------------------------------------------------
 
     @Test
     void fromJsonData_null_returnsEmptyMap() {
@@ -179,10 +155,6 @@ class JsonDataValidatorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("expected JSON object");
     }
-
-    // ---------------------------------------------------------------
-    // round-trip: toJsonData -> fromJsonData
-    // ---------------------------------------------------------------
 
     @Test
     void roundTrip_serializeThenDeserialize_preservesValues() {

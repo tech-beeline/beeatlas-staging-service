@@ -20,15 +20,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/**
- * Parses PlantUML source with the {@code net.sourceforge.plantuml} library (the sole parsing
- * engine for this validation contour, per the e2e-import vision §6.3) into {@link ParsedDiagram},
- * or a list of blocking {@link Finding}s if the text isn't valid PlantUML / not a Sequence Diagram.
- */
 @Component
 public class PlantUmlDiagramParser {
 
-    /** PlantUML's block comment: {@code /' ... '/}, possibly spanning lines. */
     private static final Pattern BLOCK_COMMENT = Pattern.compile("/'.*?'/", Pattern.DOTALL);
 
     public ParseOutcome parse(String source) {
@@ -52,10 +46,6 @@ public class PlantUmlDiagramParser {
         }
 
         if (hasEmptyBody(source)) {
-            // PlantUML has nothing to infer a type from here, and answers inconsistently (a welcome
-            // easter egg for a bare block, a syntax error when the block holds whitespace-only lines).
-            // Neither answer is honest for the user: an empty diagram isn't "some other diagram type",
-            // it's a diagram with no participants — report it as such (e2e.validation.participants.missing).
             return ParseOutcome.ok(new ParsedDiagram(List.of(), List.of()));
         }
 
@@ -77,7 +67,6 @@ public class PlantUmlDiagramParser {
         return ParseOutcome.ok(toParsedDiagram(sequenceDiagram, source));
     }
 
-    /** True when the first @startuml/@enduml block carries nothing but blank lines and comments. */
     private static boolean hasEmptyBody(String source) {
         String withoutBlockComments = BLOCK_COMMENT.matcher(source).replaceAll("");
         boolean insideBlock = false;
@@ -94,7 +83,6 @@ public class PlantUmlDiagramParser {
                 return false;
             }
         }
-        // no @enduml at all — not our case to judge, let PlantUML report the unterminated block
         return false;
     }
 
@@ -137,7 +125,6 @@ public class PlantUmlDiagramParser {
                 String fromAlias = message.getParticipant1().getCode();
                 String toAlias = message.getParticipant2().getCode();
                 int line = locator.findMessageLine(fromAlias, toAlias, cursorLine);
-                // advance past this line so the next message of the same pair doesn't collapse onto it
                 cursorLine = line + 1;
                 messages.add(new ParsedDiagram.Message(fromAlias, toAlias, joinDisplay(message.getLabel()), line));
             }

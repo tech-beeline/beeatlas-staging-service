@@ -116,13 +116,10 @@ public class PipelineRunService {
             entry.setOutputData(outputData);
             entry.setSummaryJson(summary);
             stageLogRepository.save(entry);
-            // A completed stage is the definition of progress — the run's no-progress budget resets
-            // here, so only a run that finishes nothing at all can reach the stall watchdog.
             runRepository.resetResumeCount(entry.getRunId());
         });
     }
 
-    /** Replaces a finished stage's summary — used by fan-out, whose per-artifact counts are only known after it. */
     @Transactional
     public void updateStageSummary(Long stageLogId, Map<String, Object> summary) {
         stageLogRepository.findById(stageLogId).ifPresent(entry -> {
@@ -145,27 +142,19 @@ public class PipelineRunService {
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "failed").increment();
     }
 
-    /** What this scan decided to do with one artifact it found — see {@link #finishScanWithChildren}. */
     public enum Disposition {
-        /** No run was queued for this artifact — a fresh one was created and belongs to this scan. */
         CREATED,
-        /** A failed run with retries left was re-queued; ownership moved to this scan. */
         REQUEUED,
-        /** A previous scan's run for this artifact is still in flight — it keeps that scan's ownership. */
         IN_FLIGHT,
-        /** Failed and out of auto-retries: needs POST /admin/pipeline-runs/{id}/retry, nothing to dispatch. */
         BLOCKED
     }
 
     public record ChildOutcome(String artifactUid, PipelineRun run, Disposition disposition) {
-        /** Runs this scan is responsible for executing — the ones that go into its child_run_ids. */
         public boolean ownedByThisScan() {
             return disposition == Disposition.CREATED || disposition == Disposition.REQUEUED;
         }
     }
 
-    // One transaction: completeStage + completeRun + all children, so a crash mid-fan-out can't
-    // leave a partial set of children behind.
     @Transactional
     public List<ChildOutcome> finishScanWithChildren(Long scanRunId, Long stageLogId, String outputData,
                                                       Map<String, Object> summary, String artifactType,
@@ -182,24 +171,6 @@ public class PipelineRunService {
         runRepository.resetResumeCount(scanRunId);
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
 
-        // A found artifact may already have an undrained (or failed-but-retryable) run from a
-        // previous scan of this config — reuse it instead of piling on a duplicate every cycle.
-        // Only "completed" excludes reuse; "failed" is deliberately included (unlike the old
-        // NOT IN (completed,failed) check) — otherwise a failed run sitting between failure and
-        // the next auto-retry sweep looked "not queued" to this check, so a new scan would create
-        // a second copy for the same artifact right alongside it.
-        //
-        // What reuse must NOT do is hand back a run that can never move again: a "failed" run past
-        // maxAutoRetries is terminal until someone retries it by hand, but it still matches the
-        // NOT IN ('completed') lookup, so every later scan re-adopted it, listed it as its own
-        // child and dispatched a chain that #claim() refuses (claim skips failed/completed). The
-        // artifact then stops being processed forever while hundreds of scans keep reporting it as
-        // their own failed child. Such runs are reported as BLOCKED here instead — visible, not
-        // silently re-adopted (defect QA-1).
-        // A block stays until a human clears it (POST /admin/pipeline-runs/{id}/retry) — auto-retry
-        // here would only pile up runs that fail the same way. What the block does carry is
-        // blockedAt: how long the artifact has been stuck, so the UI can show it instead of leaving
-        // it to be noticed by accident 11 days later.
         List<ChildOutcome> outcomes = new java.util.ArrayList<>(artifactUids.size());
         for (String uid : artifactUids) {
             PipelineRun existing = runRepository
@@ -215,10 +186,6 @@ public class PipelineRunService {
                 continue;
             }
             if (existing.getRetryCount() >= maxAutoRetries) {
-                // Stamped by whichever scan first meets the block, not at failure time: what the
-                // operator needs to see is how long the artifact has been stuck, and a run can fail
-                // its last attempt long before any scan re-finds the artifact. Written once — later
-                // scans keep re-finding the same run and must not keep resetting its age.
                 if (existing.getBlockedAt() == null) {
                     existing.setBlockedAt(LocalDateTime.now());
                     runRepository.save(existing);
@@ -233,16 +200,6 @@ public class PipelineRunService {
         return outcomes;
     }
 
-    // A re-queued run is executed on behalf of the scan that re-queued it, so ownership moves with
-    // it: parent_run_id is repointed and the run is dropped from the previous scan's child_run_ids.
-    // Keeping both sides in step is what makes "which scan did this work" answerable — without it a
-    // single run accumulated membership in hundreds of scans' snapshots (defect QA-4).
-    // The entity passed in here is stale by construction: markRetrying() has just bulk-UPDATEd this
-    // row to 'pending' with a cleared lease, while `run` still carries the 'failed' state it was
-    // loaded with. Mutating it and calling save() would flush that stale state on commit and quietly
-    // undo the re-queue — the run would stay failed and never be picked up. So the repoint goes
-    // through a bulk UPDATE too, and the entity is left untouched. Callers only read run.getId()
-    // (ownedByThisScan works off the disposition), so nothing downstream sees the stale fields.
     private void reassignParent(PipelineRun run, Long newParentRunId) {
         Long previousParent = run.getParentRunId();
         if (newParentRunId.equals(previousParent)) return;
@@ -252,11 +209,6 @@ public class PipelineRunService {
         runRepository.updateParentRunId(run.getId(), newParentRunId);
     }
 
-    // Written once, right after fan-out (see PipelineExecutionService#executeScan) — the only moment
-    // "which artifacts did this scan find" is unambiguous. Holds exactly the runs this scan owns
-    // (created or re-queued), so it always agrees with the parent_run_id back-references; artifacts
-    // whose run is still in flight from an earlier scan, or blocked awaiting a manual retry, are
-    // reported in the pre-adapter stage summary instead of being counted here as this scan's work.
     @Transactional
     public void snapshotChildRunIds(Long scanRunId, List<Long> childRunIds) {
         runRepository.findById(scanRunId).ifPresent(scan -> {
@@ -272,21 +224,10 @@ public class PipelineRunService {
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
     }
 
-    // markCompleted/markFailed are bulk UPDATEs and don't return the entity, so fetched separately.
     private String artifactTypeOf(Long runId) {
         return runRepository.findById(runId).map(PipelineRun::getArtifactType).orElse("unknown");
     }
 
-    /**
-     * Forces a run that the resume loop has been re-claiming without progress into a terminal state.
-     * Called only by the stall watchdog (PipelineResumeScheduler#failStalledRuns).
-     *
-     * <p>Deliberately reads the run before the bulk updates and never mutates the loaded entity:
-     * a managed entity dirtied here would be flushed *after* the bulk UPDATEs and silently undo
-     * them (the trap that still bites {@link #reassignParent}). Everything terminal goes through
-     * {@code markStalled}, whose WHERE clause also makes this a no-op if another instance got
-     * there first.
-     */
     @Transactional
     public void failStalledRun(Long runId, int resumeAttempts, int retryCeiling) {
         PipelineRun run = runRepository.findById(runId).orElse(null);

@@ -25,14 +25,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Сторож зависших прогонов (V0020).
- *
- * Инвариант из DoD миграции с камунды: ни один прогон не может остаться в нетерминальном статусе
- * бесконечно без продвижения. До сторожа это не выполнялось — resume-цикл перезабирал скан каждые
- * 5 минут, retry_count не рос (он живёт только на пути отказа), и прогон крутился сутками, держа
- * слот активного скана конфигурации. Ровно так залипли прогоны 1571951 и 1595194 на FUNC.
- */
 class PipelineRunServiceStallWatchdogTest {
 
     private static final long RUN_ID   = 1571951L;
@@ -75,7 +67,6 @@ class PipelineRunServiceStallWatchdogTest {
 
         service.failStalledRun(RUN_ID, ATTEMPTS, RETRY_CEILING);
 
-        // findFailedRetryable отбирает по retryCount < maxRetries: потолок выводит прогон из выборки.
         verify(runRepository).markStalled(anyLong(), anyString(), anyString(), eq(RETRY_CEILING));
     }
 

@@ -13,11 +13,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-validator-spec.md
- * v2.1 — keep in sync with that spec. Validates only the grafanaDashboard section of the raw
- * document; targets in panels[0] only (Rule 1, matching MetricQueriesTransformer).
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -118,11 +113,6 @@ public class MetricQueriesValidator implements ArtifactValidator {
         }
     }
 
-    /**
-     * Rule 2 + CM-02-03: which field is validated depends on the panel-level datasource type —
-     * expr for prometheus, query for opensearch. If the panel's type couldn't be resolved (missing/
-     * unknown — already flagged separately), the query-expression check is skipped for its targets.
-     */
     private void validateQueryExpression(JsonNode target, String datasourceType, String refId,
                                           String artifactUid, String context, List<ArtifactNotice> notices) {
         if ("prometheus".equals(datasourceType)) {
@@ -155,15 +145,11 @@ public class MetricQueriesValidator implements ArtifactValidator {
         }
     }
 
-    /** CM-05-02: elasticsearch normalizes to opensearch. */
     private String normalizeDatasourceType(String type) {
         if (type == null) return null;
         return "elasticsearch".equals(type) ? "opensearch" : type;
     }
 
-    // ArtifactNoticeEntity only persists code/level/category (via notice_type) + details + context —
-    // message() is never written by ArtifactNoticeService, so the human-readable text has to live
-    // in details (matches E2ESequenceValidator's convention).
     private ArtifactNotice error(String code, String message, String entityUid, String context) {
         return new ArtifactNotice(null, null, code, "error", "validation",
                 null, null, entityUid, null, message, toDetailsJson(message), context, null, null, null);

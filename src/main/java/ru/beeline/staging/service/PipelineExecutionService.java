@@ -63,7 +63,6 @@ public class PipelineExecutionService {
         log.info("PipelineExecutionService ownerId={}", ownerId);
     }
 
-
     public void submitScan(Configuration config) {
         dispatch(pipelineExecutors.scan(), "scan for configId=" + config.getId(), () -> runScan(config));
     }
@@ -76,7 +75,6 @@ public class PipelineExecutionService {
         dispatch(pipelineExecutors.artifact(configCode), "artifact chain runId=" + runId,
                 () -> runArtifactChain(runId, artifactType));
     }
-
 
     void runScan(Configuration config) {
         PipelineRun scan = createScanRun(config);
@@ -109,12 +107,6 @@ public class PipelineExecutionService {
         }
     }
 
-    // Everything after the pre-adapter needs the same "the run must end up terminal" guarantee the
-    // artifact chain gets from #executeStageWithMetrics. finishScanWithChildren in particular is a
-    // single transaction covering stage completion, run completion and the whole fan-out: if it
-    // throws, all three roll back together and the scan is left exactly as the pre-adapter found it
-    // — stage log still "running", run still non-terminal, retryCount untouched — which the resume
-    // loop then repeats forever. Catching here is what converts that into a normal failure.
     private void executeScan(PipelineRun scan, Configuration config) {
         PreAdapterStage.ScanOutcome outcome = tryScan(scan, config);
         if (outcome == null) return;
@@ -126,9 +118,6 @@ public class PipelineExecutionService {
                     scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
                     config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
 
-            // Freeze which runs belong to this scan right now — childStats computed from this list later
-            // won't be stolen by a newer scan of the same config the way the source_artifacts-based
-            // childStats is (see ScanRunRepository's child_stats vs child_stats_snapshot).
             pipelineRunService.snapshotChildRunIds(scan.getId(), outcomes.stream()
                     .filter(PipelineRunService.ChildOutcome::ownedByThisScan)
                     .map(o -> o.run().getId())
@@ -145,11 +134,6 @@ public class PipelineExecutionService {
         }
     }
 
-    // The scan row's own stage log is the only place that can answer "did this scan do work, or did
-    // it just re-find artifacts someone else is already processing" — the run statuses behind
-    // child_run_ids can't, since a scan that skipped everything now has an empty snapshot. Counts go
-    // into the pre-adapter stage summary; blocked artifacts additionally get a WARN and a metric,
-    // because nothing will touch them again until a human calls the retry endpoint.
     private void recordDispositions(PipelineRun scan, Configuration config, Long stageLogId,
                                      List<PipelineRunService.ChildOutcome> outcomes) {
         Map<PipelineRunService.Disposition, List<PipelineRunService.ChildOutcome>> byDisposition =
@@ -165,9 +149,7 @@ public class PipelineExecutionService {
         List<PipelineRunService.ChildOutcome> blocked =
                 byDisposition.getOrDefault(PipelineRunService.Disposition.BLOCKED, List.of());
         if (!blocked.isEmpty()) {
-            // Capped on purpose: a configuration can carry thousands of blocked artifacts, and this
-            // runs on every tick — the full list belongs in /admin/pipeline-runs/blocked, not in a
-            // log line or in every scan's summary_json.
+
             List<Long> sample = blocked.stream().limit(BLOCKED_SAMPLE_SIZE).map(o -> o.run().getId()).toList();
             summary.put("blockedRunIdsSample", sample);
             log.warn("configId={} scanRunId={}: {} artifact(s) skipped — failed and out of auto-retries. "
@@ -182,15 +164,12 @@ public class PipelineExecutionService {
         pipelineRunService.updateStageSummary(stageLogId, summary);
     }
 
-
     private void dispatch(Executor executor, String description, Runnable task) {
         executor.execute(() -> {
             try {
                 task.run();
             } catch (Throwable t) {
-                // Throwable: an Error here would otherwise kill the worker thread with nothing but a
-                // raw stderr trace from the default uncaught-exception handler — no log line, no
-                // context, and the run it was executing left mid-flight.
+ 
                 log.error("Unhandled throwable running {}", description, t);
             }
         });
@@ -206,17 +185,11 @@ public class PipelineExecutionService {
         }
     }
 
-    // Throwable, not Exception: an Error escaping the adapter (a NoClassDefFoundError from a
-    // half-migrated classpath, an OOM on an oversized source response) used to sail past every
-    // catch in this class, kill the pool thread and leave the run untouched — indistinguishable in
-    // the database from a stage that simply never finished, and just as unrecoverable.
     private PreAdapterStage.ScanOutcome tryScan(PipelineRun scan, Configuration config) {
         try {
             return preAdapterStage.scan(scan, config);
         } catch (Throwable t) {
             log.warn("Scan failed for configId={}, scanRunId={}", config.getId(), scan.getId(), t);
-            // PreAdapterStage#scan already calls failStage for Exceptions it catches; this is the
-            // backstop for everything that got past it, and is a no-op if the run is already failed.
             ensureRunMarkedFailed(scan.getId(), preAdapterStage.stageName(), t);
             return null;
         }
@@ -230,10 +203,6 @@ public class PipelineExecutionService {
         return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getName();
     }
 
-    // recordSeen runs for every found artifact regardless of disposition — source_artifacts tracks
-    // "what exists in the source right now", which is true even for an artifact whose run is blocked
-    // or still being worked by an earlier scan. Only runs this scan owns get dispatched: an
-    // in-flight run is already claimed elsewhere, and a blocked one would be refused by #claim().
     private void dispatchChildren(PipelineRun scan, Configuration config,
                                    List<ArtifactPreAdapter.FoundArtifact> found,
                                    List<PipelineRunService.ChildOutcome> outcomes) {
@@ -276,13 +245,6 @@ public class PipelineExecutionService {
         }
     }
 
-    // Each stage is expected to call PipelineRunService#failStage itself (records the stage_log
-    // entry and marks the run failed) before rethrowing. But some exceptions can escape before a
-    // stage even reaches its own try/catch (e.g. thrown while reading run fields, before
-    // startStage() is called) — that run then sits at its previous non-terminal status forever,
-    // gets reclaimed and re-throws identically on every lease cycle, and never shows up in the
-    // "failed" bucket. This is the exact "зависшие" symptom the architect flagged. Close that gap
-    // unconditionally here, regardless of where in the stage the exception originated.
     private void ensureRunMarkedFailed(Long runId, String stageName, Throwable t) {
         PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
         if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())) return;

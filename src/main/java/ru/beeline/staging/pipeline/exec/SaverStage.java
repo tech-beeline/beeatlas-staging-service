@@ -62,7 +62,6 @@ public class SaverStage implements ArtifactPipelineStage {
                 return;
             }
 
-            // See ValidatorStage for why this is checked here instead of unboxed before the try.
             if (run.getRawDataRefId() == null) {
                 throw new IllegalStateException("No rawDataRefId available for uid=" + uid
                         + " — adapter stage did not produce one");
@@ -88,7 +87,6 @@ public class SaverStage implements ArtifactPipelineStage {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             SaveResult saverResult = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
-            // match-notices are saved inside the saver's own transaction; saverResult.notices() is empty
 
             Map<String, Object> output = new HashMap<>(saverResult.summary() != null ? saverResult.summary() : Map.of());
             output.put("saved", true);

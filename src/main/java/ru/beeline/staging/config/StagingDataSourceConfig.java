@@ -50,10 +50,6 @@ public class StagingDataSourceConfig {
         return new JpaTransactionManager(entityManagerFactory);
     }
 
-    // Bound to the same DataSource bean as the JPA EntityManagerFactory above, so when invoked inside a
-    // @Transactional method managed by stagingTransactionManager it shares that transaction's connection
-    // and sees uncommitted writes made via JPA in the same transaction (identity-generated inserts flush
-    // immediately, so this is safe to use right after repository.save() calls).
     @Bean(name = "stagingJdbcTemplate")
     public JdbcTemplate stagingJdbcTemplate(@Qualifier("stagingDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);

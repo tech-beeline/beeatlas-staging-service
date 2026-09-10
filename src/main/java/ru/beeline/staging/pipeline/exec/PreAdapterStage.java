@@ -18,10 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Not an {@link ArtifactPipelineStage} — it operates on a scan run (one per configuration tick),
- * not on a single artifact run, and produces the list of artifacts the rest of the chain runs on.
- */
 @Slf4j
 @Component
 public class PreAdapterStage {

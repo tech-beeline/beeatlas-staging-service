@@ -9,13 +9,6 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Canonical snapshot produced from one Structurizr workspace.json, following the extraction order
- * from structurizr-sequence-transform-rules.md: product -> containers -> tech capabilities ->
- * interfaces -> operations -> sequences -> sequence_relations -> operation_relations. Cross-references
- * between drafts are plain uid strings; StructurizrSequenceCanonicalSaver resolves them to ids as it
- * persists each layer in order.
- */
 @Data
 public class StructurizrSequenceSnapshot {
 
@@ -30,7 +23,7 @@ public class StructurizrSequenceSnapshot {
 
     @Data
     public static class ProductDraft {
-        private String uid;      // model.properties.workspace_cmdb
+        private String uid;
         private String extUid;
         private String name;
         private String description;
@@ -40,7 +33,7 @@ public class StructurizrSequenceSnapshot {
 
     @Data
     public static class ContainerDraft {
-        private String uid;      // properties.external_name
+        private String uid;
         private String extUid;
         private String name;
         private String version;
@@ -51,7 +44,7 @@ public class StructurizrSequenceSnapshot {
 
     @Data
     public static class TechCapabilityDraft {
-        private String uid;      // {cmdb}.{properties.code}
+        private String uid;
         private String extUid;
         private String name;
         private String description;
@@ -60,7 +53,7 @@ public class StructurizrSequenceSnapshot {
 
     @Data
     public static class InterfaceDraft {
-        private String uid;      // properties.external_name
+        private String uid;
         private String extUid;
         private String protocol;
         private String name;
@@ -73,7 +66,7 @@ public class StructurizrSequenceSnapshot {
 
     @Data
     public static class OperationDraft {
-        private String uid;      // {interface_external_name}_{operation_name_normalized}
+        private String uid;
         private String extUid;
         private String name;
         private String type;
@@ -87,7 +80,7 @@ public class StructurizrSequenceSnapshot {
 
     @Data
     public static class SequenceDraft {
-        private String uid;      // dynamicView.key
+        private String uid;
         private String extUid;
         private String name;
         private String description;

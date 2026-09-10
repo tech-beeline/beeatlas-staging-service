@@ -55,12 +55,6 @@ public class ScanRunRepository {
                 ORDER BY started_at DESC, r.id DESC
                 LIMIT ? OFFSET ?
             ), cte_childs AS (
-                -- Not parent_run_id: a rediscovered artifact reuses its earlier run (dedup fix),
-                -- so that run's parent_run_id still points at whichever scan first created it, not
-                -- this one. source_artifacts.last_seen_scan_run_id/last_run_id are updated on every
-                -- find (new or reused), so they reflect "what this scan currently sees", not "what
-                -- this scan happened to create". Kept for backward compatibility — prefer
-                -- child_stats_snapshot below, which doesn't get reassigned to a newer scan.
                 SELECT
                     s.id, r.status, count(*) as cnt
                 FROM cte_scans s
@@ -68,14 +62,6 @@ public class ScanRunRepository {
                 JOIN staging.pipeline_runs r ON r.id = sa.last_run_id
                 GROUP BY s.id, r.status
             ), cte_childs_snapshot AS (
-                -- Stable: built from cte_scans.child_run_ids, frozen once at fan-out time (see
-                -- PipelineRunService#snapshotChildRunIds) — a later scan re-finding the same
-                -- artifact never removes it from this scan's own snapshot. Only each run's status
-                -- (read live here) changes as it progresses.
-                -- LATERAL + equality join (not `r.id IN (SELECT jsonb_array_elements_text(...))`) —
-                -- the IN-subquery form defeats the planner's ability to use pipeline_runs_pkey and
-                -- forces a full Seq Scan of pipeline_runs per cte_scans row instead of one PK lookup
-                -- per child id.
                 SELECT
                     s.id, r.status, count(*) as cnt
                 FROM cte_scans s
@@ -116,9 +102,6 @@ public class ScanRunRepository {
                 r.started_at,
                 r.completed_at,
                 (
-                    -- Same reasoning as cte_childs in SELECT_SCAN_RUNS above: count what this scan
-                    -- currently sees via source_artifacts, not what it happened to create. Kept for
-                    -- backward compatibility — prefer child_stats_snapshot below.
                     SELECT jsonb_agg(
                         jsonb_build_object(
                             'status', child.status,
@@ -134,12 +117,6 @@ public class ScanRunRepository {
                     ) child
                 ) as child_stats,
                 (
-                    -- Stable: from r.child_run_ids, frozen once at fan-out time — doesn't get
-                    -- reassigned to a newer scan of the same configuration.
-                    -- LATERAL-style unnest + equality join (not `pr.id IN (SELECT
-                    -- jsonb_array_elements_text(...))`) — the IN-subquery form defeats the planner's
-                    -- ability to use pipeline_runs_pkey and forces a full Seq Scan of pipeline_runs
-                    -- instead of one PK lookup per child id.
                     SELECT jsonb_agg(
                         jsonb_build_object(
                             'status', child.status,
@@ -209,12 +186,6 @@ public class ScanRunRepository {
         return new ScanRunPage(totalCount != null ? totalCount : 0, results);
     }
 
-    /**
-     * Найти детали одного скан-запуска по ID.
-     * Возвращает пустой Optional если scanId не найден или если это не скан (parent_run_id IS NOT NULL).
-     *
-     * Ported from documentation/staging-service/queries/select-scan-details.sql
-     */
     public Optional<ScanRunDetails> findScanDetails(Long scanId) {
         List<ScanRunDetails> results = stagingJdbcTemplate.query(SELECT_SCAN_DETAILS, (rs, rowNum) -> {
             List<ChildStat> childStats = parseChildStats(rs.getString("child_stats"));
@@ -236,13 +207,6 @@ public class ScanRunRepository {
 
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
-
-    // The raw `status` column on a scan row only reflects the discovery/fan-out stage (see
-    // finishScanWithChildren) — it flips to "completed" as soon as children are created/reused,
-    // regardless of whether those children have finished. Left as-is, the UI showed "Завершён"
-    // for a scan whose children were still processing (or, before the executeStageWithMetrics
-    // safety net, silently stuck forever) — indistinguishable from a scan where everything is
-    // actually done. displayStatus folds child completion in so the two cases render differently.
     private String displayStatus(String status, List<ChildStat> childStats) {
         if (!"completed".equals(status)) {
             return status;

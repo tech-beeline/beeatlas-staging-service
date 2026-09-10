@@ -54,7 +54,6 @@ class FdmProductsRestEndpointLookupTest {
 
     @Test
     void searchesUsingAStablePrefixSoATemplatedCatalogEntryCanBeFound() {
-        // first try (the full path as needle) finds nothing — it has to fall back to a shorter one
         when(productServiceClient.searchOperation(eq("api/v1/graph/123"), isNull())).thenReturn(emptyResponse());
         when(productServiceClient.searchOperation(eq("api/v1/graph"), isNull()))
                 .thenReturn(response(operation("/api/v1/graph/{docId}", "POST", "fdmshowcaseapp", "FDM Showcase", null, null)));
@@ -62,13 +61,6 @@ class FdmProductsRestEndpointLookupTest {
         assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "POST", "/api/v1/graph/123")).isTrue();
     }
 
-    /**
-     * Real func-stand finding: a template value that isn't a number or a UUID — a system mnemonic
-     * ("BLN") or a process uid ("abc-123") — used to poison the search needle (the old heuristic only
-     * recognized digit/UUID segments as "variable", so it kept the literal value in the needle, which
-     * is never a substring of the stored "{code}"/"{uid}" template). The progressive-shrink search
-     * doesn't care what the value looks like.
-     */
     @Test
     void matchesATemplateSegmentWhoseValueIsNeitherNumericNorAUuid() {
         when(productServiceClient.searchOperation(eq("api/v4/systems/BLN"), isNull())).thenReturn(emptyResponse());
@@ -78,7 +70,6 @@ class FdmProductsRestEndpointLookupTest {
         assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "GET", "/api/v4/systems/BLN")).isTrue();
     }
 
-    /** Same real func-stand finding, with the template in the middle of the path rather than at the end. */
     @Test
     void matchesATemplateSegmentInTheMiddleOfThePathWhoseValueIsNotNumericOrAUuid() {
         when(productServiceClient.searchOperation(eq("api/v4/systems/BLN/purpose"), isNull())).thenReturn(emptyResponse());
@@ -110,21 +101,12 @@ class FdmProductsRestEndpointLookupTest {
 
     @Test
     void searchesWithoutALeadingSlashSoACatalogEntryStoredWithoutOneCanBeFound() {
-        // real dev CMDB, checked by hand: op id 61992 is stored as "getServiceList", no leading slash
-        // at all — a needle that keeps the diagram's "/" would never be a substring of it
         when(productServiceClient.searchOperation(eq("getServiceList"), isNull()))
                 .thenReturn(response(operation("getServiceList", "GET", "fdmshowcaseapp", "FDM Showcase", null, null)));
 
         assertThat(lookup.exists("fdmshowcaseapp", "FDM Showcase", "GET", "/getServiceList")).isTrue();
     }
 
-    /**
-     * CMDB data-quality gap (real dev finding, id 61992): the same real-world "NapiProxy" system
-     * is represented by several disconnected records — the receiver resolved to container
-     * "ext_napiproxy" (by code), but the operation is registered under an unrelated product
-     * "napiproxy.glassfish" that merely shares the display name "NAPIProxy". A code match fails,
-     * but the name match must still find it.
-     */
     @Test
     void matchesByDisplayNameWhenTheOperationIsOwnedByADifferentCmdbRecordWithTheSameName() {
         OperationEntry entry = operation("getServiceList", "GET", "napiproxy.glassfish", "NAPIProxy", null, null);
@@ -151,8 +133,6 @@ class FdmProductsRestEndpointLookupTest {
 
     @Test
     void rejectsAWrongTypedCandidateWhenNoUnknownTypedAlternativeExists() {
-        // the UNKNOWN fallback must stay narrow: a candidate with an explicit, different method is
-        // still a rejection, not a free pass, when nothing UNKNOWN-typed is present to fall back to
         OperationEntry wrongMethod = operation("getServiceList", "POST", "napiproxy.glassfish", "NAPIProxy", null, null);
         when(productServiceClient.searchOperation(anyString(), isNull())).thenReturn(response(wrongMethod));
 

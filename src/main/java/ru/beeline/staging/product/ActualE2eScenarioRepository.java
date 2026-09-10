@@ -10,19 +10,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/**
- * Reads back the current ("actual") saved state of one e2e_scenario from the staging canonical model,
- * as it is published to fdm-products. Ported from
- * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file,
- * with two deliberate divergences:
- * <ul>
- *   <li>{@code interfaces[].parent_product_cmdb} — added for the fdm-products POST /api/v2/e2e
- *       publish path, not present in the documented reference query;</li>
- *   <li>{@code DISTINCT ON (ext_uid)} in every entity CTE — "current version only". The reference
- *       query returns every version ever attached to the artifact's raw_data_ref, which is fine for
- *       ad-hoc lineage inspection but wrong for a publish payload (see the comment in the query).</li>
- * </ul>
- */
 @Repository
 public class ActualE2eScenarioRepository {
 
@@ -40,14 +27,6 @@ public class ActualE2eScenarioRepository {
                 FROM cte_artifacts a
                     JOIN staging.raw_data_contexts c ON c.raw_data_ref_id=a.ref_id
             )
-            -- DISTINCT ON (ext_uid) ... ORDER BY ext_uid, id DESC во всех cte ниже — публикуется
-            -- только ТЕКУЩАЯ версия каждой сущности. raw_data_ref переиспользуется между прогонами
-            -- (upsert по content_hash в SparxE2EAdapter), поэтому на его контекстах висят версии
-            -- ВСЕХ прогонов этого артефакта: у живых сценариев это тысячи строк на один ext_uid.
-            -- Без фильтра payload публикации распухал пропорционально числу прогонов, fdm-products
-            -- получал один и тот же uid операции сотни раз, а вместе с ним — и давно исправленные
-            -- значения старых версий (в т.ч. не влезающие в его колонки: 500 DataException,
-            -- дефекты QA-2/QA-3).
             , cte_e2e AS (
                 SELECT DISTINCT ON (v.ext_uid)
                     v.id as e2e_version_id, v.ext_uid, v.name,
@@ -84,9 +63,6 @@ public class ActualE2eScenarioRepository {
                     LEFT JOIN staging.product_versions p ON p.id=v.product_version_id
                 ORDER BY v.ext_uid, v.id DESC
             ), cte_op_rel AS (
-                -- Ключ дедупликации — бизнес-ключ связи (кто → кого → каким по счёту вызовом), а не
-                -- id версий: на каждый прогон создаётся новая пара operation_version_id, физически
-                -- разная, семантически та же самая связь.
                 SELECT DISTINCT ON (o.ext_uid, r.ext_uid, (v.json_data ->> 'call_order')::int)
                     v.operation_version_id,
                     v.related_operation_version_id,
@@ -168,10 +144,6 @@ public class ActualE2eScenarioRepository {
         this.stagingJdbcTemplate = stagingJdbcTemplate;
     }
 
-    /**
-     * @return the current saved state of the e2e scenario as JSON text, or {@code null} if no
-     * e2e_scenario_versions row exists yet for this artifact's latest raw_data_context (i.e. nothing to publish).
-     */
     public String fetchActualScenarioRaw(String artifactUid) {
         List<String> rows = stagingJdbcTemplate.query(FETCH_ACTUAL_SCENARIO,
                 (rs, rowNum) -> rs.getString("result"), artifactUid);

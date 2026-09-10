@@ -50,11 +50,6 @@ public class PipelineRun {
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt = LocalDateTime.now();
 
-    // Set once, the first time startStage() runs for this run (see PipelineRunService#startStage).
-    // Deliberately separate from startedAt, which stays at row-creation time — startedAt is
-    // load-bearing for stuck-run/backlog detection (PipelineTickScheduler) and resume-candidate
-    // ordering (PipelineResumeScheduler), both of which need "how long has this existed", not "how
-    // long has it been executing".
     @Column(name = "execution_started_at")
     private LocalDateTime executionStartedAt;
 
@@ -95,28 +90,12 @@ public class PipelineRun {
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount = 0;
 
-    // How many times this run has been claimed without completing a single stage. Incremented by
-    // PipelineRunRepository#claim, reset to 0 on real progress (PipelineRunService#completeStage,
-    // #finishScanWithChildren) and on a manual retry. Distinct from retryCount, which counts
-    // *failures* and so never moves for a run that hangs instead of failing — the exact hole that
-    // let FUNC runs 1571951/1595194 be resumed forever (see V0020).
     @Column(name = "resume_count", nullable = false)
     private Integer resumeCount = 0;
 
-    // When a scan first found this run failed and out of auto-retries — i.e. when this artifact
-    // stopped being processed. Cleared by markRetrying, so it is only ever set on a run that is
-    // blocked right now. staging.recovery.blocked-recheck-interval is measured from here, not from
-    // completedAt: the point is how long the artifact has been stuck, and a run can fail its last
-    // attempt long before any scan re-finds the artifact (see PipelineRunService#finishScanWithChildren).
     @Column(name = "blocked_at")
     private LocalDateTime blockedAt;
 
-    // Snapshot of this scan's own children, written once at fan-out time (see
-    // PipelineRunService#snapshotChildRunIds). NULL for child runs and for scans predating V0014.
-    // @JdbcTypeCode required — columnDefinition alone is DDL-only (ddl-auto: none, so it's never even
-    // read) and does nothing for the runtime JDBC binding. Without it Hibernate doesn't serialize
-    // List<Long> as jsonb, so every write here was silently going in wrong — this is why
-    // childStatsSnapshot came back empty on dev even for freshly-run scans.
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "child_run_ids", columnDefinition = "jsonb")
     private List<Long> childRunIds;

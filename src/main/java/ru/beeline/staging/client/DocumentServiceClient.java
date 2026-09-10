@@ -17,11 +17,6 @@ import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
 import java.nio.charset.StandardCharsets;
 
-/**
- * S2S-чтение содержимого документа из document-service по числовому id (STG-02/DOC-08).
- * Использует уже существующий общий {@code GET /api/v1/documents/{id}} — независимо от того,
- * зарегистрирован ли в document-service отдельный тип документа для PlantUML e2e (DOC-01).
- */
 @Slf4j
 @Component
 public class DocumentServiceClient {

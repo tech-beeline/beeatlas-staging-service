@@ -13,11 +13,6 @@ import ru.beeline.staging.repository.SourceArtefactTypeRepository;
 
 import java.time.LocalDateTime;
 
-/**
- * Identity/dedup bookkeeping for artifacts seen in a source — separate from pipeline_runs
- * (which tracks pipeline executions, not source-side identity). One row per unique extUid;
- * lastSeenScanRunId links it to whichever pre-adapter scan most recently found it.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -46,7 +41,6 @@ public class SourceArtefactService {
         artefactRepository.save(artefact);
     }
 
-    /** Called once the Adapter stage has actually persisted a raw_data_refs row for this artifact. */
     @Transactional
     public void recordLoaded(Configuration config, String extUid, Long rawDataRefId) {
         SourceArtefactType type = resolveType(config, extUid);

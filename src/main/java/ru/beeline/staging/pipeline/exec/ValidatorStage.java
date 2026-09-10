@@ -62,11 +62,6 @@ public class ValidatorStage implements ArtifactPipelineStage {
 
         Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + run.getRawDataRefId());
         try {
-            // Unboxed here, inside the try: if the adapter stage completed without ever calling
-            // setRawDataRefId (e.g. an adapter's "content unchanged, nothing to load" success path),
-            // this must surface as a clean, retryable failure — not an NPE that escapes before
-            // failStage() runs and leaves the run silently stuck forever (see PipelineExecutionService
-            // #ensureRunMarkedFailed for the general safety net; this is the actual root cause it covers).
             if (run.getRawDataRefId() == null) {
                 throw new IllegalStateException("No rawDataRefId available for uid=" + uid
                         + " — adapter stage did not produce one");
@@ -92,7 +87,6 @@ public class ValidatorStage implements ArtifactPipelineStage {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
             ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8),
                     StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
 

@@ -34,8 +34,6 @@ class PlantUmlDiagramParserTest {
     void locatesTheLineOfABackwardArrowMessageInsteadOfFallingBackToAnotherLine() {
         ParseOutcome outcome = parser.parse(fixture("universal.puml"));
 
-        // "BNPL <-- Antispam" (line 22) is a backward arrow — it must not collapse onto line 1
-        // (the @startuml fallback) or borrow another message's line
         assertThat(outcome.diagram().messages())
                 .filteredOn(m -> m.fromAlias().equals("Antispam") && m.toAlias().equals("BNPL"))
                 .extracting(ParsedDiagram.Message::line)
@@ -46,7 +44,6 @@ class PlantUmlDiagramParserTest {
     void assignsDistinctIncreasingLinesToConsecutiveMessagesOfTheSamePair() {
         ParseOutcome outcome = parser.parse(fixture("universal.puml"));
 
-        // BNPL -> Antispam appears twice in a row (lines 19 and 20) — both must keep their own line
         assertThat(outcome.diagram().messages())
                 .filteredOn(m -> m.fromAlias().equals("BNPL") && m.toAlias().equals("Antispam"))
                 .extracting(ParsedDiagram.Message::line)
@@ -66,8 +63,6 @@ class PlantUmlDiagramParserTest {
 
     @Test
     void treatsAnEmptyBlockAsAParsedDiagramWithNoParticipants() {
-        // PlantUML itself resolves "@startuml\n@enduml" to its welcome easter egg, which is neither an
-        // error nor a SequenceDiagram — reporting that as not_sequence gave the user the wrong reason
         ParseOutcome outcome = parser.parse(fixture("empty_body.puml"));
 
         assertThat(outcome.isParsed()).isTrue();
@@ -85,7 +80,6 @@ class PlantUmlDiagramParserTest {
 
     @Test
     void stillRejectsANonEmptyBlockThatIsNotASequenceDiagram() {
-        // the empty-body shortcut must not swallow real content: "title" alone parses as a ClassDiagram
         ParseOutcome outcome = parser.parse("@startuml\ntitle Hello\n@enduml\n");
 
         assertThat(outcome.isParsed()).isFalse();

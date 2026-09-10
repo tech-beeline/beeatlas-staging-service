@@ -26,9 +26,6 @@ public class SourceArtefact {
     @Column(name = "ext_uid", nullable = false)
     private String extUid;
 
-    /** Читаемое имя артефакта из преадаптера (FoundArtifact.metadata: name/productName).
-     *  Опционально (BR-13, FR-003-17): отсутствие значения не блокирует обработку;
-     *  fallback для отображения — ext_uid + тип артефакта (FR-003-18). */
     @Column(name = "name")
     private String name;
 
@@ -38,11 +35,9 @@ public class SourceArtefact {
     @Column(name = "last_loaded_ref_id")
     private Long lastLoadedRefId;
 
-    /** The last pipeline_runs row (artifact-level, not scan) executed for this extUid. */
     @Column(name = "last_run_id")
     private Long lastRunId;
 
-    /** The pre-adapter scan (pipeline_runs row with artifactUid == null) that most recently found this extUid. */
     @Column(name = "last_seen_scan_run_id")
     private Long lastSeenScanRunId;
 

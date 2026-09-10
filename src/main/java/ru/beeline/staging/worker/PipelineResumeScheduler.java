@@ -21,8 +21,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-// An abandoned run's lease just expires and findResumeCandidates picks it back up on the next
-// tick — no separate "unstick" step needed.
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -60,21 +58,6 @@ public class PipelineResumeScheduler {
         }
     }
 
-    /**
-     * The backstop that makes "no run stays non-terminal indefinitely without progress" true.
-     *
-     * <p>{@link #resumeInterrupted()} on its own is an unbounded loop: it re-claims any run whose
-     * lease expired, forever. That is correct for a run interrupted by a pod restart, and a trap
-     * for one whose stage starts and never finishes — the resume path touches neither retryCount
-     * nor any terminal status, so the "after max-auto-retries → failed" rule never engages and the
-     * run cycles until someone notices. On FUNC two scan runs cycled for 44 hours this way, each
-     * holding its configuration's one-active-scan slot the whole time, which is what stopped every
-     * subsequent scan of those configurations.
-     *
-     * <p>resumeCount counts claims since the last completed stage, so reaching the threshold means
-     * the run has genuinely moved nothing — a slow run that keeps finishing stages keeps resetting
-     * its budget and is never touched here.
-     */
     @Scheduled(fixedDelayString = "${staging.recovery.stall-check-interval-ms:60000}")
     public void failStalledRuns() {
         List<PipelineRun> stalled = pipelineRunRepository.findStalled(

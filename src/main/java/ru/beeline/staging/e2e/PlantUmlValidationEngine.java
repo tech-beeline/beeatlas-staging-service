@@ -22,12 +22,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Single source of truth for PlantUML e2e Sequence Diagram validation (STG-04/STG-07): parses
- * the text, checks syntax/diagram-type, resolves participants against the CMDB landscape, and
- * checks call messages for a REST endpoint. Pure function of the input text plus the current
- * state of the two lookups — no persistence, no pipeline side effects (STG-01/STG-02).
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -36,7 +30,6 @@ public class PlantUmlValidationEngine {
     private static final Pattern REST_CALL = Pattern.compile(
             "(?i)\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+(\\S+)");
 
-    /** Above this, a single CMDB batch lookup risks blowing the URL-length limit on fdm-products. */
     private static final int MAX_PARTICIPANTS = 300;
 
     private final PlantUmlDiagramParser parser;
@@ -79,12 +72,8 @@ public class PlantUmlValidationEngine {
         List<UnrecognizedParticipant> unrecognizedParticipants = new ArrayList<>();
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias = new HashMap<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
-            // process owners write the CMDB mnemonic in the participant name, not the short "as" alias
             CmdbAliasLookup.ResolvedParticipant match = hasText(participant.name()) ? resolved.get(participant.name()) : null;
             if (match == null) {
-                // the name itself is often "<CMDB container code>.<qualifier>" (e.g.
-                // ext_DynamicSIM.ActivationPageService) — the container is registered under just the
-                // prefix, the qualifier is the diagram author's own detail, not part of the CMDB code
                 String prefix = mnemonicPrefix(participant.name());
                 if (prefix != null) {
                     match = resolved.get(prefix);
@@ -133,7 +122,6 @@ public class PlantUmlValidationEngine {
         String method = matcher.group(1).toUpperCase(Locale.ROOT);
         String path = matcher.group(2);
 
-        // the endpoint must exist on the receiver specifically — existing anywhere in the CMDB is not enough
         CmdbAliasLookup.ResolvedParticipant receiver = resolvedByPlantUmlAlias.get(message.toAlias());
         if (receiver == null) {
             findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
@@ -149,9 +137,6 @@ public class PlantUmlValidationEngine {
         try {
             found = restEndpointLookup.exists(receiver.alias(), receiver.name(), method, path);
         } catch (RuntimeException e) {
-            // a broken lookup for one call must not take the whole report down (STG-08 guards the
-            // input, not a flaky/broken downstream call) — log it and report just this call as
-            // unverifiable, the rest of the diagram is still worth validating
             log.warn("REST endpoint check failed for {} {} on '{}': {}", method, path, message.toAlias(), e.toString());
             findings.add(Finding.warning("e2e.validation.call.check_failed",
                     "Не удалось проверить эндпоинт " + method + " " + path + " у '" + message.toAlias()
@@ -189,7 +174,6 @@ public class PlantUmlValidationEngine {
         return keys;
     }
 
-    /** The part of a dotted mnemonic before the first '.', or null if there's no dot to split on. */
     private static String mnemonicPrefix(String name) {
         if (name == null) {
             return null;

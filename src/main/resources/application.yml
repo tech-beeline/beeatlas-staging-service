@@ -67,6 +67,11 @@ staging:
     max-resume-attempts: 12
   scheduler:
     tick-interval-ms: 60000        # PipelineTickScheduler: how often due configurations are scanned
+  run-status:
+    default-timeout-ms: 30000
+    max-timeout-ms: 60000
+    poll-interval-ms: 500
+    poller-threads: 2
 
 management:
   endpoints:

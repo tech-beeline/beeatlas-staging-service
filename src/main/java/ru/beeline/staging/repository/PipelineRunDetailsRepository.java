@@ -14,7 +14,6 @@ import ru.beeline.staging.dto.rundetails.PipelineStageLogDto;
 import java.util.List;
 import java.util.Optional;
 
-
 @Repository
 public class PipelineRunDetailsRepository {
 
@@ -52,12 +51,6 @@ public class PipelineRunDetailsRepository {
                 JOIN staging.source_systems s ON s.id = c.source_system_id
 				JOIN staging.data_types t ON t.code=r.artifact_type
 				JOIN staging.source_artifact_types sat ON sat.data_type_id=t.id
-                -- Not b.run_id = r.id: when a run's content is unchanged, SaverStage skips creating
-                -- a new batch and reuses the existing one (isAlreadyFullyProcessed) — that batch's
-                -- run_id still points at whichever earlier run actually created it, so joining on
-                -- run_id came up empty for every run after the first (the common case once an
-                -- artifact stabilizes). Joining on the artifact's current batch reflects "what this
-                -- artifact is currently saved as", which is what a run's own /details should show.
                 LEFT JOIN staging.artifact_batches b
                     ON b.artifact_uid = r.artifact_uid AND b.artifact_type = r.artifact_type AND b.is_current = true
                 LEFT JOIN staging.source_artifacts sa ON sa.ext_uid = r.artifact_uid

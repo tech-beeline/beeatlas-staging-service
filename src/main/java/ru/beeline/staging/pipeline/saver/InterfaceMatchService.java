@@ -19,11 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Find-or-create + versioning for the interface identity (BLG-004/ADR-011, CMP-03).
- * Non-primary attributes (protocol, spec_link, version, description, source_metric) are serialized
- * into {@code json_data} via {@link JsonDataValidator} instead of individual column setters.
- */
 @Service
 @RequiredArgsConstructor
 public class InterfaceMatchService {
@@ -35,7 +30,7 @@ public class InterfaceMatchService {
     @Transactional
     public InterfaceVersion matchOrCreate(String uid, String extUid, String protocol, String name,
                                            String specLink, String version, String description, String sourceMetric,
-                                           Long containerVersionId, String jsonPointer, Long rawDataRefId, Long batchId) {
+                                           Long containerVersionId, String jsonPointer, Long rawDataRefId, Long batchId, String branch) {
         boolean[] created = {false};
         InterfaceEntity entity = interfaceRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -52,7 +47,6 @@ public class InterfaceMatchService {
         versionEntity.setInterfaceId(entity.getId());
         versionEntity.setExtUid(extUid);
         versionEntity.setName(name);
-        // CMP-03: serialize non-primary attributes into json_data instead of column setters
         Map<String, Object> attrs = new HashMap<>();
         if (protocol != null) attrs.put("protocol", protocol);
         if (specLink != null) attrs.put("spec_link", specLink);
@@ -66,6 +60,7 @@ public class InterfaceMatchService {
         versionEntity.setCreatedAt(LocalDateTime.now());
         versionEntity.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         versionEntity.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        versionEntity.setBranchName(branch);
         return interfaceVersionRepository.save(versionEntity);
     }
 

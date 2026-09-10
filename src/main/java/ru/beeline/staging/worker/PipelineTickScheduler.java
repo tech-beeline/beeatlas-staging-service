@@ -35,12 +35,9 @@ public class PipelineTickScheduler {
     private final PipelineRunRepository    pipelineRunRepository;
     private final PipelineExecutionService pipelineExecutionService;
 
-    // Shortest configured schedule is 15 min, so a scan still non-terminal past this is stuck, not slow.
     @Value("${staging.scheduler.stuck-scan-threshold-minutes:120}")
     private int stuckScanThresholdMinutes;
 
-    // Batches what used to be 2 queries per config into 2 queries total, regardless of how many
-    // configs are due — see V0013.
     @Scheduled(
             initialDelayString = "${staging.scheduler.tick-initial-delay-ms:10000}",
             fixedRateString    = "${staging.scheduler.tick-interval-ms:60000}")
@@ -76,9 +73,6 @@ public class PipelineTickScheduler {
         pipelineExecutionService.submitScan(config);
     }
 
-    // Optimization only, not the safety net — the DB unique index (V0011) is what actually
-    // prevents two scans for the same config; this just avoids pointless pool submissions.
-    // Used standalone (not from tick()'s batched path) by /admin/scan/e2e.
     public boolean isAlreadyRunning(Configuration config) {
         Optional<PipelineRun> active = pipelineRunRepository
                 .findTopByConfigurationIdAndArtifactUidIsNullAndStatusNotInOrderByStartedAtDesc(
@@ -101,11 +95,6 @@ public class PipelineTickScheduler {
         return true;
     }
 
-    // The scan record itself (artifact_uid IS NULL) is marked completed right after fan-out — well
-    // before its children (artifact-level runs) actually finish, see PipelineExecutionService#executeScan
-    // — so isStillActive() alone doesn't catch a previous scan's artifacts still draining. Same
-    // stuck-threshold escape hatch as isStillActive: if the oldest unfinished artifact run has been
-    // sitting past the threshold, treat it as stuck rather than blocking this configuration forever.
     private boolean isPreviousArtifactRunStillDraining(Configuration config,
                                                         PipelineRunRepository.ConfigActiveArtifactRuns active,
                                                         LocalDateTime now) {

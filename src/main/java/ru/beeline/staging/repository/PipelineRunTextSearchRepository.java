@@ -10,12 +10,6 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Ported from documentation/staging-service/api/rest/GET__api_v1_pipeline-runs_search__artifactType___artifactUid_.md
- * — keep in sync with that spec. Text matching itself happens in {@link
- * ru.beeline.staging.service.PipelineRunTextSearchService} against decompressed raw_content; this
- * repository only selects the candidate runs and loads their raw data.
- */
 @Repository
 public class PipelineRunTextSearchRepository {
 
@@ -34,11 +28,6 @@ public class PipelineRunTextSearchRepository {
             )
             """;
 
-    /**
-     * count(*) OVER() rides along with the page instead of a separate COUNT query — Postgres computes
-     * it over the full WHERE-filtered set before LIMIT/OFFSET are applied, so it's still the true total.
-     * raw_content is joined in directly too, so the caller never needs a per-row follow-up query for it.
-     */
     private static final String FIND_RUNS = """
             SELECT
                 r.id,
@@ -65,12 +54,6 @@ public class PipelineRunTextSearchRepository {
             OFFSET ?
             """;
 
-    /**
-     * Overlap join done in Postgres instead of pulling every context row (can be 100k+ per
-     * raw_data_ref_id) into the JVM and scanning it once per occurrence — see idx_raw_data_contexts_byte_range.
-     * Batched across the whole page in one call: ref_id travels alongside each occurrence's own
-     * start/end so occurrences from different runs in the same page don't cross-match each other's contexts.
-     */
     private static final String FIND_OVERLAPPING_CONTEXTS = """
             SELECT o.ord AS occurrence_index, c.id, c.position
             FROM unnest(?::bigint[], ?::bigint[], ?::bigint[]) WITH ORDINALITY AS o(ref_id, start_offset, end_offset, ord)
@@ -117,10 +100,6 @@ public class PipelineRunTextSearchRepository {
         return new RunsPage(totalCount[0], rows);
     }
 
-    /**
-     * @param refIds parallel to startOffsets/endOffsets — the raw_data_ref_id each occurrence belongs to,
-     *               so occurrences from different runs in the same batch only match their own contexts.
-     */
     public List<OverlapHit> findOverlappingContexts(long[] refIds, long[] startOffsets, long[] endOffsets) {
         if (refIds.length == 0) {
             return List.of();
@@ -157,6 +136,5 @@ public class PipelineRunTextSearchRepository {
 
     public record ContextRow(Long id, JsonNode position) {}
 
-    /** occurrenceIndex is 1-based, matching the ordinal position in the arrays passed to findOverlappingContexts. */
     public record OverlapHit(int occurrenceIndex, ContextRow context) {}
 }

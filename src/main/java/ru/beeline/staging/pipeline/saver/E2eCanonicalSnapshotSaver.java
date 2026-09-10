@@ -27,17 +27,12 @@ import ru.beeline.staging.repository.canonical.ProductRepository;
 import ru.beeline.staging.repository.canonical.ProductVersionRepository;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.service.RawDataContextService;
+import ru.beeline.staging.service.RunBranchResolver;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Persists an E2ESequenceSnapshot into the canonical version tables, committed in its own transaction
- * (a separate bean/method so Spring's @Transactional proxy actually applies — see E2ECanonicalSaver).
- * This is deliberately NOT part of the same transaction as the fdm-products publish call: a publish
- * failure must not roll back canonical data that was already correctly extracted and saved.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -54,6 +49,7 @@ public class E2eCanonicalSnapshotSaver {
     private final OperationMatchService               operationMatchService;
     private final PipelineRunService                 pipelineRunService;
     private final PipelineRunRepository              pipelineRunRepository;
+    private final RunBranchResolver                  runBranchResolver;
     private final ConfigurationRepository             configurationRepository;
     private final SourceSystemRepository              sourceSystemRepository;
     private final RawDataContextService               rawDataContextService;
@@ -63,6 +59,7 @@ public class E2eCanonicalSnapshotSaver {
                                    Long runId, String artifactUid, String artifactType) {
         LocalDateTime now = LocalDateTime.now();
         String sourceCode = resolveSourceCode(runId);
+        String branch = runBranchResolver.resolve(runId);
 
         ArtifactBatch batch = pipelineRunService.createBatch(
                 artifactUid, artifactType, runId, rawDataRefId,
@@ -77,7 +74,7 @@ public class E2eCanonicalSnapshotSaver {
         for (E2ESequenceSnapshot.ProductDraft draft : snapshot.getProducts()) {
             ProductVersion version = productMatchService.matchOrCreate(
                     draft.getUid(), draft.getExtUid(), draft.getName(), null, null,
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getContext(), rawDataRefId, batchId, branch);
             productVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -87,7 +84,7 @@ public class E2eCanonicalSnapshotSaver {
             ContainerVersion version = containerMatchService.matchOrCreate(
                     draft.getUid(), draft.getExtUid(), draft.getName(), null, null, null,
                     productVersion != null ? productVersion.getId() : null,
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getContext(), rawDataRefId, batchId, branch);
             containerVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -100,7 +97,7 @@ public class E2eCanonicalSnapshotSaver {
                     draft.getUid(), draft.getExtUid(), draft.getProtocol(), draft.getName(),
                     null, null, null, null,
                     containerVersion != null ? containerVersion.getId() : null,
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getContext(), rawDataRefId, batchId, branch);
             interfaceVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -113,7 +110,7 @@ public class E2eCanonicalSnapshotSaver {
                     draft.getExtUid(), draft.getExtUid(), draft.getName(), draft.getType(),
                     draft.getRps(), draft.getLatency(), draft.getErrorRate(),
                     null, null, null,
-                    ifaceVersion, draft.getContext(), rawDataRefId, batchId);
+                    ifaceVersion, draft.getContext(), rawDataRefId, batchId, branch);
             operationVersionsByExtUid.put(draft.getExtUid(), version);
         }
 
@@ -121,7 +118,7 @@ public class E2eCanonicalSnapshotSaver {
         for (E2ESequenceSnapshot.BiStepDraft draft : snapshot.getBiSteps()) {
             BiStepVersion version = biStepMatchService.matchOrCreate(
                     draft.getUid(), draft.getName(), draft.getRps(), draft.getLatency(), draft.getErrorRate(),
-                    draft.getExtUid(), sourceCode, draft.getContext(), rawDataRefId, batchId);
+                    draft.getExtUid(), sourceCode, draft.getContext(), rawDataRefId, batchId, branch);
             biStepVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -133,7 +130,7 @@ public class E2eCanonicalSnapshotSaver {
         E2eScenarioVersion scenarioVersion = e2eScenarioMatchService.matchOrCreate(
                 scenarioDraft.getUid(), scenarioDraft.getExtUid(), scenarioDraft.getName(), scenarioDraft.getDescription(),
                 linkedBiStep != null ? linkedBiStep.getId() : null,
-                scenarioDraft.getContext(), rawDataRefId, batchId);
+                scenarioDraft.getContext(), rawDataRefId, batchId, branch);
 
         int operationRelationsSaved = 0;
         for (E2ESequenceSnapshot.OperationRelationDraft draft : snapshot.getOperationRelations()) {
@@ -142,7 +139,6 @@ public class E2eCanonicalSnapshotSaver {
                 log.warn("Skipping operation_relation: missing callee={}", draft.getCalleeOperationExtUid());
                 continue;
             }
-            // Root-level calls carry no caller operation (operation_version_id stays NULL).
             OperationVersion caller = draft.getCallerOperationExtUid() != null
                     ? operationVersionsByExtUid.get(draft.getCallerOperationExtUid())
                     : null;
@@ -150,7 +146,6 @@ public class E2eCanonicalSnapshotSaver {
             OperationRelationVersion relation = new OperationRelationVersion();
             relation.setOperationVersionId(caller != null ? caller.getId() : null);
             relation.setRelatedOperationVersionId(callee.getId());
-            // OQ-03/CMP-04: inline json_data for relation versions (call_order, stereotype) per ADR-011
             Map<String, Object> relationAttrs = new HashMap<>();
             if (draft.getCallOrder() != null) {
                 relationAttrs.put("call_order", draft.getCallOrder());
@@ -164,6 +159,7 @@ public class E2eCanonicalSnapshotSaver {
             if (draft.getContext() != null) {
                 relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
             }
+            relation.setBranchName(branch);
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
             operationRelationsSaved++;
@@ -181,11 +177,6 @@ public class E2eCanonicalSnapshotSaver {
         return stats;
     }
 
-    // A container's owning system is often absent from this artifact's own export — systems[] only
-    // lists systems that appear as diagram objects (see ScenarioDecomposer#ensureSelfContained), so
-    // the snapshot can name a productUid it doesn't describe. Rather than leaving
-    // container_versions.product_version_id NULL and the hierarchy broken (defect QA-5), fall back
-    // to the product identity another artifact already registered under that uid.
     private ProductVersion resolveProductVersion(String productUid,
                                                   Map<String, ProductVersion> productVersionsInThisSnapshot) {
         if (productUid == null) return null;

@@ -87,7 +87,7 @@ public class StructurizrSequenceValidator implements ArtifactValidator {
 
             String elementId = StructurizrParsingUtils.textOrNull(dynamicView, "elementId");
             if (targetSystemId != null && !targetSystemId.equals(elementId)) {
-                continue; // belongs to a different softwareSystem in the same workspace
+                continue;
             }
 
             JsonNode relationships = dynamicView.path("relationships");

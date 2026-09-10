@@ -7,12 +7,14 @@ package ru.beeline.staging.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.DeferredResult;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.rundetails.ChildPipelineRunPage;
 import ru.beeline.staging.dto.scan.ScanRunDetails;
@@ -22,6 +24,7 @@ import ru.beeline.staging.repository.ChildPipelineRunRepository;
 import ru.beeline.staging.repository.PipelineRunDetailsRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.ScanRunRepository;
+import ru.beeline.staging.service.PipelineRunStatusService;
 import ru.beeline.staging.service.PipelineRunTextSearchService;
 import ru.beeline.staging.service.RawContentDecompressionException;
 
@@ -50,6 +53,7 @@ public class PipelineRunsController {
     private final PipelineRunRepository pipelineRunRepository;
     private final ChildPipelineRunRepository childPipelineRunRepository;
     private final PipelineRunTextSearchService pipelineRunTextSearchService;
+    private final PipelineRunStatusService pipelineRunStatusService;
 
     @GetMapping("/{runId}/details")
     public ResponseEntity<?> getRunDetails(@PathVariable Long runId) {
@@ -57,6 +61,14 @@ public class PipelineRunsController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("error", "Pipeline run not found", "runId", runId)));
+    }
+
+    @GetMapping(value = "/{runId}/status", produces = MediaType.APPLICATION_JSON_VALUE)
+    public DeferredResult<ResponseEntity<Object>> getRunStatus(
+            @PathVariable Long runId,
+            @RequestParam(required = false) String waitFor,
+            @RequestParam(required = false) Integer timeoutMs) {
+        return pipelineRunStatusService.watch(runId, waitFor, timeoutMs);
     }
 
     @GetMapping("/{scanId}/scan-details")
@@ -89,8 +101,6 @@ public class PipelineRunsController {
         if (normalizedStatus != null && !ALLOWED_STATUSES.contains(normalizedStatus)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid status: " + status));
         }
-        // artifactUid — устаревший параметр, игнорируется
-        // Пустая/пробельная строка artifactQuery эквивалентна отсутствию фильтра
         String effectiveArtifactQuery = artifactQuery;
         if (effectiveArtifactQuery != null && effectiveArtifactQuery.isBlank()) {
             effectiveArtifactQuery = null;

@@ -18,12 +18,6 @@ import ru.beeline.staging.utils.JsonByteRangeLocator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Records where a fragment lives inside an already-stored raw_data_ref, per ADR-005: a primary
- * byte_range (exact, works even once raw_content is compressed) plus a secondary semantic pointer
- * (json_path here — human/UI-readable). Version/relation rows and notices anchor to the resulting
- * row via raw_data_context_id instead of duplicating raw content.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -45,23 +39,12 @@ public class RawDataContextService {
         return save(rawDataRefId, buildPosition(byteRange, jsonPointer));
     }
 
-    /** No json_path available (free-text notice context, or none at all) — still satisfies the NOT NULL FK on artifact_notices. */
     public Long pointToFreeText(Long rawDataRefId, String description) {
         Map<String, Object> position = new LinkedHashMap<>();
         position.put("secondary", Map.of("type", "free_text", "value", description == null ? "" : description));
         return save(rawDataRefId, position);
     }
 
-    // Find-or-create instead of a blind insert: a re-scan of unchanged content (or two concurrent
-    // reprocessing runs racing each other — see V0006's note on the same class of bug one stage
-    // later, in artifact_batches) used to insert a fresh duplicate context row every time, since
-    // nothing here ever checked for an existing one. jsonb equality ignores key order, so this
-    // still matches regardless of how the position map was built.
-    // NOTE: no unique DB constraint on (raw_data_ref_id, position) — nothing stops a same-instant
-    // concurrent race from inserting a second row, so the lookup is findFirst...OrderByIdAsc rather
-    // than a unique-result query: a leftover duplicate must not fail the whole transformer stage
-    // (that failure mode is defect QA-2). Measured on func 2026-09-07: 0 duplicate groups across
-    // 809k rows, so there is nothing to clean up before adding the index if it's ever wanted.
     private Long save(Long rawDataRefId, Map<String, Object> position) {
         String positionJson = toJson(position);
         return repository.findFirstByRawDataRefIdAndPositionOrderByIdAsc(rawDataRefId, positionJson)
@@ -93,7 +76,6 @@ public class RawDataContextService {
         return position;
     }
 
-    /** RFC6901 "/diagrams/2/messages/5" -> JSON Path "$.diagrams[2].messages[5]" for human/UI display. */
     private static String toJsonPathNotation(String rfc6901Pointer) {
         StringBuilder sb = new StringBuilder("$");
         for (String segment : rfc6901Pointer.split("/")) {

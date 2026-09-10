@@ -16,10 +16,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-// Counters (staging_pipeline_runs_total etc.) only ever go up — they answer "how many completed
-// since startup", not "how many are sitting in each status right now". These gauges answer that,
-// refreshed periodically rather than per-scrape (Actuator/Prometheus has no easy pre-scrape hook
-// into a JdbcTemplate-backed value here).
 @Component
 @RequiredArgsConstructor
 public class PipelineMetricsPublisher {

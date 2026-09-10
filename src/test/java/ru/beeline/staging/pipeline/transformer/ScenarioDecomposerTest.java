@@ -17,17 +17,6 @@ class ScenarioDecomposerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ScenarioDecomposer decomposer = new ScenarioDecomposer(objectMapper);
 
-    /**
-     * One scenario exercising every branch of the collapse algorithm at once:
-     *  - M1: a normal, resolvable call — survives, registers interface iface.b / operation OP1.
-     *  - M2: nested under M1, different app (SYS_C), show_in_e2e=1 and a different operation_guid
-     *        than its parent — kept via the "always show" escape hatch (checked before same-app-code).
-     *  - M3: nested under M1, same app as M1's own callee (SYS_B) and show_in_e2e=0 — collapsed as
-     *        an internal call (proves the escape hatch above isn't just "same app_code never hides").
-     *  - M4: root-level call to an object with no resolvable operation at all — hidden because the
-     *        (synthetic, app_front) root context forces it (rule 1), not because of same-app-code.
-     *  - M5: a return message (pdata4=1) — dropped before collapse even runs, as routine sequence noise.
-     */
     @Test
     void decomposesSurvivingCallsAndRecordsNoticesForEveryFilteredFragment() throws Exception {
         String json = """
@@ -84,7 +73,6 @@ class ScenarioDecomposerTest {
 
         assertThat(snapshot.getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
                 .contains("iface.b", "iface.c");
-        // ext_uid = code (same as uid), not the raw Sparx id — per transform-spec §4.2.
         assertThat(snapshot.getInterfaces()).filteredOn(i -> "iface.b".equals(i.getUid()))
                 .extracting(E2ESequenceSnapshot.InterfaceDraft::getExtUid)
                 .containsExactly("iface.b");
@@ -92,7 +80,6 @@ class ScenarioDecomposerTest {
                 .extracting(E2ESequenceSnapshot.InterfaceDraft::getSource)
                 .containsExactly("structurizr");
 
-        // Root-level call (M1 -> OP1): no caller operation, stored with operation_version_id = NULL.
         assertThat(snapshot.getOperationRelations())
                 .anyMatch(r -> r.getCallerOperationExtUid() == null && "OP1".equals(r.getCalleeOperationExtUid()));
         assertThat(snapshot.getOperationRelations())
@@ -205,13 +192,6 @@ class ScenarioDecomposerTest {
                 "transform.map_failed".equals(n.code()) && "warning".equals(n.level()));
     }
 
-    /**
-     * QA-5: снапшот должен быть замкнут на себя. systems[] содержит только системы, попавшие на
-     * диаграмму объектами, а владелец контейнера туда попадать не обязан — так у контейнера
-     * появляется productUid, которого нет в products[], и иерархия обрывается молча.
-     * Ссылка сохраняется (её резолвит сейвер по каноническому каталогу), но факт разрыва теперь
-     * виден как notice, а не только как NULL в container_versions.product_version_id.
-     */
     @Test
     void reportsContainerWhoseOwningSystemIsNotDescribedBySnapshot() throws Exception {
         String json = """
@@ -242,7 +222,6 @@ class ScenarioDecomposerTest {
         ScenarioDecomposer.Result result = decomposer.decompose(objectMapper.readTree(json), "scenario-5");
         E2ESequenceSnapshot snapshot = result.snapshot();
 
-        // Каждый containerUid интерфейса описан в containers[] — инвариант замкнутости.
         List<String> containerUids = snapshot.getContainers().stream()
                 .map(E2ESequenceSnapshot.ContainerDraft::getUid).toList();
         assertThat(snapshot.getInterfaces())
@@ -250,7 +229,6 @@ class ScenarioDecomposerTest {
                 .filteredOn(uid -> uid != null)
                 .allMatch(containerUids::contains);
 
-        // productUid не выброшен — он единственный след владельца.
         assertThat(snapshot.getContainers()).filteredOn(c -> "container.b".equals(c.getUid()))
                 .extracting(E2ESequenceSnapshot.ContainerDraft::getProductUid)
                 .containsExactly("SYS_B");

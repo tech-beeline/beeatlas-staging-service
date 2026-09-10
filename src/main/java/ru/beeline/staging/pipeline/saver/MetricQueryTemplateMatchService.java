@@ -16,11 +16,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * Find-or-create + versioning for the metric_query_templates identity (save-spec §5/§9). Version's
- * is_current is documented directly on metric_query_template_versions (unlike e2e, where "current"
- * is tracked only at the artifact_batches level) — see model/tables/metric_query_template_versions.md.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor

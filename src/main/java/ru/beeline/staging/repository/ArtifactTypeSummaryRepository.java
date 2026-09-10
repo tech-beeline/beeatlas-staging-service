@@ -7,10 +7,6 @@ import ru.beeline.staging.dto.artifacttype.ArtifactTypeSummary;
 
 import java.util.List;
 
-/**
- * Ported from documentation/staging-service/api/rest/GET__api_v1_artifact-types.md — keep in sync
- * with that spec.
- */
 @Repository
 public class ArtifactTypeSummaryRepository {
 

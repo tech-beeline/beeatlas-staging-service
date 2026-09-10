@@ -24,18 +24,12 @@ import ru.beeline.staging.repository.canonical.OperationRelationVersionRepositor
 import ru.beeline.staging.repository.canonical.SequenceRelationVersionRepository;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.service.RawDataContextService;
+import ru.beeline.staging.service.RunBranchResolver;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Persists a {@link StructurizrSequenceSnapshot} in the dependency order from
- * structurizr-sequence-transform-rules.md: product -> containers -> tech_capabilities -> interfaces
- * -> operations -> sequences -> sequence_relations -> operation_relations. Each layer is matched via
- * its own MatchService (find-or-create identity + a new *_versions row + provenance notice); later
- * layers resolve their FKs from the ids returned by earlier ones through in-memory uid maps.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -53,6 +47,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
     private final OperationRelationVersionRepository operationRelationVersionRepository;
     private final PipelineRunService         pipelineRunService;
     private final RawDataContextService      rawDataContextService;
+    private final RunBranchResolver          runBranchResolver;
     private final ObjectMapper               objectMapper;
 
     @Override
@@ -80,17 +75,18 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
                 0, snapshot.getInterfaces().size(), snapshot.getOperations().size(),
                 1, snapshot.getContainers().size());
         Long batchId = batch.getId();
+        String branch = runBranchResolver.resolve(runId);
 
         StructurizrSequenceSnapshot.ProductDraft productDraft = snapshot.getProduct();
         ProductVersion productVersion = productMatchService.matchOrCreate(
                 productDraft.getUid(), productDraft.getExtUid(), productDraft.getName(), productDraft.getDescription(),
-                productDraft.getAuthor(), productDraft.getContext(), rawDataRefId, batchId);
+                productDraft.getAuthor(), productDraft.getContext(), rawDataRefId, batchId, branch);
 
         Map<String, ContainerVersion> containerVersionsByUid = new HashMap<>();
         for (StructurizrSequenceSnapshot.ContainerDraft draft : snapshot.getContainers()) {
             ContainerVersion version = containerMatchService.matchOrCreate(
                     draft.getUid(), draft.getExtUid(), draft.getName(), draft.getVersion(), draft.getDescription(),
-                    draft.getTechnology(), productVersion.getId(), draft.getContext(), rawDataRefId, batchId);
+                    draft.getTechnology(), productVersion.getId(), draft.getContext(), rawDataRefId, batchId, branch);
             containerVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -98,7 +94,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
         for (StructurizrSequenceSnapshot.TechCapabilityDraft draft : snapshot.getTechCapabilities()) {
             TechCapabilityVersion version = techCapabilityMatchService.matchOrCreate(
                     draft.getUid(), draft.getExtUid(), draft.getName(), draft.getDescription(),
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getContext(), rawDataRefId, batchId, branch);
             tcVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -111,7 +107,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
                     draft.getUid(), draft.getExtUid(), draft.getProtocol(), draft.getName(),
                     draft.getSpecLink(), draft.getVersion(), draft.getDescription(), null,
                     containerVersion != null ? containerVersion.getId() : null,
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getContext(), rawDataRefId, batchId, branch);
             interfaceVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -127,7 +123,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
                     draft.getUid(), draft.getExtUid(), draft.getName(), draft.getType(),
                     draft.getRps(), draft.getLatency(), draft.getErrorRate(),
                     null, null, tcVersion != null ? tcVersion.getId() : null,
-                    ifaceVersion, draft.getContext(), rawDataRefId, batchId);
+                    ifaceVersion, draft.getContext(), rawDataRefId, batchId, branch);
             operationVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -139,7 +135,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             SequenceVersion version = sequenceMatchService.matchOrCreate(
                     draft.getUid(), draft.getExtUid(), draft.getName(), draft.getDescription(),
                     tcVersion != null ? tcVersion.getId() : null,
-                    draft.getContext(), rawDataRefId, batchId);
+                    draft.getContext(), rawDataRefId, batchId, branch);
             sequenceVersionsByUid.put(draft.getUid(), version);
         }
 
@@ -156,7 +152,6 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             SequenceRelationVersion relation = new SequenceRelationVersion();
             relation.setSequenceVersionId(sequenceVersion.getId());
             relation.setOperationVersionId(operation != null ? operation.getId() : null);
-            // OQ-03/CMP-04: inline json_data for relation versions (call_order, stereotype) per ADR-011
             Map<String, Object> relationAttrs = new HashMap<>();
             if (draft.getCallOrder() != null) {
                 relationAttrs.put("call_order", draft.getCallOrder());
@@ -170,6 +165,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             if (draft.getContext() != null) {
                 relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
             }
+            relation.setBranchName(branch);
             relation.setCreatedAt(now);
             sequenceRelationVersionRepository.save(relation);
             sequenceRelationsSaved++;
@@ -187,7 +183,6 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             OperationRelationVersion relation = new OperationRelationVersion();
             relation.setOperationVersionId(caller != null ? caller.getId() : null);
             relation.setRelatedOperationVersionId(related.getId());
-            // OQ-03/CMP-04: inline json_data for relation versions (call_order, stereotype) per ADR-011
             Map<String, Object> relationAttrs = new HashMap<>();
             if (draft.getCallOrder() != null) {
                 relationAttrs.put("call_order", draft.getCallOrder());
@@ -201,6 +196,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
             if (draft.getContext() != null) {
                 relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
             }
+            relation.setBranchName(branch);
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
             operationRelationsSaved++;

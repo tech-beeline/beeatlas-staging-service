@@ -23,11 +23,6 @@ public interface PipelineStageLogRepository extends JpaRepository<PipelineStageL
     @Modifying
     @Query("UPDATE PipelineStageLog l SET l.status = 'failed', l.completedAt = CURRENT_TIMESTAMP, l.failureReason = :reason WHERE l.id = :id")
     void markFailed(@Param("id") Long id, @Param("reason") String reason);
-
-    // Closes every stage a stalled run left open. Each abandoned resume cycle starts a stage that
-    // nothing ever finishes, so a stuck run accumulates one dangling "running" row per lease period
-    // (FUNC run 1571951 held ~500 of them). Leaving those open makes the run look busy forever in
-    // the UI and in any "which stage is it on" query, long after the watchdog buried the run.
     @Modifying
     @Query("UPDATE PipelineStageLog l SET l.status = 'failed', l.completedAt = CURRENT_TIMESTAMP, " +
            "l.failureReason = :reason WHERE l.runId = :runId AND l.status = 'running'")

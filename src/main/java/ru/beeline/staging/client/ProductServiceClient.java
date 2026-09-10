@@ -56,10 +56,6 @@ public class ProductServiceClient {
         }
     }
 
-    /**
-     * Batch lookup of products (systems) by CMDB alias. Aliases are matched case-insensitively
-     * by fdm-products; only found products are returned (GET /api/v1/product/by-aliases).
-     */
     public List<ProductAliasSummary> getByAliases(List<String> aliases) {
         if (aliases == null || aliases.isEmpty()) {
             return List.of();
@@ -76,10 +72,6 @@ public class ProductServiceClient {
         }
     }
 
-    /**
-     * Global container lookup by CMDB code (GET /api/v1/container/by-codes) — unlike a per-product
-     * listing, the caller does not need to already know/have resolved the owning system.
-     */
     public List<ContainerByCodeSummary> getContainersByCodes(List<String> codes) {
         if (codes == null || codes.isEmpty()) {
             return List.of();
@@ -96,11 +88,6 @@ public class ProductServiceClient {
         }
     }
 
-    /**
-     * Batch match of diagram calls against architecture operations (POST /api/v1/operation/search-matched).
-     * The response is flat: candidates without a match simply contribute nothing, so callers re-associate
-     * entries by productCode + operation name/type rather than by position.
-     */
     public List<MatchedArchOperation> searchMatchedOperations(List<OperationMatchCandidate> candidates) {
         if (candidates == null || candidates.isEmpty()) {
             return List.of();
@@ -116,10 +103,6 @@ public class ProductServiceClient {
         }
     }
 
-    /**
-     * Operation search by path fragment and HTTP method (GET /api/v1/operation). fdm-products matches
-     * {@code path} with a substring ILIKE — callers must re-filter the result for an exact path match.
-     */
     public OperationSearchResponse searchOperation(String path, String type) {
         String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/operation")
                 .queryParam("path", path)

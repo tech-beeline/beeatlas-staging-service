@@ -17,13 +17,6 @@ import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Maps the staging canonical model (snake_case, per ActualE2eScenarioRepository) onto the
- * fdm-products POST /api/v2/e2e contract (camelCase, no containers layer). Interfaces link directly
- * to their product; since v2 carries no separate containers[] array, the source container is folded
- * into the published interface code as {@code "{interfaceCode}.{containerCode}"} so the origin isn't
- * lost.
- */
 @Component
 public class E2eV2PublishRequestMapper {
 
@@ -31,11 +24,6 @@ public class E2eV2PublishRequestMapper {
         E2eV2PublishRequest request = new E2eV2PublishRequest();
         request.setE2e(mapInfo(root.path("e2e")));
         request.setProducts(mapList(root.path("products"), this::mapProduct));
-        // operations[].interface_code (from ActualE2eScenarioRepository) is the raw, uncompounded
-        // interface code — index interfaces[] by that same raw code so each operation's
-        // parentInterfaceCode can be resolved to the compound code actually published as
-        // interfaces[].code. Without this, fdm-products rejects the payload: operations reference a
-        // parentInterfaceCode that doesn't match any interfaces[].code.
         Map<String, String> compoundCodeByRawCode = indexCompoundInterfaceCodes(root.path("interfaces"));
         request.setInterfaces(mapList(root.path("interfaces"), this::mapInterface));
         request.setOperations(mapList(root.path("operations"), node -> mapOperation(node, compoundCodeByRawCode)));
@@ -81,11 +69,9 @@ public class E2eV2PublishRequestMapper {
         dto.setName(text(node, "name"));
         dto.setParentProductCmdb(text(node, "parent_product_cmdb"));
         dto.setProtocol(text(node, "protocol"));
-        // specLink/version: not available from staging — always null, same as v1.
         return dto;
     }
 
-    /** {@code "{interfaceCode}.{containerCode}"} — containers[] isn't part of the v2 contract. */
     private String compoundInterfaceCode(String interfaceCode, String containerCode) {
         if (containerCode == null || containerCode.isBlank()) {
             return interfaceCode;
@@ -97,8 +83,6 @@ public class E2eV2PublishRequestMapper {
         E2eV2OperationDto dto = new E2eV2OperationDto();
         dto.setUid(text(node, "uid"));
         dto.setName(text(node, "name"));
-        // type is computed at transform time (name/type split + SOAP fallback, transform-spec §4.5 v4)
-        // and persisted on operation_versions.type — read it as-is rather than re-deriving it here.
         dto.setType(text(node, "type"));
         String rawInterfaceCode = text(node, "interface_code");
         dto.setParentInterfaceCode(compoundCodeByRawCode.getOrDefault(rawInterfaceCode, rawInterfaceCode));

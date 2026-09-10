@@ -20,11 +20,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Resolves participant aliases against fdm-products: first as systems (batch, one call), then
- * unresolved aliases as containers (batch, one call) — a diagram can reference a container without
- * also including a separate participant for its owning system.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

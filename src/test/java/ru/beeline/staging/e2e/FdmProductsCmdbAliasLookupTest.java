@@ -32,7 +32,6 @@ class FdmProductsCmdbAliasLookupTest {
         container.setProductAlias("fdmshowcaseapp");
         when(productServiceClient.getContainersByCodes(anyList())).thenReturn(List.of(container));
 
-        // the diagram references only the container — "fdmshowcaseapp" itself is never asked for
         Map<String, ResolvedParticipant> result = lookup.resolveAll(Set.of("ext_container_arch_graph_service"));
 
         assertThat(result).containsKey("ext_container_arch_graph_service");

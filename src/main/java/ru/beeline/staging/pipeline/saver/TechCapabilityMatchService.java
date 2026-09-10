@@ -19,11 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Find-or-create + versioning for the tech_capability identity (BLG-004/ADR-011, CMP-03).
- * Non-primary attribute (description) is serialized into {@code json_data}
- * via {@link JsonDataValidator} instead of the column setter.
- */
 @Service
 @RequiredArgsConstructor
 public class TechCapabilityMatchService {
@@ -34,7 +29,7 @@ public class TechCapabilityMatchService {
 
     @Transactional
     public TechCapabilityVersion matchOrCreate(String uid, String extUid, String name, String description,
-                                                String jsonPointer, Long rawDataRefId, Long batchId) {
+                                                String jsonPointer, Long rawDataRefId, Long batchId, String branch) {
         boolean[] created = {false};
         TechCapability entity = techCapabilityRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -51,7 +46,6 @@ public class TechCapabilityMatchService {
         version.setTechCapabilityId(entity.getId());
         version.setExtUid(extUid);
         version.setName(name);
-        // CMP-03: serialize non-primary attribute into json_data instead of column setter
         Map<String, Object> attrs = new HashMap<>();
         if (description != null) attrs.put("description", description);
         String jsonData = JsonDataValidator.toJsonData(attrs);
@@ -60,6 +54,7 @@ public class TechCapabilityMatchService {
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        version.setBranchName(branch);
         return techCapabilityVersionRepository.save(version);
     }
 

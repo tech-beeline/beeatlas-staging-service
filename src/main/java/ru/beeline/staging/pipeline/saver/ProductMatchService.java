@@ -19,11 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Find-or-create + versioning for the product identity (BLG-004/ADR-011, CMP-03).
- * Non-primary attributes (description, author) are serialized into {@code json_data}
- * via {@link JsonDataValidator} instead of individual column setters.
- */
 @Service
 @RequiredArgsConstructor
 public class ProductMatchService {
@@ -34,7 +29,7 @@ public class ProductMatchService {
 
     @Transactional
     public ProductVersion matchOrCreate(String uid, String extUid, String name, String description, String author,
-                                         String jsonPointer, Long rawDataRefId, Long batchId) {
+                                         String jsonPointer, Long rawDataRefId, Long batchId, String branch) {
         boolean[] created = {false};
         Product entity = productRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -51,7 +46,6 @@ public class ProductMatchService {
         version.setProductId(entity.getId());
         version.setExtUid(extUid);
         version.setName(name);
-        // CMP-03: serialize non-primary attributes into json_data instead of column setters
         Map<String, Object> attrs = new HashMap<>();
         if (description != null) attrs.put("description", description);
         if (author != null) attrs.put("author", author);
@@ -61,6 +55,7 @@ public class ProductMatchService {
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        version.setBranchName(branch);
         return productVersionRepository.save(version);
     }
 

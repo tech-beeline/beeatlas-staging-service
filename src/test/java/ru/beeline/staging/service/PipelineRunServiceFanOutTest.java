@@ -26,14 +26,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Что скан делает с артефактом, у которого уже есть прогон (дефекты QA-1 и QA-4).
- *
- * Ключевой инвариант: в child_run_ids скана попадают ровно те прогоны, которыми этот скан
- * владеет (parent_run_id указывает на него) — иначе один прогон числится детьми сотен сканов,
- * а упавший с исчерпанными ретраями переиспользуется бесконечно и артефакт перестаёт
- * обрабатываться вообще.
- */
 class PipelineRunServiceFanOutTest {
 
     private static final String TYPE = "e2e-sequence";
@@ -96,7 +88,6 @@ class PipelineRunServiceFanOutTest {
                 .extracting(PipelineRunService.ChildOutcome::disposition)
                 .isEqualTo(PipelineRunService.Disposition.BLOCKED);
         assertThat(outcomes.get(0).ownedByThisScan()).isFalse();
-        // Ни переочереди, ни смены владельца: прогон ждёт ручного retry как есть.
         verify(runRepository, never()).markRetrying(42L);
         verify(runRepository, never()).removeChildFromSnapshot(anyLong(), anyLong());
         assertThat(zombie.getParentRunId()).isEqualTo(100L);
@@ -157,9 +148,6 @@ class PipelineRunServiceFanOutTest {
                 .isEqualTo(PipelineRunService.Disposition.REQUEUED);
         verify(runRepository).markRetrying(42L);
         verify(runRepository).removeChildFromSnapshot(100L, 42L);
-        // Смена владельца — тоже bulk UPDATE, и сущность намеренно НЕ трогается: markRetrying уже
-        // переписал строку, а `failed` всё ещё держит состояние до ретрая. Мутация + save() слили бы
-        // это состояние поверх markRetrying на коммите, и переочередь молча не применилась бы.
         verify(runRepository).updateParentRunId(42L, SCAN_ID);
         verify(runRepository, never()).save(failed);
         assertThat(failed.getParentRunId()).isEqualTo(100L);
@@ -189,7 +177,6 @@ class PipelineRunServiceFanOutTest {
                 TYPE, 7L, "batch", List.of(uids));
     }
 
-    /** Настраивает, что вернёт lookup существующего прогона по артефакту; {@code null} — ничего. */
     private PipelineRun existingRunFor(String uid, java.util.function.Consumer<PipelineRun> setup) {
         PipelineRun run = null;
         if (setup != null) {

@@ -17,11 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Structural validation of the raw Sparx EA scenario export. Semantic checks (missing references,
- * ambiguous diagram links, etc.) happen in ScenarioDecomposer/transform instead, where they can be
- * pinned to the exact fragment that failed.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

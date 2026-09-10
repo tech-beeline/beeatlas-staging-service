@@ -17,10 +17,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-adapter-spec.md
- * §5 — keep in sync with that spec. getDashboardByUID / getDatasources, manual retry (adapter-spec §5.3).
- */
 @Slf4j
 @Repository
 public class GrafanaClient {
@@ -45,7 +41,6 @@ public class GrafanaClient {
         this.retryDelayMs = retryDelayMs;
     }
 
-    /** Extracts the dashboard UID from an api-metric-template URL (/d/{uid}/... or /d-solo/{uid}/...). */
     public static String extractDashboardUid(String apiMetricTemplateUrl) {
         Matcher matcher = DASHBOARD_UID_PATTERN.matcher(apiMetricTemplateUrl == null ? "" : apiMetricTemplateUrl);
         if (!matcher.find()) {
@@ -54,13 +49,11 @@ public class GrafanaClient {
         return matcher.group(1);
     }
 
-    /** GET /api/dashboards/uid/{uid} — full dashboard JSON, returned as-is (ADR-008 Full Export). */
     public String getDashboardByUID(String uid) {
         String url = baseUrl + "/api/dashboards/uid/" + uid;
         return callWithRetry(url, String.class);
     }
 
-    /** GET /api/datasources. */
     public List<GrafanaDatasource> getDatasources() {
         String url = baseUrl + "/api/datasources";
         GrafanaDatasource[] result = callWithRetry(url, GrafanaDatasource[].class);

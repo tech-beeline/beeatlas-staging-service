@@ -60,8 +60,6 @@ public class AdminController {
         return ResponseEntity.accepted().body(Map.of("startedCount", started, "skippedCount", skipped));
     }
 
-    // Scan row (artifactUid == null): re-run from scratch. Artifact row: resume from the first
-    // incomplete stage, same as PipelineResumeScheduler.
     @PostMapping("/pipeline-runs/{runId}/retry")
     public ResponseEntity<Map<String, Object>> retryPipelineRun(@PathVariable Long runId) {
         PipelineRun run = pipelineRunRepository.findById(runId)
@@ -86,10 +84,6 @@ public class AdminController {
         return ResponseEntity.accepted().body(Map.of("retried", true));
     }
 
-    // Runs that failed and used up staging.recovery.max-auto-retries are terminal until a human acts:
-    // the scheduler's auto-retry sweep skips them, and a scan that re-finds the artifact no longer
-    // adopts them (see PipelineRunService#finishScanWithChildren). Nothing else surfaces them, so
-    // without this listing an artifact could silently stop being processed for weeks (defect QA-1).
     @GetMapping("/pipeline-runs/blocked")
     public ResponseEntity<Map<String, Object>> listBlockedRuns(
             @RequestParam(required = false) String artifactType,
@@ -107,8 +101,6 @@ public class AdminController {
                     item.put("failureReason", run.getFailureReason());
                     item.put("retryCount", run.getRetryCount());
                     item.put("startedAt", run.getStartedAt());
-                    // Since when the artifact has been stuck — NULL until a scan meets the run and
-                    // stamps it, which for an artifact still present in the source is the next tick
                     item.put("blockedAt", run.getBlockedAt());
                     return item;
                 })
@@ -116,7 +108,6 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("count", items.size(), "items", items));
     }
 
-    /** Bulk counterpart of {@link #retryPipelineRun} — clears the blocked backlog after its cause is fixed. */
     @PostMapping("/pipeline-runs/retry-blocked")
     public ResponseEntity<Map<String, Object>> retryBlockedRuns(
             @RequestParam(required = false) String artifactType,
