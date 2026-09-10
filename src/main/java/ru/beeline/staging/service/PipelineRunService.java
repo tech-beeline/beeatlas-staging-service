@@ -116,6 +116,9 @@ public class PipelineRunService {
             entry.setOutputData(outputData);
             entry.setSummaryJson(summary);
             stageLogRepository.save(entry);
+            // A completed stage is the definition of progress — the run's no-progress budget resets
+            // here, so only a run that finishes nothing at all can reach the stall watchdog.
+            runRepository.resetResumeCount(entry.getRunId());
         });
     }
 
@@ -176,6 +179,7 @@ public class PipelineRunService {
             stageLogRepository.save(entry);
         });
         runRepository.markCompleted(scanRunId, "completed");
+        runRepository.resetResumeCount(scanRunId);
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
 
         // A found artifact may already have an undrained (or failed-but-retryable) run from a
@@ -266,6 +270,38 @@ public class PipelineRunService {
     // markCompleted/markFailed are bulk UPDATEs and don't return the entity, so fetched separately.
     private String artifactTypeOf(Long runId) {
         return runRepository.findById(runId).map(PipelineRun::getArtifactType).orElse("unknown");
+    }
+
+    /**
+     * Forces a run that the resume loop has been re-claiming without progress into a terminal state.
+     * Called only by the stall watchdog (PipelineResumeScheduler#failStalledRuns).
+     *
+     * <p>Deliberately reads the run before the bulk updates and never mutates the loaded entity:
+     * a managed entity dirtied here would be flushed *after* the bulk UPDATEs and silently undo
+     * them (the trap that still bites {@link #reassignParent}). Everything terminal goes through
+     * {@code markStalled}, whose WHERE clause also makes this a no-op if another instance got
+     * there first.
+     */
+    @Transactional
+    public void failStalledRun(Long runId, int resumeAttempts, int retryCeiling) {
+        PipelineRun run = runRepository.findById(runId).orElse(null);
+        if (run == null || DONE_STATUSES.contains(run.getStatus()) || "failed".equals(run.getStatus())) return;
+
+        String stage = stageLogRepository.findRunningStageNames(runId).stream().findFirst().orElse(run.getStatus());
+        String reason = "Stalled: claimed " + resumeAttempts + " times with no stage completing; "
+                + "forced terminal by the stall watchdog";
+
+        int abandoned = stageLogRepository.abandonRunningStages(runId, reason);
+        if (runRepository.markStalled(runId, reason, stage, retryCeiling) == 0) return;
+
+        meterRegistry.counter("staging_pipeline_runs_stalled_total",
+                "artifact_type", run.getArtifactType(),
+                "kind", run.getArtifactUid() == null ? "scan" : "artifact").increment();
+        log.error("Stall watchdog force-failed pipelineRunId={} (type={}, {}, configId={}, startedAt={}): "
+                        + "{} resume claims, no progress, {} dangling stage log(s) closed. "
+                        + "Root cause is upstream of this — check the last '{}' stage failure for this run.",
+                runId, run.getArtifactType(), run.getArtifactUid() == null ? "scan" : "artifact=" + run.getArtifactUid(),
+                run.getConfigurationId(), run.getStartedAt(), resumeAttempts, abandoned, stage);
     }
 
     @Transactional

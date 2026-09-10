@@ -95,6 +95,14 @@ public class PipelineRun {
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount = 0;
 
+    // How many times this run has been claimed without completing a single stage. Incremented by
+    // PipelineRunRepository#claim, reset to 0 on real progress (PipelineRunService#completeStage,
+    // #finishScanWithChildren) and on a manual retry. Distinct from retryCount, which counts
+    // *failures* and so never moves for a run that hangs instead of failing — the exact hole that
+    // let FUNC runs 1571951/1595194 be resumed forever (see V0020).
+    @Column(name = "resume_count", nullable = false)
+    private Integer resumeCount = 0;
+
     // When a scan first found this run failed and out of auto-retries — i.e. when this artifact
     // stopped being processed. Cleared by markRetrying, so it is only ever set on a run that is
     // blocked right now. staging.recovery.blocked-recheck-interval is measured from here, not from

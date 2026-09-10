@@ -38,6 +38,9 @@ public class PipelineResumeScheduler {
     @Value("${staging.recovery.max-auto-retries:3}")
     private int maxAutoRetries;
 
+    @Value("${staging.recovery.max-resume-attempts:12}")
+    private int maxResumeAttempts;
+
     @Scheduled(fixedDelayString = "${staging.executor.resume-poll-interval-ms:5000}")
     public void resumeInterrupted() {
         List<PipelineRun> candidates = pipelineRunRepository.findResumeCandidates(
@@ -53,6 +56,35 @@ public class PipelineResumeScheduler {
                 pipelineExecutionService.submitResumeScan(run, config.get());
             } else {
                 pipelineExecutionService.submitArtifactChain(run.getId(), run.getArtifactType(), config.get().getCode());
+            }
+        }
+    }
+
+    /**
+     * The backstop that makes "no run stays non-terminal indefinitely without progress" true.
+     *
+     * <p>{@link #resumeInterrupted()} on its own is an unbounded loop: it re-claims any run whose
+     * lease expired, forever. That is correct for a run interrupted by a pod restart, and a trap
+     * for one whose stage starts and never finishes — the resume path touches neither retryCount
+     * nor any terminal status, so the "after max-auto-retries → failed" rule never engages and the
+     * run cycles until someone notices. On FUNC two scan runs cycled for 44 hours this way, each
+     * holding its configuration's one-active-scan slot the whole time, which is what stopped every
+     * subsequent scan of those configurations.
+     *
+     * <p>resumeCount counts claims since the last completed stage, so reaching the threshold means
+     * the run has genuinely moved nothing — a slow run that keeps finishing stages keeps resetting
+     * its budget and is never touched here.
+     */
+    @Scheduled(fixedDelayString = "${staging.recovery.stall-check-interval-ms:60000}")
+    public void failStalledRuns() {
+        List<PipelineRun> stalled = pipelineRunRepository.findStalled(
+                maxResumeAttempts, LocalDateTime.now(), PageRequest.of(0, CANDIDATE_BATCH_SIZE));
+
+        for (PipelineRun run : stalled) {
+            try {
+                pipelineRunService.failStalledRun(run.getId(), run.getResumeCount(), maxAutoRetries);
+            } catch (Exception e) {
+                log.warn("Stall watchdog could not terminate pipelineRunId={}", run.getId(), e);
             }
         }
     }

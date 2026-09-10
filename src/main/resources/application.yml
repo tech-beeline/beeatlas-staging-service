@@ -60,6 +60,11 @@ staging:
   recovery:
     check-interval-ms: 300000      # 5 min — how often failed runs are checked for auto-retry
     max-auto-retries: 3
+    stall-check-interval-ms: 60000 # 1 min — how often the stall watchdog sweeps for runs making no progress
+    # Claims without a single stage completing before a run is force-failed. At the 5 min lease
+    # above this is ~1h of provable non-progress. Raise it only if a *single* stage legitimately
+    # runs longer than that — resumeCount resets on every completed stage, so long chains are safe.
+    max-resume-attempts: 12
   scheduler:
     tick-interval-ms: 60000        # PipelineTickScheduler: how often due configurations are scanned
 

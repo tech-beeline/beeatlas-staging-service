@@ -109,26 +109,40 @@ public class PipelineExecutionService {
         }
     }
 
+    // Everything after the pre-adapter needs the same "the run must end up terminal" guarantee the
+    // artifact chain gets from #executeStageWithMetrics. finishScanWithChildren in particular is a
+    // single transaction covering stage completion, run completion and the whole fan-out: if it
+    // throws, all three roll back together and the scan is left exactly as the pre-adapter found it
+    // — stage log still "running", run still non-terminal, retryCount untouched — which the resume
+    // loop then repeats forever. Catching here is what converts that into a normal failure.
     private void executeScan(PipelineRun scan, Configuration config) {
         PreAdapterStage.ScanOutcome outcome = tryScan(scan, config);
         if (outcome == null) return;
 
-        List<ArtifactPreAdapter.FoundArtifact> found = outcome.found();
-        List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
-        List<PipelineRunService.ChildOutcome> outcomes = pipelineRunService.finishScanWithChildren(
-                scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
-                config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
+        try {
+            List<ArtifactPreAdapter.FoundArtifact> found = outcome.found();
+            List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
+            List<PipelineRunService.ChildOutcome> outcomes = pipelineRunService.finishScanWithChildren(
+                    scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
+                    config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
 
-        // Freeze which runs belong to this scan right now — childStats computed from this list later
-        // won't be stolen by a newer scan of the same config the way the source_artifacts-based
-        // childStats is (see ScanRunRepository's child_stats vs child_stats_snapshot).
-        pipelineRunService.snapshotChildRunIds(scan.getId(), outcomes.stream()
-                .filter(PipelineRunService.ChildOutcome::ownedByThisScan)
-                .map(o -> o.run().getId())
-                .toList());
+            // Freeze which runs belong to this scan right now — childStats computed from this list later
+            // won't be stolen by a newer scan of the same config the way the source_artifacts-based
+            // childStats is (see ScanRunRepository's child_stats vs child_stats_snapshot).
+            pipelineRunService.snapshotChildRunIds(scan.getId(), outcomes.stream()
+                    .filter(PipelineRunService.ChildOutcome::ownedByThisScan)
+                    .map(o -> o.run().getId())
+                    .toList());
 
-        recordDispositions(scan, config, outcome.stageLogId(), outcomes);
-        dispatchChildren(scan, config, found, outcomes);
+            recordDispositions(scan, config, outcome.stageLogId(), outcomes);
+            dispatchChildren(scan, config, found, outcomes);
+        } catch (Throwable t) {
+            log.error("Scan runId={} failed after the pre-adapter stage for configId={}",
+                    scan.getId(), config.getId(), t);
+            pipelineRunService.failStage(outcome.stageLogId(), scan.getId(), preAdapterStage.stageName(),
+                    rootMessageOf(t));
+            ensureRunMarkedFailed(scan.getId(), preAdapterStage.stageName(), t);
+        }
     }
 
     // The scan row's own stage log is the only place that can answer "did this scan do work, or did
@@ -173,8 +187,11 @@ public class PipelineExecutionService {
         executor.execute(() -> {
             try {
                 task.run();
-            } catch (Exception e) {
-                log.error("Unhandled exception running {}", description, e);
+            } catch (Throwable t) {
+                // Throwable: an Error here would otherwise kill the worker thread with nothing but a
+                // raw stderr trace from the default uncaught-exception handler — no log line, no
+                // context, and the run it was executing left mid-flight.
+                log.error("Unhandled throwable running {}", description, t);
             }
         });
     }
@@ -189,13 +206,28 @@ public class PipelineExecutionService {
         }
     }
 
+    // Throwable, not Exception: an Error escaping the adapter (a NoClassDefFoundError from a
+    // half-migrated classpath, an OOM on an oversized source response) used to sail past every
+    // catch in this class, kill the pool thread and leave the run untouched — indistinguishable in
+    // the database from a stage that simply never finished, and just as unrecoverable.
     private PreAdapterStage.ScanOutcome tryScan(PipelineRun scan, Configuration config) {
         try {
             return preAdapterStage.scan(scan, config);
-        } catch (Exception e) {
-            log.warn("Scan failed for configId={}, scanRunId={}", config.getId(), scan.getId(), e);
+        } catch (Throwable t) {
+            log.warn("Scan failed for configId={}, scanRunId={}", config.getId(), scan.getId(), t);
+            // PreAdapterStage#scan already calls failStage for Exceptions it catches; this is the
+            // backstop for everything that got past it, and is a no-op if the run is already failed.
+            ensureRunMarkedFailed(scan.getId(), preAdapterStage.stageName(), t);
             return null;
         }
+    }
+
+    private static String rootMessageOf(Throwable t) {
+        Throwable cause = t;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getName();
     }
 
     // recordSeen runs for every found artifact regardless of disposition — source_artifacts tracks
@@ -229,11 +261,11 @@ public class PipelineExecutionService {
         try {
             stage.execute(runId);
             return true;
-        } catch (Exception e) {
+        } catch (Throwable t) {
             status = "failed";
-            log.warn("Stage {} failed for runId={}", stageName, runId, e);
+            log.warn("Stage {} failed for runId={}", stageName, runId, t);
             meterRegistry.counter("staging_pipeline_errors_total", "stage", stageName, "artifact_type", artifactType).increment();
-            ensureRunMarkedFailed(runId, stageName, e);
+            ensureRunMarkedFailed(runId, stageName, t);
             return false;
         } finally {
             sample.stop(Timer.builder("staging_pipeline_stage_duration_seconds")
@@ -251,10 +283,10 @@ public class PipelineExecutionService {
     // gets reclaimed and re-throws identically on every lease cycle, and never shows up in the
     // "failed" bucket. This is the exact "зависшие" symptom the architect flagged. Close that gap
     // unconditionally here, regardless of where in the stage the exception originated.
-    private void ensureRunMarkedFailed(Long runId, String stageName, Exception e) {
+    private void ensureRunMarkedFailed(Long runId, String stageName, Throwable t) {
         PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
         if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())) return;
-        pipelineRunRepository.markFailed(runId, e.getMessage(), stageName);
+        pipelineRunRepository.markFailed(runId, rootMessageOf(t), stageName);
         pipelineRunRepository.incrementRetryCount(runId);
     }
 
