@@ -24,6 +24,9 @@ spring:
     open-in-view: false
 
 integration:
+  cx-server-url: ${INTEGRATION_CX_SERVER_URL:}
+  cx-publish:
+    user-id: ${INTEGRATION_CX_PUBLISH_USER_ID:0}
   e2e-publish:
     retry-count: ${INTEGRATION_E2E_PUBLISH_RETRY_COUNT:3}
     retry-delay-ms: ${INTEGRATION_E2E_PUBLISH_RETRY_DELAY_MS:1000}

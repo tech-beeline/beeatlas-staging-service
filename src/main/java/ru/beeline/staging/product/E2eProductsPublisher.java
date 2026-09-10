@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.client.E2eProductsClient;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
+import ru.beeline.staging.product.dto.e2e.E2ePublishResponse;
 import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
@@ -25,6 +26,7 @@ public class E2eProductsPublisher {
     private final ActualE2eScenarioRepository actualE2eScenarioRepository;
     private final E2eV2PublishRequestMapper e2ePublishRequestMapper;
     private final E2eProductsClient e2eProductsClient;
+    private final CxBiStepRelationsPublisher cxBiStepRelationsPublisher;
     private final ArtifactNoticeService artifactNoticeService;
     private final ObjectMapper objectMapper;
 
@@ -52,12 +54,16 @@ public class E2eProductsPublisher {
 
         E2eV2PublishRequest request = e2ePublishRequestMapper.map(root);
         E2ePublishSource source = E2ePublishSource.forArtifactType(artifactType);
+        E2ePublishResponse response;
         try {
-            e2eProductsClient.upsertE2e(request, rawDataRefId, pipelineRunId, source.name());
+            response = e2eProductsClient.upsertE2e(request, rawDataRefId, pipelineRunId, source.name());
         } catch (RuntimeException e) {
             recordPublishFailure(artifactUid, rawDataRefId, pipelineRunId, e);
             throw e;
         }
+
+        cxBiStepRelationsPublisher.publish(root, response != null ? response.getCode() : null,
+                artifactUid, rawDataRefId, pipelineRunId);
     }
 
     // Saved in its own transaction (see ArtifactNoticeService.saveNoticeInNewTransaction) so the notice
