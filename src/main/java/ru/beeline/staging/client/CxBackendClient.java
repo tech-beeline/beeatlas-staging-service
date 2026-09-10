@@ -25,17 +25,15 @@ import java.util.Optional;
 public class CxBackendClient {
 
     private static final String USER_ID_HEADER = "user-id";
+    private static final String TECHNICAL_USER_ID = "0";
 
     private final RestTemplate restTemplate;
     private final String baseUrl;
-    private final String userId;
 
     public CxBackendClient(RestTemplate restTemplate,
-            @Value("${integration.cx-server-url:}") String baseUrl,
-            @Value("${integration.cx-publish.user-id:0}") String userId) {
+            @Value("${integration.cx-server-url:}") String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.restTemplate = restTemplate;
-        this.userId = userId;
     }
 
     public boolean isConfigured() {
@@ -61,7 +59,7 @@ public class CxBackendClient {
         String url = baseUrl + "/api/cx/v1/library/business-interactions/step/" + biStepId + "/relation";
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set(USER_ID_HEADER, userId);
+        headers.set(USER_ID_HEADER, TECHNICAL_USER_ID);
         restTemplate.exchange(url, HttpMethod.PUT, new HttpEntity<>(relations, headers), Void.class);
         log.info("Replaced {} bi step relations in cx-backend: biStepId={}", relations.size(), biStepId);
     }
