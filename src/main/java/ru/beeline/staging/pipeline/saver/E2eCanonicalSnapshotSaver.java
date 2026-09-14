@@ -156,9 +156,7 @@ public class E2eCanonicalSnapshotSaver {
             String relationJsonData = JsonDataValidator.toJsonData(relationAttrs);
             JsonDataValidator.validate(relationJsonData);
             relation.setJsonData(relationJsonData);
-            if (draft.getContext() != null) {
-                relation.setRawDataContextId(rawDataContextService.pointTo(rawDataRefId, draft.getContext()));
-            }
+            relation.setRawDataContextId(resolveRelationContext(rawDataRefId, draft.getContext()));
             relation.setBranchName(branch);
             relation.setCreatedAt(now);
             operationRelationVersionRepository.save(relation);
@@ -175,6 +173,18 @@ public class E2eCanonicalSnapshotSaver {
         stats.setE2eScenarioId(scenarioVersion.getE2eScenarioId());
         stats.setOperationRelationsSaved(operationRelationsSaved);
         return stats;
+    }
+
+    /**
+     * Связь обязана иметь raw_data_context: cte_op_rel в ActualE2eScenarioRepository находит связи
+     * артефакта только через raw_data_contexts, поэтому relation с NULL-контекстом молча выпадает
+     * из публикации в fdm-products. Ветка free_text повторяет поведение ArtifactNoticeService для
+     * остальных сущностей — у потока plantuml JSON-указателя на исходный текст нет.
+     */
+    private Long resolveRelationContext(Long rawDataRefId, String context) {
+        return context != null && context.startsWith("/")
+                ? rawDataContextService.pointTo(rawDataRefId, context)
+                : rawDataContextService.pointToFreeText(rawDataRefId, context);
     }
 
     private ProductVersion resolveProductVersion(String productUid,
