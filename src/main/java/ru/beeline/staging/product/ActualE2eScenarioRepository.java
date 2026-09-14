@@ -19,8 +19,9 @@ public class ActualE2eScenarioRepository {
                     a.ext_uid, a.last_loaded_ref_id AS ref_id
                 FROM staging.source_artifacts a
                 JOIN staging.source_artifact_types t ON t.id=a.source_artifact_type_id
+                JOIN staging.data_types dt ON dt.id=t.data_type_id
                 WHERE a.ext_uid=?
-                    AND t.name='e2e-sequence'
+                    AND dt.code=?
             ), cte_contexts AS (
                 SELECT 
                     *
@@ -144,9 +145,9 @@ public class ActualE2eScenarioRepository {
         this.stagingJdbcTemplate = stagingJdbcTemplate;
     }
 
-    public String fetchActualScenarioRaw(String artifactUid) {
+    public String fetchActualScenarioRaw(String artifactUid, String artifactType) {
         List<String> rows = stagingJdbcTemplate.query(FETCH_ACTUAL_SCENARIO,
-                (rs, rowNum) -> rs.getString("result"), artifactUid);
+                (rs, rowNum) -> rs.getString("result"), artifactUid, artifactType);
         return rows.isEmpty() ? null : rows.get(0);
     }
 }
