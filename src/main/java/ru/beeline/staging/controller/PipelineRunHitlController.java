@@ -14,10 +14,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import ru.beeline.staging.dto.pipelinerun.ApplyPipelineRunRequest;
+import ru.beeline.staging.dto.pipelinerun.ApplyPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunRequest;
 import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunRequest;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunResponse;
+import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest;
+import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsResponse;
 import ru.beeline.staging.service.PipelineHitlService;
 import ru.beeline.staging.service.PipelineRunImportService;
 
@@ -39,6 +43,34 @@ public class PipelineRunHitlController {
             @RequestBody CreatePipelineRunRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineRunImportService.createImportRun(request));
+    }
+
+    @PostMapping("/{runId}/decisions")
+    @Operation(summary = "Принять решения по несмаппированным частям",
+            description = "Записывает решения map_existing (target: containerCode, interfaceCode) или create_new "
+                    + "(newRequest: productCode, containerName, interfaceName, protocol, note) по частям "
+                    + "draft_json.unmapped и переводит запуск в reviewing. Повторное решение по partId заменяет "
+                    + "предыдущее. 400 — некорректное решение, 404 — запуск или часть не найдены, "
+                    + "409 — запуск не в awaiting_review/reviewing.")
+    public ResponseEntity<PipelineRunDecisionsResponse> decide(
+            @PathVariable Long runId,
+            @RequestBody(required = false) PipelineRunDecisionsRequest request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(pipelineHitlService.decide(runId, request));
+    }
+
+    @PostMapping("/{runId}/apply")
+    @Operation(summary = "Применить UseCase",
+            description = "Переводит запуск из паузы в applying и продолжает цепочку стадией saver: UseCase, шаги "
+                    + "и плановые требования пишутся в каноническую модель staging (без публикации в fdm-products). "
+                    + "404 — запуск не найден, 409 — есть части без решений (unresolvedParts) или запуск "
+                    + "не в awaiting_review/reviewing.")
+    public ResponseEntity<ApplyPipelineRunResponse> apply(
+            @PathVariable Long runId,
+            @RequestBody(required = false) ApplyPipelineRunRequest request) {
+        String comment = request == null ? null : request.getComment();
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(pipelineHitlService.apply(runId, comment));
     }
 
     @PostMapping("/{runId}/cancel")

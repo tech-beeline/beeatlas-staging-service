@@ -49,6 +49,7 @@ public class PipelineExecutionService {
     private final PipelineExecutors            pipelineExecutors;
 
     private static final int BLOCKED_SAMPLE_SIZE = 20;
+    private static final Set<String> PAUSED_STATUSES = Set.of("awaiting_review", "reviewing");
 
     @Value("${staging.executor.lease-duration-ms:300000}")
     private long leaseDurationMs;
@@ -104,6 +105,10 @@ public class PipelineExecutionService {
         Set<String> completedStages = completedStagesOf(runId);
         for (String stageName : PipelineDefinitions.STAGE_ORDER) {
             if ("pre-adapter".equals(stageName) || completedStages.contains(stageName)) continue;
+            if (isPausedForReview(runId)) {
+                log.info("Run {} is paused for review — chain waits before stage {}", runId, stageName);
+                return;
+            }
             if (!executeStageWithMetrics(stageName, runId, artifactType)) return;
         }
     }
@@ -256,6 +261,12 @@ public class PipelineExecutionService {
                 || "cancelled".equals(run.getStatus())) return;
         pipelineRunRepository.markFailed(runId, rootMessageOf(t), stageName);
         pipelineRunRepository.incrementRetryCount(runId);
+    }
+
+    private boolean isPausedForReview(Long runId) {
+        return pipelineRunRepository.findById(runId)
+                .map(run -> PAUSED_STATUSES.contains(run.getStatus()))
+                .orElse(false);
     }
 
     private boolean claim(Long runId) {

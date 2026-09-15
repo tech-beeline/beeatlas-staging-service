@@ -13,6 +13,7 @@ import ru.beeline.staging.exception.ActivePipelineRunException;
 import ru.beeline.staging.exception.PipelineRunBadRequestException;
 import ru.beeline.staging.exception.PipelineRunConflictException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
+import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -41,6 +42,14 @@ public class PipelineRunImportExceptionHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", e.getMessage());
         body.put("activeRunId", e.getActiveRunId());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(PipelineRunUnresolvedPartsException.class)
+    public ResponseEntity<Map<String, Object>> handleUnresolvedParts(PipelineRunUnresolvedPartsException e) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", e.getMessage());
+        body.put("unresolvedParts", e.getUnresolvedParts());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 

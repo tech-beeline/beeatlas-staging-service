@@ -56,6 +56,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     }
 
     @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
+           "AND r.status <> 'awaiting_review' AND r.status <> 'reviewing' " +
            "AND (r.ownerId IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
     List<PipelineRun> findResumeCandidates(@Param("now") LocalDateTime now, Pageable pageable);
 
@@ -63,6 +64,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     List<PipelineRun> findFailedRetryable(@Param("maxRetries") int maxRetries, Pageable pageable);
 
     @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
+           "AND r.status <> 'awaiting_review' AND r.status <> 'reviewing' " +
            "AND r.resumeCount >= :maxResumeAttempts " +
            "AND (r.leaseExpiresAt IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
     List<PipelineRun> findStalled(@Param("maxResumeAttempts") int maxResumeAttempts,
@@ -128,6 +130,25 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
            "r.executionStartedAt = COALESCE(r.executionStartedAt, CURRENT_TIMESTAMP) " +
            "WHERE r.id = :id AND r.status <> 'cancelled'")
     int advanceStage(@Param("id") Long id, @Param("status") String status);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE PipelineRun r SET r.status = :status, r.draftJson = :draftJson, " +
+           "r.ownerId = NULL, r.leaseExpiresAt = NULL " +
+           "WHERE r.id = :id AND r.status <> 'cancelled'")
+    int pause(@Param("id") Long id, @Param("status") String status, @Param("draftJson") String draftJson);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE PipelineRun r SET r.status = 'reviewing' " +
+           "WHERE r.id = :id AND r.status IN ('awaiting_review', 'reviewing')")
+    int markReviewing(@Param("id") Long id);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE PipelineRun r SET r.status = 'applying' " +
+           "WHERE r.id = :id AND r.status IN ('awaiting_review', 'reviewing')")
+    int markApplying(@Param("id") Long id);
 
     @Transactional
     @Modifying
