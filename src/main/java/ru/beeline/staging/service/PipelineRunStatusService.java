@@ -79,6 +79,7 @@ public class PipelineRunStatusService {
         if (snapshot.isEmpty()) {
             return immediately(notFound(runId));
         }
+
         if (waitingIsOver(snapshot.get().status(), target)) {
             return immediately(ok(snapshot.get(), false));
         }
