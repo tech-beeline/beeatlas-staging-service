@@ -16,6 +16,7 @@ import ru.beeline.staging.config.PipelineExecutors;
 import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.PipelineStageLog;
+import ru.beeline.staging.exception.PipelineRunCancelledException;
 import ru.beeline.staging.pipeline.PipelineDefinitions;
 import ru.beeline.staging.pipeline.exec.ArtifactPipelineStage;
 import ru.beeline.staging.pipeline.exec.PreAdapterStage;
@@ -230,6 +231,10 @@ public class PipelineExecutionService {
         try {
             stage.execute(runId);
             return true;
+        } catch (PipelineRunCancelledException e) {
+            status = "cancelled";
+            log.info("Run {} is cancelled — chain stopped before stage {}", runId, stageName);
+            return false;
         } catch (Throwable t) {
             status = "failed";
             log.warn("Stage {} failed for runId={}", stageName, runId, t);
@@ -247,7 +252,8 @@ public class PipelineExecutionService {
 
     private void ensureRunMarkedFailed(Long runId, String stageName, Throwable t) {
         PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
-        if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())) return;
+        if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())
+                || "cancelled".equals(run.getStatus())) return;
         pipelineRunRepository.markFailed(runId, rootMessageOf(t), stageName);
         pipelineRunRepository.incrementRetryCount(runId);
     }

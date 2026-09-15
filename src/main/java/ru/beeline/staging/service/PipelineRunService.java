@@ -15,6 +15,7 @@ import ru.beeline.staging.domain.PipelineDefinitionEntry;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.PipelineStageLog;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
+import ru.beeline.staging.exception.PipelineRunCancelledException;
 import ru.beeline.staging.repository.ArtifactBatchRepository;
 import ru.beeline.staging.repository.PipelineDefinitionEntryRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
@@ -38,7 +39,7 @@ public class PipelineRunService {
     private final ArtifactNoticeService      noticeService;
     private final MeterRegistry              meterRegistry;
 
-    private static final List<String> DONE_STATUSES = List.of("completed");
+    private static final List<String> DONE_STATUSES = List.of("completed", "cancelled");
 
     @Value("${staging.recovery.max-auto-retries:3}")
     private int maxAutoRetries;
@@ -62,10 +63,7 @@ public class PipelineRunService {
 
     @Transactional
     public void setRawDataRefId(Long runId, Long rawDataRefId) {
-        runRepository.findById(runId).ifPresent(run -> {
-            run.setRawDataRefId(rawDataRefId);
-            runRepository.save(run);
-        });
+        runRepository.updateRawDataRefId(runId, rawDataRefId);
     }
 
     public boolean isAlreadyCompleted(Long runId) {
@@ -92,11 +90,9 @@ public class PipelineRunService {
     public Long startStage(Long runId, String stageName, String inputData) {
         PipelineRun run = runRepository.findById(runId)
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
-        run.setStatus(stageToStatus(stageName));
-        if (run.getExecutionStartedAt() == null) {
-            run.setExecutionStartedAt(LocalDateTime.now());
+        if (runRepository.advanceStage(runId, stageToStatus(stageName)) == 0) {
+            throw new PipelineRunCancelledException(runId, stageName);
         }
-        runRepository.save(run);
 
         PipelineStageLog log = new PipelineStageLog();
         log.setRunId(runId);

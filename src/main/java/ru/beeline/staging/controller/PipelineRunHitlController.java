@@ -9,12 +9,16 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunRequest;
+import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunRequest;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunResponse;
+import ru.beeline.staging.service.PipelineHitlService;
 import ru.beeline.staging.service.PipelineRunImportService;
 
 @RestController
@@ -24,6 +28,7 @@ import ru.beeline.staging.service.PipelineRunImportService;
 public class PipelineRunHitlController {
 
     private final PipelineRunImportService pipelineRunImportService;
+    private final PipelineHitlService pipelineHitlService;
 
     @PostMapping
     @Operation(summary = "Запустить импорт артефакта",
@@ -34,5 +39,19 @@ public class PipelineRunHitlController {
             @RequestBody CreatePipelineRunRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineRunImportService.createImportRun(request));
+    }
+
+    @PostMapping("/{runId}/cancel")
+    @Operation(summary = "Отменить запуск",
+            description = "Переводит запуск в cancelled и останавливает цепочку стадий; в каноническую модель "
+                    + "ничего не пишется. Причина из тела сохраняется в failure_reason. 404 — запуск не найден, "
+                    + "409 — запуск уже в терминальном статусе (completed/failed/cancelled) "
+                    + "или в состоянии применения (saving/publishing/applying).")
+    public ResponseEntity<CancelPipelineRunResponse> cancelPipelineRun(
+            @PathVariable Long runId,
+            @RequestBody(required = false) CancelPipelineRunRequest request) {
+        String reason = request == null ? null : request.getReason();
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(pipelineHitlService.cancel(runId, reason));
     }
 }

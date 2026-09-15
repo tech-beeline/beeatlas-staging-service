@@ -32,7 +32,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
             Long configurationId, Pageable pageable);
     Optional<PipelineRun> findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(
             String artifactUid, String artifactType, List<String> statuses);
-    @Query("SELECT r FROM PipelineRun r WHERE r.artifactUid IS NULL AND r.status <> 'completed' AND r.status <> 'failed'")
+    @Query("SELECT r FROM PipelineRun r WHERE r.artifactUid IS NULL AND r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled'")
     List<PipelineRun> findAllActiveScans();
     @Query(value = "SELECT DISTINCT ON (configuration_id) configuration_id AS configId, completed_at AS completedAt " +
                    "FROM staging.pipeline_runs WHERE artifact_uid IS NULL AND status IN ('completed', 'failed') " +
@@ -45,7 +45,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     }
     @Query(value = "SELECT configuration_id AS configId, count(*) AS activeCount, min(started_at) AS oldestStartedAt " +
                    "FROM staging.pipeline_runs " +
-                   "WHERE artifact_uid IS NOT NULL AND status NOT IN ('completed', 'failed') " +
+                   "WHERE artifact_uid IS NOT NULL AND status NOT IN ('completed', 'failed', 'cancelled') " +
                    "GROUP BY configuration_id", nativeQuery = true)
     List<ConfigActiveArtifactRuns> findActiveArtifactRunCountsPerConfig();
 
@@ -55,14 +55,14 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
         LocalDateTime getOldestStartedAt();
     }
 
-    @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' " +
+    @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
            "AND (r.ownerId IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
     List<PipelineRun> findResumeCandidates(@Param("now") LocalDateTime now, Pageable pageable);
 
     @Query("SELECT r FROM PipelineRun r WHERE r.status = 'failed' AND r.retryCount < :maxRetries")
     List<PipelineRun> findFailedRetryable(@Param("maxRetries") int maxRetries, Pageable pageable);
 
-    @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' " +
+    @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
            "AND r.resumeCount >= :maxResumeAttempts " +
            "AND (r.leaseExpiresAt IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
     List<PipelineRun> findStalled(@Param("maxResumeAttempts") int maxResumeAttempts,
@@ -78,7 +78,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     @Modifying
     @Query("UPDATE PipelineRun r SET r.ownerId = :ownerId, r.leaseExpiresAt = :until, " +
            "r.resumeCount = r.resumeCount + 1 " +
-           "WHERE r.id = :runId AND r.status <> 'completed' AND r.status <> 'failed' " +
+           "WHERE r.id = :runId AND r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
            "AND (r.ownerId IS NULL OR r.leaseExpiresAt < :now)")
     int claim(@Param("runId") Long runId, @Param("ownerId") String ownerId,
               @Param("until") LocalDateTime until, @Param("now") LocalDateTime now);
@@ -99,19 +99,40 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
            "r.failureReason = :reason, r.failedStage = :stage, r.retryCount = :retryCount, " +
            "r.ownerId = NULL, r.leaseExpiresAt = NULL, " +
            "r.blockedAt = COALESCE(r.blockedAt, CURRENT_TIMESTAMP) " +
-           "WHERE r.id = :id AND r.status <> 'completed' AND r.status <> 'failed'")
+           "WHERE r.id = :id AND r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled'")
     int markStalled(@Param("id") Long id, @Param("reason") String reason,
                     @Param("stage") String stage, @Param("retryCount") int retryCount);
 
     @Transactional
     @Modifying
-    @Query("UPDATE PipelineRun r SET r.status = :status, r.completedAt = CURRENT_TIMESTAMP WHERE r.id = :id")
+    @Query("UPDATE PipelineRun r SET r.status = :status, r.completedAt = CURRENT_TIMESTAMP " +
+           "WHERE r.id = :id AND r.status <> 'cancelled'")
     void markCompleted(@Param("id") Long id, @Param("status") String status);
 
     @Transactional
     @Modifying
-    @Query("UPDATE PipelineRun r SET r.status = 'failed', r.completedAt = CURRENT_TIMESTAMP, r.failureReason = :reason, r.failedStage = :stage WHERE r.id = :id")
+    @Query("UPDATE PipelineRun r SET r.status = 'failed', r.completedAt = CURRENT_TIMESTAMP, r.failureReason = :reason, r.failedStage = :stage " +
+           "WHERE r.id = :id AND r.status <> 'cancelled'")
     void markFailed(@Param("id") Long id, @Param("reason") String reason, @Param("stage") String stage);
+
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE PipelineRun r SET r.status = 'cancelled', r.completedAt = CURRENT_TIMESTAMP, r.failureReason = :reason, " +
+           "r.ownerId = NULL, r.leaseExpiresAt = NULL " +
+           "WHERE r.id = :id AND r.status NOT IN ('completed', 'failed', 'cancelled', 'saving', 'publishing', 'applying')")
+    int markCancelled(@Param("id") Long id, @Param("reason") String reason);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE PipelineRun r SET r.status = :status, " +
+           "r.executionStartedAt = COALESCE(r.executionStartedAt, CURRENT_TIMESTAMP) " +
+           "WHERE r.id = :id AND r.status <> 'cancelled'")
+    int advanceStage(@Param("id") Long id, @Param("status") String status);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE PipelineRun r SET r.rawDataRefId = :rawDataRefId WHERE r.id = :id")
+    void updateRawDataRefId(@Param("id") Long id, @Param("rawDataRefId") Long rawDataRefId);
 
     @Transactional
     @Modifying
