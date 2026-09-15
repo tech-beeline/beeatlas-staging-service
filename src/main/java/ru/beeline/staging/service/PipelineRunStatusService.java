@@ -129,7 +129,7 @@ public class PipelineRunStatusService {
     }
 
     private ResponseEntity<Object> ok(PipelineRunStatusSnapshot snapshot, boolean more) {
-        return ResponseEntity.ok(PipelineRunStatusResponse.of(snapshot, null, more));
+        return ResponseEntity.ok(PipelineRunStatusResponse.of(snapshot, more));
     }
 
     private boolean waitingIsOver(String status, String target) {

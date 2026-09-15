@@ -16,8 +16,8 @@ public record PipelineRunStatusResponse(
         JsonNode result,
         boolean more) {
 
-    public static PipelineRunStatusResponse of(PipelineRunStatusSnapshot snapshot, JsonNode result, boolean more) {
+    public static PipelineRunStatusResponse of(PipelineRunStatusSnapshot snapshot, boolean more) {
         return new PipelineRunStatusResponse(snapshot.runId(), snapshot.artifactType(), snapshot.artifactUid(),
-                snapshot.status(), snapshot.stage(), snapshot.noticesCount(), result, more);
+                snapshot.status(), snapshot.stage(), snapshot.noticesCount(), snapshot.result(), more);
     }
 }

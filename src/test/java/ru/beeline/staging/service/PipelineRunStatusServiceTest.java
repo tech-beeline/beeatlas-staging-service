@@ -1,5 +1,7 @@
 package ru.beeline.staging.service;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -115,8 +117,27 @@ class PipelineRunStatusServiceTest {
         assertThat(result(service.watch(RUN_ID, null, null)).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("Пауза достигнута во время ожидания — result из снапшота в ответе")
+    void returnsResultWhenPauseReachedWhileWaiting() {
+        ObjectNode draft = JsonNodeFactory.instance.objectNode();
+        draft.putObject("usecase").put("code", "UC-001");
+        draft.putArray("unmapped").addObject().put("partId", "P-04");
+        when(statusRepository.findSnapshot(RUN_ID)).thenReturn(
+                Optional.of(snapshot("transforming")),
+                Optional.of(new PipelineRunStatusSnapshot(RUN_ID, "usecase", "UC-001", "awaiting_review",
+                        "transformer", 0, draft)));
+        when(statusRepository.findStatus(RUN_ID)).thenReturn(Optional.of("awaiting_review"));
+
+        PipelineRunStatusResponse response = status(service.watch(RUN_ID, "awaiting_review", null));
+
+        assertThat(response.status()).isEqualTo("awaiting_review");
+        assertThat(response.more()).isFalse();
+        assertThat(response.result()).isEqualTo(draft);
+    }
+
     private PipelineRunStatusSnapshot snapshot(String status) {
-        return new PipelineRunStatusSnapshot(RUN_ID, "e2e-plantuml", "E2E-001", status, "saver", 3);
+        return new PipelineRunStatusSnapshot(RUN_ID, "e2e-plantuml", "E2E-001", status, "saver", 3, null);
     }
 
     @SuppressWarnings("unchecked")

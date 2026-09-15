@@ -1,5 +1,7 @@
 package ru.beeline.staging.controller;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,7 +52,7 @@ class PipelineRunStatusEndpointTest {
     @DisplayName("GET /api/v1/pipeline-runs/{runId}/status отдаёт статус запуска")
     void returnsStatus() throws Exception {
         when(statusRepository.findSnapshot(RUN_ID)).thenReturn(Optional.of(
-                new PipelineRunStatusSnapshot(RUN_ID, "e2e-plantuml", "E2E-001", "completed", "saver", 2)));
+                new PipelineRunStatusSnapshot(RUN_ID, "e2e-plantuml", "E2E-001", "completed", "saver", 2, null)));
 
         MvcResult started = mockMvc.perform(get("/api/v1/pipeline-runs/{runId}/status", RUN_ID).accept(MediaType.APPLICATION_JSON))
                 .andExpect(request().asyncStarted())
@@ -65,6 +67,32 @@ class PipelineRunStatusEndpointTest {
                 .andExpect(jsonPath("$.stage").value("saver"))
                 .andExpect(jsonPath("$.noticesCount").value(2))
                 .andExpect(jsonPath("$.result").doesNotExist())
+                .andExpect(jsonPath("$.more").value(false));
+    }
+
+    @Test
+    @DisplayName("В паузе awaiting_review блок result сериализуется из draft_json")
+    void returnsResultBlock() throws Exception {
+        ObjectNode draft = JsonNodeFactory.instance.objectNode();
+        draft.putObject("usecase").put("code", "UC-001");
+        draft.putArray("mapped").addObject().put("partId", "P-01").put("status", "confirmed");
+        draft.putArray("unmapped").addObject().put("partId", "P-04").put("suggestion", "map_existing | create_new");
+        when(statusRepository.findSnapshot(RUN_ID)).thenReturn(Optional.of(
+                new PipelineRunStatusSnapshot(RUN_ID, "usecase", "UC-001", "awaiting_review", "transformer", 0, draft)));
+
+        MvcResult started = mockMvc.perform(get("/api/v1/pipeline-runs/{runId}/status", RUN_ID)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .param("waitFor", "awaiting_review"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("awaiting_review"))
+                .andExpect(jsonPath("$.stage").value("transformer"))
+                .andExpect(jsonPath("$.result.usecase.code").value("UC-001"))
+                .andExpect(jsonPath("$.result.mapped[0].status").value("confirmed"))
+                .andExpect(jsonPath("$.result.unmapped[0].partId").value("P-04"))
                 .andExpect(jsonPath("$.more").value(false));
     }
 
