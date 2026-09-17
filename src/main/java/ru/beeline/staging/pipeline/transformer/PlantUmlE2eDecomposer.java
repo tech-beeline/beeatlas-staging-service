@@ -39,11 +39,13 @@ public class PlantUmlE2eDecomposer {
     public static final String IMPLICIT_CAST = "e2e_plantuml.transform.implicit_cast";
     public static final String PARSE_FAILED = "e2e_plantuml.transform.error.parse_failed";
     public static final String SEARCH_UNAVAILABLE = "e2e_plantuml.transform.search_matched_unavailable";
+    public static final String NOT_IN_LANDSCAPE = "e2e_plantuml.transform.operation_not_in_landscape";
 
     private static final Pattern REST_CALL = Pattern.compile(
             "(?i)\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+(\\S+)");
     private static final String REST_PROTOCOL = "REST";
     private static final String DEFAULT_PROTOCOL = "UNKNOWN";
+    private static final String UNMATCHED_INTERFACE_SUFFIX = "-unmatched";
     private static final int UID_LENGTH = 32;
 
     private final PlantUmlDiagramParser parser;
@@ -71,13 +73,14 @@ public class PlantUmlE2eDecomposer {
         ParsedDiagram diagram = outcome.diagram();
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolved = resolveParticipants(diagram);
         List<Call> calls = collectCalls(diagram, resolved, notices);
-        if (calls.isEmpty()) {
+        List<OperationMatchCandidate> candidates = candidatesOf(calls);
+        if (candidates.isEmpty()) {
             return new Result(snapshot, notices);
         }
 
         List<MatchedArchOperation> matches;
         try {
-            matches = productServiceClient.searchMatchedOperations(candidatesOf(calls));
+            matches = productServiceClient.searchMatchedOperations(candidates);
         } catch (RuntimeException e) {
             notices.add(notice(SEARCH_UNAVAILABLE, "error", Map.of("artifactUid", artifactUid,
                     "reason", String.valueOf(e.getMessage()))));
@@ -150,7 +153,6 @@ public class PlantUmlE2eDecomposer {
             CmdbAliasLookup.ResolvedParticipant receiver = resolved.get(message.toAlias());
             if (receiver == null) {
                 notices.add(excluded(elementRef, message.line(), "receiver_not_in_cmdb"));
-                continue;
             }
             calls.add(new Call(message, matcher.group(1).toUpperCase(Locale.ROOT), matcher.group(2), receiver));
         }
@@ -160,6 +162,9 @@ public class PlantUmlE2eDecomposer {
     private List<OperationMatchCandidate> candidatesOf(List<Call> calls) {
         Map<String, OperationMatchCandidate> distinct = new LinkedHashMap<>();
         for (Call call : calls) {
+            if (call.receiver() == null) {
+                continue;
+            }
             distinct.putIfAbsent(matchKey(call.productCode(), call.path(), call.method()),
                     new OperationMatchCandidate(call.path(), call.method(), REST_PROTOCOL, call.productCode()));
         }
@@ -184,35 +189,58 @@ public class PlantUmlE2eDecomposer {
         Map<String, E2ESequenceSnapshot.InterfaceDraft> interfaces = new LinkedHashMap<>();
         Map<String, E2ESequenceSnapshot.OperationDraft> operations = new LinkedHashMap<>();
         Map<String, String> activeOperationByLifeline = new HashMap<>();
+        Map<String, Integer> excludedParentLineByLifeline = new HashMap<>();
         Map<String, Integer> callOrderByCaller = new HashMap<>();
 
         for (Call call : calls) {
-            String elementRef = call.message().fromAlias() + "->" + call.message().toAlias();
-            MatchedArchOperation match = matchByKey.get(matchKey(call.productCode(), call.path(), call.method()));
-            if (match == null || match.getInterfaceObj() == null || match.getInterfaceObj().getCode() == null) {
-                notices.add(excluded(elementRef, call.message().line(), "no_match_in_landscape"));
+            String fromAlias = call.message().fromAlias();
+            String toAlias = call.message().toAlias();
+            int line = call.message().line();
+
+            if (call.receiver() == null) {
+                activeOperationByLifeline.remove(toAlias);
+                excludedParentLineByLifeline.put(toAlias, line);
+                continue;
+            }
+            Integer excludedParentLine = excludedParentLineByLifeline.get(fromAlias);
+            if (excludedParentLine != null) {
+                notices.add(notice(EXCLUDE, "warning", Map.of("elementRef", fromAlias + "->" + toAlias,
+                        "line", line, "reason", "parent_excluded", "parentLine", excludedParentLine)));
+                activeOperationByLifeline.remove(toAlias);
+                excludedParentLineByLifeline.put(toAlias, excludedParentLine);
                 continue;
             }
 
-            String productUid = productUid(call, match);
-            String containerUid = match.getContainer() != null && match.getContainer().getCode() != null
+            MatchedArchOperation match = matchByKey.get(matchKey(call.productCode(), call.path(), call.method()));
+            boolean matched = match != null && match.getInterfaceObj() != null && match.getInterfaceObj().getCode() != null;
+
+            String productUid = matched ? productUid(call, match) : call.productCode();
+            String containerUid = matched && match.getContainer() != null && match.getContainer().getCode() != null
                     ? match.getContainer().getCode()
                     : productUid;
-            String interfaceUid = match.getInterfaceObj().getCode();
+            String interfaceUid = matched ? match.getInterfaceObj().getCode() : productUid + UNMATCHED_INTERFACE_SUFFIX;
             String operationExtUid = operationUid(call.productCode(), call.method(), call.path());
 
-            products.computeIfAbsent(productUid, uid -> product(uid, match));
-            containers.computeIfAbsent(containerUid, uid -> container(uid, productUid, match));
+            products.computeIfAbsent(productUid, uid -> product(uid, productName(call, match)));
+            containers.computeIfAbsent(containerUid, uid -> container(uid, productUid,
+                    matched && match.getContainer() != null ? match.getContainer().getName() : null));
             interfaces.computeIfAbsent(interfaceUid, uid -> {
                 notices.add(implicitCast(uid, "interface", "protocol=UNKNOWN, source=null", "info"));
-                return anInterface(uid, containerUid, match);
+                return anInterface(uid, containerUid, matched ? match.getInterfaceObj().getName() : null);
             });
             operations.computeIfAbsent(operationExtUid, uid -> {
+                if (!matched) {
+                    notices.add(notice(NOT_IN_LANDSCAPE, "warning", Map.of("elementRef", fromAlias + "->" + toAlias,
+                            "line", line, "productCode", call.productCode(), "method", call.method(),
+                            "path", call.path())));
+                }
                 notices.add(implicitCast(uid, "operation", "sla=null", "warning"));
-                return operation(uid, interfaceUid, match);
+                return matched
+                        ? operation(uid, interfaceUid, match.getName(), match.getType())
+                        : operation(uid, interfaceUid, call.path(), call.method());
             });
 
-            String callerExtUid = activeOperationByLifeline.get(call.message().fromAlias());
+            String callerExtUid = activeOperationByLifeline.get(fromAlias);
             String callerKey = callerExtUid == null ? "" : callerExtUid;
             int callOrder = callOrderByCaller.merge(callerKey, 1, Integer::sum) - 1;
 
@@ -222,7 +250,8 @@ public class PlantUmlE2eDecomposer {
             relation.setCallOrder(callOrder);
             snapshot.getOperationRelations().add(relation);
 
-            activeOperationByLifeline.put(call.message().toAlias(), operationExtUid);
+            activeOperationByLifeline.put(toAlias, operationExtUid);
+            excludedParentLineByLifeline.remove(toAlias);
         }
 
         snapshot.getProducts().addAll(products.values());
@@ -238,42 +267,50 @@ public class PlantUmlE2eDecomposer {
         return call.productCode();
     }
 
-    private E2ESequenceSnapshot.ProductDraft product(String uid, MatchedArchOperation match) {
+    private String productName(Call call, MatchedArchOperation match) {
+        if (match != null && match.getProduct() != null && match.getProduct().getName() != null) {
+            return match.getProduct().getName();
+        }
+        if (call.receiver().kind() == CmdbAliasLookup.ResolvedParticipant.Kind.SYSTEM) {
+            return call.receiver().name();
+        }
+        return null;
+    }
+
+    private E2ESequenceSnapshot.ProductDraft product(String uid, String name) {
         E2ESequenceSnapshot.ProductDraft draft = new E2ESequenceSnapshot.ProductDraft();
         draft.setUid(uid);
         draft.setExtUid(uid);
-        draft.setName(match.getProduct() != null && match.getProduct().getName() != null
-                ? match.getProduct().getName() : uid);
+        draft.setName(name != null ? name : uid);
         return draft;
     }
 
-    private E2ESequenceSnapshot.ContainerDraft container(String uid, String productUid, MatchedArchOperation match) {
+    private E2ESequenceSnapshot.ContainerDraft container(String uid, String productUid, String name) {
         E2ESequenceSnapshot.ContainerDraft draft = new E2ESequenceSnapshot.ContainerDraft();
         draft.setUid(uid);
         draft.setExtUid(uid);
         draft.setProductUid(productUid);
-        draft.setName(match.getContainer() != null && match.getContainer().getName() != null
-                ? match.getContainer().getName() : uid);
+        draft.setName(name != null ? name : uid);
         return draft;
     }
 
-    private E2ESequenceSnapshot.InterfaceDraft anInterface(String uid, String containerUid, MatchedArchOperation match) {
+    private E2ESequenceSnapshot.InterfaceDraft anInterface(String uid, String containerUid, String name) {
         E2ESequenceSnapshot.InterfaceDraft draft = new E2ESequenceSnapshot.InterfaceDraft();
         draft.setUid(uid);
         draft.setExtUid(uid);
         draft.setContainerUid(containerUid);
-        draft.setName(match.getInterfaceObj().getName() != null ? match.getInterfaceObj().getName() : uid);
+        draft.setName(name != null ? name : uid);
         draft.setProtocol(DEFAULT_PROTOCOL);
         draft.setSource(null);
         return draft;
     }
 
-    private E2ESequenceSnapshot.OperationDraft operation(String extUid, String interfaceUid, MatchedArchOperation match) {
+    private E2ESequenceSnapshot.OperationDraft operation(String extUid, String interfaceUid, String name, String type) {
         E2ESequenceSnapshot.OperationDraft draft = new E2ESequenceSnapshot.OperationDraft();
         draft.setExtUid(extUid);
         draft.setInterfaceUid(interfaceUid);
-        draft.setName(match.getName());
-        draft.setType(match.getType());
+        draft.setName(name);
+        draft.setType(type);
         return draft;
     }
 
