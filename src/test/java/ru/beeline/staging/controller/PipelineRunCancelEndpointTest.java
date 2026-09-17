@@ -12,9 +12,11 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.usecase.UseCaseDraft;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 import ru.beeline.staging.service.PipelineExecutionService;
 import ru.beeline.staging.service.PipelineHitlService;
 import ru.beeline.staging.service.PipelineRunImportService;
+import ru.beeline.staging.service.RunBranchResolver;
 
 import java.util.List;
 import java.util.Optional;
@@ -40,7 +42,8 @@ class PipelineRunCancelEndpointTest {
         PipelineRunHitlController controller = new PipelineRunHitlController(
                 mock(PipelineRunImportService.class),
                 new PipelineHitlService(pipelineRunRepository, mock(ImportDecisionRepository.class),
-                        mock(PipelineExecutionService.class), new SimpleMeterRegistry(), objectMapper));
+                        mock(PipelineExecutionService.class), new SimpleMeterRegistry(), objectMapper,
+                        mock(UseCaseLandscapeRepository.class), mock(RunBranchResolver.class)));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new PipelineRunImportExceptionHandler())
                 .build();

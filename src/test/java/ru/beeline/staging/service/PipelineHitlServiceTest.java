@@ -18,6 +18,7 @@ import ru.beeline.staging.exception.PipelineRunNotFoundException;
 import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +42,7 @@ class PipelineHitlServiceTest {
     private ImportDecisionRepository importDecisionRepository;
     private PipelineExecutionService pipelineExecutionService;
     private SimpleMeterRegistry meterRegistry;
+    private UseCaseLandscapeRepository landscapeRepository;
     private PipelineHitlService service;
 
     @BeforeEach
@@ -49,8 +51,42 @@ class PipelineHitlServiceTest {
         importDecisionRepository = mock(ImportDecisionRepository.class);
         pipelineExecutionService = mock(PipelineExecutionService.class);
         meterRegistry = new SimpleMeterRegistry();
+        landscapeRepository = mock(UseCaseLandscapeRepository.class);
+        RunBranchResolver runBranchResolver = mock(RunBranchResolver.class);
+        when(runBranchResolver.resolve(RUN_ID)).thenReturn("main");
+        when(landscapeRepository.findInterface("users_api.gw.BC-1", "gw.BC-1", "main")).thenReturn(Optional.of(
+                new UseCaseLandscapeRepository.LandscapeInterface(10L, "users_api.gw.BC-1", "gw.BC-1", "BC-1")));
         service = new PipelineHitlService(pipelineRunRepository, importDecisionRepository, pipelineExecutionService,
-                meterRegistry, objectMapper);
+                meterRegistry, objectMapper, landscapeRepository, runBranchResolver);
+    }
+
+    @Test
+    @DisplayName("map_existing с несуществующими в ландшафте кодами — 400, ничего не пишется")
+    void rejectsMapExistingToMissingTarget() {
+        givenRun("awaiting_review");
+        PipelineRunDecisionsRequest.Decision decision = mapExisting("P-02");
+        decision.setTarget(objectMapper.createObjectNode()
+                .put("containerCode", "auto_test_container_x")
+                .put("interfaceCode", "auto_test_interface_x"));
+
+        assertThatThrownBy(() -> service.decide(RUN_ID, request(decision)))
+                .isInstanceOf(PipelineRunBadRequestException.class)
+                .hasMessageContaining("auto_test_interface_x");
+        verify(importDecisionRepository, never()).upsert(anyLong(), anyString(), anyString(), any(), any());
+        verify(pipelineRunRepository, never()).markReviewing(anyLong());
+    }
+
+    @Test
+    @DisplayName("Два решения по одной части в запросе — 400, ничего не пишется")
+    void rejectsDuplicatePartInRequest() {
+        givenRun("awaiting_review");
+        PipelineRunDecisionsRequest request = new PipelineRunDecisionsRequest();
+        request.setDecisions(List.of(mapExisting("P-02"), mapExisting(" P-02 ")));
+
+        assertThatThrownBy(() -> service.decide(RUN_ID, request))
+                .isInstanceOf(PipelineRunBadRequestException.class)
+                .hasMessageContaining("P-02");
+        verify(importDecisionRepository, never()).upsert(anyLong(), anyString(), anyString(), any(), any());
     }
 
     @Test

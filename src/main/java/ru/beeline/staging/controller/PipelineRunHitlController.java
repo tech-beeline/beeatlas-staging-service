@@ -65,12 +65,14 @@ public class PipelineRunHitlController {
             description = "Записывает решения map_existing (target: containerCode, interfaceCode) или create_new "
                     + "(newRequest: productCode, containerName, interfaceName, protocol, note) по частям "
                     + "draft_json.unmapped и переводит запуск в reviewing. Повторное решение по partId заменяет "
-                    + "предыдущее. 400 — некорректное решение, 404 — запуск или часть не найдены, "
+                    + "предыдущее. 400 — некорректное решение (в том числе цель map_existing не найдена в ландшафте "
+                    + "или по одной части в запросе несколько решений), 404 — запуск или часть не найдены, "
                     + "409 — запуск не в awaiting_review/reviewing.")
     @ApiResponses({
             @ApiResponse(responseCode = "202", description = "Решения приняты",
                     content = @Content(schema = @Schema(implementation = PipelineRunDecisionsResponse.class))),
-            @ApiResponse(responseCode = "400", description = "Некорректное решение или неверный формат runId",
+            @ApiResponse(responseCode = "400", description = "Некорректное решение, цель map_existing не найдена "
+                    + "в ландшафте, дубль partId в запросе или неверный формат runId",
                     content = @Content(schema = @Schema(implementation = PipelineRunBadRequestResponse.class))),
             @ApiResponse(responseCode = "404", description = "Запуск или часть не найдены",
                     content = @Content(schema = @Schema(implementation = PipelineRunErrorResponse.class))),

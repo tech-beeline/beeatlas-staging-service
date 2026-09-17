@@ -24,7 +24,9 @@ import ru.beeline.staging.exception.PipelineRunNotFoundException;
 import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
+import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -46,6 +48,8 @@ public class PipelineHitlService {
     private final PipelineExecutionService pipelineExecutionService;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
+    private final UseCaseLandscapeRepository landscapeRepository;
+    private final RunBranchResolver runBranchResolver;
 
     public CancelPipelineRunResponse cancel(Long runId, String reason) {
         PipelineRun run = requireRun(runId);
@@ -70,6 +74,8 @@ public class PipelineHitlService {
             throw new PipelineRunBadRequestException("Поле decisions обязательно и не должно быть пустым");
         }
         decisions.forEach(this::validateDecision);
+        requireDistinctParts(decisions);
+        requireExistingTargets(runId, decisions);
         requireReviewStatus(run, "принимать решения");
 
         Set<String> unmappedParts = unmappedPartsOf(run);
@@ -148,6 +154,31 @@ public class PipelineHitlService {
         } else {
             throw new PipelineRunBadRequestException("Недопустимый тип решения " + decision.getType()
                     + ": допустимы map_existing, create_new");
+        }
+    }
+
+    private void requireDistinctParts(List<PipelineRunDecisionsRequest.Decision> decisions) {
+        Set<String> seen = new HashSet<>();
+        for (PipelineRunDecisionsRequest.Decision decision : decisions) {
+            if (!seen.add(decision.getPartId().trim())) {
+                throw new PipelineRunBadRequestException(
+                        "Повторное решение по одной части в запросе: partId=" + decision.getPartId().trim());
+            }
+        }
+    }
+
+    private void requireExistingTargets(Long runId, List<PipelineRunDecisionsRequest.Decision> decisions) {
+        String branch = runBranchResolver.resolve(runId);
+        for (PipelineRunDecisionsRequest.Decision decision : decisions) {
+            if (!ImportDecision.MAP_EXISTING.equals(decision.getType())) {
+                continue;
+            }
+            String containerCode = decision.getTarget().get("containerCode").asText().trim();
+            String interfaceCode = decision.getTarget().get("interfaceCode").asText().trim();
+            if (landscapeRepository.findInterface(interfaceCode, containerCode, branch).isEmpty()) {
+                throw new PipelineRunBadRequestException("Цель map_existing не найдена в ландшафте: containerCode="
+                        + containerCode + " interfaceCode=" + interfaceCode + " partId=" + decision.getPartId());
+            }
         }
     }
 
