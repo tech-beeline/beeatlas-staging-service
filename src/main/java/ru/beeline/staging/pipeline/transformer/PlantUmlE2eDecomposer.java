@@ -43,7 +43,6 @@ public class PlantUmlE2eDecomposer {
 
     private static final Pattern REST_CALL = Pattern.compile(
             "(?i)\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+(\\S+)");
-    private static final String REST_PROTOCOL = "REST";
     private static final String DEFAULT_PROTOCOL = "UNKNOWN";
     private static final String UNMATCHED_INTERFACE_SUFFIX = "-unmatched";
     private static final int UID_LENGTH = 32;
@@ -166,7 +165,7 @@ public class PlantUmlE2eDecomposer {
                 continue;
             }
             distinct.putIfAbsent(matchKey(call.productCode(), call.path(), call.method()),
-                    new OperationMatchCandidate(call.path(), call.method(), REST_PROTOCOL, call.productCode()));
+                    new OperationMatchCandidate(call.path(), call.method(), null, call.productCode()));
         }
         return new ArrayList<>(distinct.values());
     }
