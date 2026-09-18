@@ -179,6 +179,27 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
+    @DisplayName("Неоднозначный получатель исключается с отдельной причиной")
+    void excludesCallToAnAmbiguousReceiver() {
+        when(cmdbAliasLookup.resolveAll(anySet())).thenReturn(Map.of(
+                SHOWCASE, new ResolvedParticipant(SHOWCASE, "Showcase", Kind.SYSTEM),
+                MOBILE, new ResolvedParticipant(MOBILE, "Mobile", Kind.SYSTEM, MOBILE,
+                        new ResolvedParticipant(MOBILE, "Mobile Container", Kind.CONTAINER, SHOWCASE)),
+                RICH, new ResolvedParticipant(RICH, "Rich", Kind.SYSTEM)));
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of(
+                match(SHOWCASE, "/api/v1/sequence", "POST", "showcase-api", "showcase-core")));
+
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose(nestedDiagram(), UID, "Витрина", null);
+
+        assertThat(result.notices())
+                .filteredOn(notice -> PlantUmlE2eDecomposer.EXCLUDE.equals(notice.code()))
+                .extracting(ArtifactNotice::details)
+                .anyMatch(details -> details.contains("receiver_ambiguous"));
+        assertThat(result.snapshot().getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
+                .doesNotContain(MOBILE + "-unmatched");
+    }
+
+    @Test
     @DisplayName("Дерево вызовов: первый вызов корневой, остальные висят на нём")
     void buildsCallTree() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);

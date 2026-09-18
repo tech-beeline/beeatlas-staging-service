@@ -14,8 +14,6 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class FdmProductsCmdbAliasLookupTest {
@@ -40,15 +38,37 @@ class FdmProductsCmdbAliasLookupTest {
     }
 
     @Test
-    void doesNotQueryContainersWhenEverythingAlreadyResolvedAsASystem() {
+    void resolvesASystemWithoutAmbiguityWhenNoContainerSharesItsMnemonic() {
         ProductAliasSummary product = new ProductAliasSummary();
         product.setAlias("crm");
         product.setName("CRM System");
         when(productServiceClient.getByAliases(anyList())).thenReturn(List.of(product));
+        when(productServiceClient.getContainersByCodes(anyList())).thenReturn(List.of());
 
         Map<String, ResolvedParticipant> result = lookup.resolveAll(Set.of("crm"));
 
         assertThat(result.get("crm").kind()).isEqualTo(Kind.SYSTEM);
-        verify(productServiceClient, never()).getContainersByCodes(anyList());
+        assertThat(result.get("crm").ambiguous()).isFalse();
+    }
+
+    @Test
+    void marksAMnemonicThatIsBothASystemAliasAndAContainerCodeAsAmbiguous() {
+        ProductAliasSummary product = new ProductAliasSummary();
+        product.setAlias("dashboard");
+        product.setName("[REMOVED!]Dashboard API&UI");
+        when(productServiceClient.getByAliases(anyList())).thenReturn(List.of(product));
+        ContainerByCodeSummary container = new ContainerByCodeSummary();
+        container.setCode("dashboard");
+        container.setName("Dashboard");
+        container.setProductAlias("fdmshowcaseapp");
+        when(productServiceClient.getContainersByCodes(anyList())).thenReturn(List.of(container));
+
+        Map<String, ResolvedParticipant> result = lookup.resolveAll(Set.of("dashboard"));
+
+        ResolvedParticipant resolved = result.get("dashboard");
+        assertThat(resolved.ambiguous()).isTrue();
+        assertThat(resolved.kind()).isEqualTo(Kind.SYSTEM);
+        assertThat(resolved.competingWith().kind()).isEqualTo(Kind.CONTAINER);
+        assertThat(resolved.competingWith().productAlias()).isEqualTo("fdmshowcaseapp");
     }
 }

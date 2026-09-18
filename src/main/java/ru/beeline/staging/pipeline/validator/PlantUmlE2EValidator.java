@@ -35,6 +35,7 @@ public class PlantUmlE2EValidator implements ArtifactValidator {
             "e2e.validation.diagram.too_many_participants", "e2e_plantuml.validation.diagram.too_many_participants",
             "e2e.validation.participants.missing", "e2e_plantuml.validation.participants.missing",
             "e2e.validation.participant.unrecognized", "e2e_plantuml.validation.participants.unrecognized",
+            "e2e.validation.participant.ambiguous", "e2e_plantuml.validation.participants.ambiguous",
             "e2e.validation.call.no_rest_endpoint", "e2e_plantuml.validation.calls.unrecognized",
             "e2e.validation.call.check_failed", "e2e_plantuml.validation.calls.unrecognized",
             "e2e.validation.messages.empty", "e2e_plantuml.validation.messages.empty");

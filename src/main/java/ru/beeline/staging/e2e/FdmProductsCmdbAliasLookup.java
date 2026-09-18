@@ -14,11 +14,11 @@ import ru.beeline.staging.product.dto.ProductAliasSummary;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 @Slf4j
 @Component
@@ -34,43 +34,45 @@ public class FdmProductsCmdbAliasLookup implements CmdbAliasLookup {
             return result;
         }
 
-        List<ProductAliasSummary> products = productServiceClient.getByAliases(new ArrayList<>(aliases));
-        Map<String, ProductAliasSummary> productsByLowerAlias = new LinkedHashMap<>();
-        for (ProductAliasSummary product : products) {
-            if (product.getAlias() != null) {
-                productsByLowerAlias.putIfAbsent(product.getAlias().toLowerCase(Locale.ROOT), product);
-            }
-        }
+        List<String> keys = new ArrayList<>(aliases);
+        Map<String, ProductAliasSummary> productsByLowerAlias =
+                byLowerKey(productServiceClient.getByAliases(keys), ProductAliasSummary::getAlias);
+        Map<String, ContainerByCodeSummary> containersByLowerCode =
+                byLowerKey(productServiceClient.getContainersByCodes(keys), ContainerByCodeSummary::getCode);
 
-        Set<String> remaining = new LinkedHashSet<>();
+        int ambiguous = 0;
         for (String alias : aliases) {
-            ProductAliasSummary match = productsByLowerAlias.get(alias.toLowerCase(Locale.ROOT));
-            if (match != null) {
-                result.put(alias, new ResolvedParticipant(alias, match.getName(), Kind.SYSTEM));
-            } else {
-                remaining.add(alias);
+            String key = alias.toLowerCase(Locale.ROOT);
+            ProductAliasSummary product = productsByLowerAlias.get(key);
+            ContainerByCodeSummary container = containersByLowerCode.get(key);
+            if (product != null && container != null) {
+                result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM, alias,
+                        asParticipant(alias, container)));
+                ambiguous++;
+            } else if (product != null) {
+                result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM));
+            } else if (container != null) {
+                result.put(alias, asParticipant(alias, container));
             }
         }
 
-        if (!remaining.isEmpty()) {
-            List<ContainerByCodeSummary> containers = productServiceClient.getContainersByCodes(new ArrayList<>(remaining));
-            Map<String, ContainerByCodeSummary> containersByLowerCode = new LinkedHashMap<>();
-            for (ContainerByCodeSummary container : containers) {
-                if (container.getCode() != null) {
-                    containersByLowerCode.putIfAbsent(container.getCode().toLowerCase(Locale.ROOT), container);
-                }
-            }
-            for (String alias : remaining) {
-                ContainerByCodeSummary container = containersByLowerCode.get(alias.toLowerCase(Locale.ROOT));
-                if (container != null) {
-                    result.put(alias, new ResolvedParticipant(alias, container.getName(), Kind.CONTAINER,
-                            container.getProductAlias()));
-                }
-            }
-        }
-
-        log.info("CMDB alias resolution: total={} recognized={} unrecognized={}",
-                aliases.size(), result.size(), aliases.size() - result.size());
+        log.info("CMDB alias resolution: total={} recognized={} ambiguous={} unrecognized={}",
+                aliases.size(), result.size(), ambiguous, aliases.size() - result.size());
         return result;
+    }
+
+    private static ResolvedParticipant asParticipant(String alias, ContainerByCodeSummary container) {
+        return new ResolvedParticipant(alias, container.getName(), Kind.CONTAINER, container.getProductAlias());
+    }
+
+    private static <T> Map<String, T> byLowerKey(List<T> items, Function<T, String> keyOf) {
+        Map<String, T> byKey = new LinkedHashMap<>();
+        for (T item : items) {
+            String key = keyOf.apply(item);
+            if (key != null) {
+                byKey.putIfAbsent(key.toLowerCase(Locale.ROOT), item);
+            }
+        }
+        return byKey;
     }
 }

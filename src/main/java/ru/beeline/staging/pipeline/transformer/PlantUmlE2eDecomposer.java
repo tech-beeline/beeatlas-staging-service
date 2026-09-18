@@ -150,7 +150,10 @@ public class PlantUmlE2eDecomposer {
                 continue;
             }
             CmdbAliasLookup.ResolvedParticipant receiver = resolved.get(message.toAlias());
-            if (receiver == null) {
+            if (receiver != null && receiver.ambiguous()) {
+                notices.add(excluded(elementRef, message.line(), "receiver_ambiguous"));
+                receiver = null;
+            } else if (receiver == null) {
                 notices.add(excluded(elementRef, message.line(), "receiver_not_in_cmdb"));
             }
             calls.add(new Call(message, matcher.group(1).toUpperCase(Locale.ROOT), matcher.group(2), receiver));
