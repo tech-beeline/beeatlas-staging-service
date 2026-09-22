@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.staging.dto.pipelinerun.ApplyPipelineRunRequest;
@@ -30,6 +31,7 @@ import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsResponse;
 import ru.beeline.staging.service.PipelineHitlService;
 import ru.beeline.staging.service.PipelineRunImportService;
+import ru.beeline.staging.utils.Constant;
 
 @RestController
 @RequestMapping("/api/v1/pipeline-runs")
@@ -55,9 +57,10 @@ public class PipelineRunHitlController {
                     content = @Content(schema = @Schema(implementation = PipelineRunErrorResponse.class)))
     })
     public ResponseEntity<CreatePipelineRunResponse> createPipelineRun(
-            @RequestBody CreatePipelineRunRequest request) {
+            @RequestBody CreatePipelineRunRequest request,
+            @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(pipelineRunImportService.createImportRun(request));
+                .body(pipelineRunImportService.createImportRun(request, userId));
     }
 
     @PostMapping("/{runId}/decisions")

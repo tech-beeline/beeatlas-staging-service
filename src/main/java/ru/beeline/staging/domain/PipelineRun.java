@@ -87,6 +87,9 @@ public class PipelineRun {
     @Column(name = "owner_id")
     private String ownerId;
 
+    @Column(name = "created_by_user_id")
+    private Integer createdByUserId;
+
     @Column(name = "lease_expires_at")
     private LocalDateTime leaseExpiresAt;
 

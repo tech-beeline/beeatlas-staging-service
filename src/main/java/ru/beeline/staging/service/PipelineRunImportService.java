@@ -57,7 +57,7 @@ public class PipelineRunImportService {
     private final PipelineExecutionService pipelineExecutionService;
 
     @Transactional
-    public CreatePipelineRunResponse createImportRun(CreatePipelineRunRequest request) {
+    public CreatePipelineRunResponse createImportRun(CreatePipelineRunRequest request, Integer createdByUserId) {
         String artifactType = required(request.getArtifactType(), "artifactType");
         String artifactUid = required(request.getArtifactUid(), "artifactUid");
         String source = required(request.getSource(), "source");
@@ -88,6 +88,7 @@ public class PipelineRunImportService {
         run.setBranch(branch);
         run.setSupersedesRunId(supersededRunId);
         run.setConfigurationId(manualConfigurationId(artifactType));
+        run.setCreatedByUserId(createdByUserId != null ? createdByUserId : authorOf(supersededRunId));
         run = pipelineRunRepository.save(run);
 
         log.info("Created manual import run {}: artifactType={} artifactUid={} source={} branch={} supersedes={}",
@@ -97,6 +98,12 @@ public class PipelineRunImportService {
 
         return new CreatePipelineRunResponse(run.getId(), artifactType, artifactUid, run.getStatus(),
                 statusUrl(run.getId(), artifactType));
+    }
+
+    private Integer authorOf(Long runId) {
+        return runId == null ? null : pipelineRunRepository.findById(runId)
+                .map(PipelineRun::getCreatedByUserId)
+                .orElse(null);
     }
 
     private Long manualConfigurationId(String artifactType) {

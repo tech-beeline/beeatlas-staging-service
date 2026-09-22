@@ -55,6 +55,9 @@ public class PipelineRunService {
         run.setStatus("pending");
         run.setStartedAt(LocalDateTime.now());
         run.setParentRunId(scanRunId);
+        run.setCreatedByUserId(scanRunId == null ? null : runRepository.findById(scanRunId)
+                .map(PipelineRun::getCreatedByUserId)
+                .orElse(null));
         run.setPipelineDefinitionId(pipelineDefinitionRepository.findByArtifactTypeAndCurrentTrue(artifactType)
                 .map(PipelineDefinitionEntry::getId)
                 .orElse(null));

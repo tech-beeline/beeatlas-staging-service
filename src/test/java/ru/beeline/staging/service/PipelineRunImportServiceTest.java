@@ -78,7 +78,7 @@ class PipelineRunImportServiceTest {
     @DisplayName("Запуск по тексту PlantUML создаёт run в ветке main и стартует цепочку")
     void startsChainForPlantUmlPayload() {
         CreatePipelineRunResponse response = service.createImportRun(request("""
-                {"name": "Смена тарифа", "plantUml": "@startuml\\nA -> B: GET /x\\n@enduml"}"""));
+                {"name": "Смена тарифа", "plantUml": "@startuml\\nA -> B: GET /x\\n@enduml"}"""), null);
 
         assertThat(response.runId()).isEqualTo(77L);
         assertThat(response.artifactType()).isEqualTo(E2E_PLANTUML);
@@ -99,7 +99,7 @@ class PipelineRunImportServiceTest {
                 {"name": "Смена тарифа", "plantUml": "@startuml\\n@enduml"}""");
         request.setBranch("feature/x");
 
-        service.createImportRun(request);
+        service.createImportRun(request, null);
 
         assertThat(savedRun().getBranch()).isEqualTo("feature/x");
     }
@@ -108,7 +108,7 @@ class PipelineRunImportServiceTest {
     @DisplayName("plantUml и docId одновременно — 400")
     void rejectsBothPlantUmlAndDocId() {
         assertThatThrownBy(() -> service.createImportRun(request("""
-                {"name": "N", "plantUml": "@startuml\\n@enduml", "docId": 12}""")))
+                {"name": "N", "plantUml": "@startuml\\n@enduml", "docId": 12}"""), null))
                 .isInstanceOf(PipelineRunBadRequestException.class)
                 .hasMessageContaining("ровно одно");
     }
@@ -117,7 +117,7 @@ class PipelineRunImportServiceTest {
     @DisplayName("Ни plantUml, ни docId — 400")
     void rejectsMissingSource() {
         assertThatThrownBy(() -> service.createImportRun(request("""
-                {"name": "N"}""")))
+                {"name": "N"}"""), null))
                 .isInstanceOf(PipelineRunBadRequestException.class)
                 .hasMessageContaining("ровно одно");
     }
@@ -126,7 +126,7 @@ class PipelineRunImportServiceTest {
     @DisplayName("Пустой name — 400")
     void rejectsMissingName() {
         assertThatThrownBy(() -> service.createImportRun(request("""
-                {"name": "  ", "plantUml": "@startuml\\n@enduml"}""")))
+                {"name": "  ", "plantUml": "@startuml\\n@enduml"}"""), null))
                 .isInstanceOf(PipelineRunBadRequestException.class)
                 .hasMessageContaining("payload.name");
     }
@@ -136,7 +136,7 @@ class PipelineRunImportServiceTest {
     void rejectsOversizedPlantUml() {
         String oversized = "@".repeat(512 * 1024 + 1);
         assertThatThrownBy(() -> service.createImportRun(request(
-                "{\"name\": \"N\", \"plantUml\": \"" + oversized + "\"}")))
+                "{\"name\": \"N\", \"plantUml\": \"" + oversized + "\"}"), null))
                 .isInstanceOf(PipelineRunBadRequestException.class)
                 .hasMessageContaining("превышает");
     }
@@ -148,7 +148,7 @@ class PipelineRunImportServiceTest {
                 {"name": "N", "plantUml": "@startuml\\n@enduml"}""");
         request.setSource("confluence");
 
-        assertThatThrownBy(() -> service.createImportRun(request))
+        assertThatThrownBy(() -> service.createImportRun(request, null))
                 .isInstanceOf(PipelineRunBadRequestException.class)
                 .hasMessageContaining("source=manual");
     }
@@ -159,7 +159,7 @@ class PipelineRunImportServiceTest {
         when(documentServiceClient.fetchContent(42L)).thenThrow(new DocumentNotFoundException(42L));
 
         assertThatThrownBy(() -> service.createImportRun(request("""
-                {"name": "N", "docId": 42}""")))
+                {"name": "N", "docId": 42}"""), null))
                 .isInstanceOf(PipelineRunNotFoundException.class)
                 .hasMessageContaining("docId=42");
         verify(pipelineExecutionService, never()).submitArtifactChain(anyLong(), anyString(), anyString());
@@ -171,7 +171,7 @@ class PipelineRunImportServiceTest {
         when(dataTypeRepository.findByCode(E2E_PLANTUML)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.createImportRun(request("""
-                {"name": "N", "plantUml": "@startuml\\n@enduml"}""")))
+                {"name": "N", "plantUml": "@startuml\\n@enduml"}"""), null))
                 .isInstanceOf(PipelineRunNotFoundException.class)
                 .hasMessageContaining("data_types");
     }
@@ -185,7 +185,7 @@ class PipelineRunImportServiceTest {
                 eq(UID), eq(E2E_PLANTUML), anyList())).thenReturn(Optional.of(active));
 
         assertThatThrownBy(() -> service.createImportRun(request("""
-                {"name": "N", "plantUml": "@startuml\\n@enduml"}""")))
+                {"name": "N", "plantUml": "@startuml\\n@enduml"}"""), null))
                 .isInstanceOf(ActivePipelineRunException.class)
                 .extracting(e -> ((ActivePipelineRunException) e).getActiveRunId())
                 .isEqualTo(11L);
@@ -203,7 +203,7 @@ class PipelineRunImportServiceTest {
                 {"name": "N", "plantUml": "@startuml\\n@enduml"}""");
         request.setSupersedesRunId(11L);
 
-        service.createImportRun(request);
+        service.createImportRun(request, null);
 
         verify(pipelineRunRepository).markCompleted(11L, "cancelled");
         verify(pipelineRunRepository, never())
@@ -221,7 +221,7 @@ class PipelineRunImportServiceTest {
                 {"name": "N", "plantUml": "@startuml\\n@enduml"}""");
         request.setSupersedesRunId(99L);
 
-        assertThatThrownBy(() -> service.createImportRun(request))
+        assertThatThrownBy(() -> service.createImportRun(request, null))
                 .isInstanceOf(PipelineRunNotFoundException.class)
                 .hasMessageContaining("supersedesRunId=99");
     }
@@ -233,7 +233,7 @@ class PipelineRunImportServiceTest {
                 {"name": "N", "plantUml": "@startuml\\n@enduml"}""");
         request.setArtifactType(PipelineRunImportService.USECASE_TYPE);
 
-        assertThatThrownBy(() -> service.createImportRun(request))
+        assertThatThrownBy(() -> service.createImportRun(request, null))
                 .isInstanceOf(PipelineRunBadRequestException.class)
                 .hasMessageContaining("payload.projectCode");
     }
@@ -245,7 +245,7 @@ class PipelineRunImportServiceTest {
                 {"projectCode": "PRJ-1", "name": "N", "plantUml": "@startuml\\n@enduml"}""");
         request.setArtifactType(PipelineRunImportService.USECASE_TYPE);
 
-        assertThat(service.createImportRun(request).statusUrl())
+        assertThat(service.createImportRun(request, null).statusUrl())
                 .isEqualTo("/api/v1/pipeline-runs/77/status?waitFor=awaiting_review&timeoutMs=30000");
     }
 

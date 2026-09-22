@@ -11,6 +11,8 @@ import org.springframework.stereotype.Repository;
 import ru.beeline.staging.dto.rundetails.PipelineRunDetails;
 import ru.beeline.staging.dto.rundetails.PipelineStageLogDto;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
@@ -58,6 +60,51 @@ public class PipelineRunDetailsRepository {
             WHERE r.id = ?
             """;
 
+    private static final String SELECT_USER_RUNS = """
+            SELECT
+                r.id AS run_id,
+                COALESCE(r.parent_run_id, r.id) AS scan_run_id,
+                r.artifact_uid,
+                (SELECT sa.name
+                    FROM staging.source_artifacts sa
+                        JOIN staging.source_artifact_types sat ON sat.id = sa.source_artifact_type_id
+                        JOIN staging.data_types t ON t.id = sat.data_type_id
+                    WHERE sa.ext_uid = r.artifact_uid AND t.code = r.artifact_type
+                    LIMIT 1) AS artifact_name,
+                r.artifact_type,
+                r.status,
+                s.name AS source_name,
+                r.started_at,
+                r.execution_started_at,
+                r.completed_at,
+                r.raw_data_ref_id,
+                b.id AS batch,
+                COALESCE((
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'id', l.id,
+                        'stageName', l.stage_name,
+                        'status', l.status,
+                        'inputData', l.input_data,
+                        'outputData', l.output_data,
+                        'summaryJson', l.summary_json,
+                        'startedAt', l.started_at,
+                        'completedAt', l.completed_at,
+                        'failureReason', l.failure_reason
+                    ) ORDER BY l.started_at)
+                    FROM staging.pipeline_stage_logs l
+                    WHERE l.run_id = r.id
+                ), '[]'::jsonb) AS stages
+            FROM staging.pipeline_runs r
+                LEFT JOIN staging.configurations c ON c.id = r.configuration_id
+                LEFT JOIN staging.source_systems s ON s.id = c.source_system_id
+                LEFT JOIN staging.artifact_batches b
+                    ON b.artifact_uid = r.artifact_uid AND b.artifact_type = r.artifact_type AND b.is_current = true
+            WHERE r.created_by_user_id = ?
+              AND (CAST(? AS text) IS NULL OR lower(r.artifact_type) = lower(CAST(? AS text)))
+            ORDER BY r.started_at DESC, r.id DESC
+            LIMIT ? OFFSET ?
+            """;
+
     private final JdbcTemplate stagingJdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -68,7 +115,16 @@ public class PipelineRunDetailsRepository {
     }
 
     public Optional<PipelineRunDetails> findById(Long runId) {
-        List<PipelineRunDetails> rows = stagingJdbcTemplate.query(SELECT_RUN_DETAILS, (rs, rowNum) -> new PipelineRunDetails(
+        return stagingJdbcTemplate.query(SELECT_RUN_DETAILS, this::mapDetails, runId).stream().findFirst();
+    }
+
+    public List<PipelineRunDetails> findByCreatedByUserId(Integer userId, String artifactType, int limit, int offset) {
+        return stagingJdbcTemplate.query(SELECT_USER_RUNS, this::mapDetails,
+                userId, artifactType, artifactType, limit, offset);
+    }
+
+    private PipelineRunDetails mapDetails(ResultSet rs, int rowNum) throws SQLException {
+        return new PipelineRunDetails(
                 rs.getLong("run_id"),
                 rs.getLong("scan_run_id"),
                 rs.getString("artifact_uid"),
@@ -81,9 +137,7 @@ public class PipelineRunDetailsRepository {
                 rs.getTimestamp("completed_at") != null ? rs.getTimestamp("completed_at").toLocalDateTime() : null,
                 (Long) rs.getObject("raw_data_ref_id"),
                 rs.getObject("batch") != null ? rs.getLong("batch") : null,
-                parseStages(rs.getString("stages"))
-        ), runId);
-        return rows.stream().findFirst();
+                parseStages(rs.getString("stages")));
     }
 
     private List<PipelineStageLogDto> parseStages(String stagesJson) {
