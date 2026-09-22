@@ -123,7 +123,7 @@ public class StructurizrSequenceCanonicalSaver implements ArtifactSaver {
                     draft.getUid(), draft.getExtUid(), draft.getName(), draft.getType(),
                     draft.getRps(), draft.getLatency(), draft.getErrorRate(),
                     null, null, tcVersion != null ? tcVersion.getId() : null,
-                    ifaceVersion, draft.getContext(), rawDataRefId, batchId, branch, null);
+                    ifaceVersion, draft.getContext(), rawDataRefId, batchId, branch, null, null);
             operationVersionsByUid.put(draft.getUid(), version);
         }
 

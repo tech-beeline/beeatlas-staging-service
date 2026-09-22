@@ -35,7 +35,7 @@ public class OperationMatchService {
                                            String description, String returnType, Long techCapabilityVersionId,
                                            InterfaceVersion ifaceVersionOrNull, String jsonPointer,
                                            Long rawDataRefId, Long batchId, String branch,
-                                           Integer connectionOperationId) {
+                                           Integer connectionOperationId, Map<String, Object> matchedOperation) {
         boolean[] created = {false};
         OperationEntity entity = operationRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -63,6 +63,7 @@ public class OperationMatchService {
         if (errorRateDec != null) attrs.put("error_rate", errorRateDec);
         if (description != null) attrs.put("description", description);
         if (returnType != null) attrs.put("return_type", returnType);
+        if (matchedOperation != null && !matchedOperation.isEmpty()) attrs.put("matched_operation", matchedOperation);
         String jsonData = JsonDataValidator.toJsonData(attrs);
         JsonDataValidator.validate(jsonData);
         version.setJsonData(jsonData);

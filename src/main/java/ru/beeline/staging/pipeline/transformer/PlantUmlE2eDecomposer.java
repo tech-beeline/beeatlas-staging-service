@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.CRC32;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,7 +45,9 @@ public class PlantUmlE2eDecomposer {
     private static final Pattern REST_CALL = Pattern.compile(
             "(?i)\\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+(\\S+)");
     private static final String DEFAULT_PROTOCOL = "UNKNOWN";
-    private static final String UNMATCHED_INTERFACE_SUFFIX = "-unmatched";
+    public static final String UNKNOWN_REQUEST = "e2e_plantuml.transform.unknown_request";
+    private static final String UNKNOWN_TYPE = "UNKNOWN";
+    private static final int MAX_PATH_LENGTH = 255;
     private static final int UID_LENGTH = 32;
 
     private final PlantUmlDiagramParser parser;
@@ -145,9 +148,12 @@ public class PlantUmlE2eDecomposer {
                 continue;
             }
             Matcher matcher = REST_CALL.matcher(message.label());
-            if (!matcher.find()) {
-                notices.add(excluded(elementRef, message.line(), "no_rest_endpoint"));
-                continue;
+            boolean parsed = matcher.find();
+            String method = parsed ? matcher.group(1).toUpperCase(Locale.ROOT) : UNKNOWN_TYPE;
+            String path = parsed ? matcher.group(2) : truncate(message.label());
+            if (!parsed) {
+                notices.add(notice(UNKNOWN_REQUEST, "info", Map.of("elementRef", elementRef,
+                        "line", message.line(), "path", path)));
             }
             CmdbAliasLookup.ResolvedParticipant receiver = resolved.get(message.toAlias());
             if (receiver != null && receiver.ambiguous()) {
@@ -156,7 +162,7 @@ public class PlantUmlE2eDecomposer {
             } else if (receiver == null) {
                 notices.add(excluded(elementRef, message.line(), "receiver_not_in_cmdb"));
             }
-            calls.add(new Call(message, matcher.group(1).toUpperCase(Locale.ROOT), matcher.group(2), receiver));
+            calls.add(new Call(message, method, path, receiver));
         }
         return calls;
     }
@@ -164,7 +170,7 @@ public class PlantUmlE2eDecomposer {
     private List<OperationMatchCandidate> candidatesOf(List<Call> calls) {
         Map<String, OperationMatchCandidate> distinct = new LinkedHashMap<>();
         for (Call call : calls) {
-            if (call.receiver() == null) {
+            if (call.receiver() == null || UNKNOWN_TYPE.equals(call.method())) {
                 continue;
             }
             distinct.putIfAbsent(matchKey(call.productCode(), call.path(), call.method()),
@@ -216,30 +222,28 @@ public class PlantUmlE2eDecomposer {
             MatchedArchOperation match = matchByKey.get(matchKey(call.productCode(), call.path(), call.method()));
             boolean matched = match != null && match.getInterfaceObj() != null && match.getInterfaceObj().getCode() != null;
 
-            String productUid = matched ? productUid(call, match) : call.productCode();
-            String containerUid = matched && match.getContainer() != null && match.getContainer().getCode() != null
-                    ? match.getContainer().getCode()
-                    : productUid;
-            String interfaceUid = matched ? match.getInterfaceObj().getCode() : productUid + UNMATCHED_INTERFACE_SUFFIX;
-            String operationExtUid = operationUid(call.productCode(), call.method(), call.path());
+            String productUid = call.productCode();
+            String containerUid = productUid;
+            String interfaceUid = interfaceCode(call.method(), call.path());
+            String operationExtUid = operationUid(productUid, interfaceUid, call.method(), call.path());
 
             products.computeIfAbsent(productUid, uid -> product(uid, productName(call, match)));
-            containers.computeIfAbsent(containerUid, uid -> container(uid, productUid,
-                    matched && match.getContainer() != null ? match.getContainer().getName() : null));
+            containers.computeIfAbsent(containerUid, uid -> container(uid, productUid, null));
             interfaces.computeIfAbsent(interfaceUid, uid -> {
                 notices.add(implicitCast(uid, "interface", "protocol=UNKNOWN, source=null", "info"));
-                return anInterface(uid, containerUid, matched ? match.getInterfaceObj().getName() : null);
+                return anInterface(uid, containerUid, call.method() + " " + call.path());
             });
             operations.computeIfAbsent(operationExtUid, uid -> {
-                if (!matched) {
+                if (!matched && !UNKNOWN_TYPE.equals(call.method())) {
                     notices.add(notice(NOT_IN_LANDSCAPE, "warning", Map.of("elementRef", fromAlias + "->" + toAlias,
                             "line", line, "productCode", call.productCode(), "method", call.method(),
                             "path", call.path())));
                 }
                 notices.add(implicitCast(uid, "operation", "sla=null", "warning"));
-                return matched
-                        ? operation(uid, interfaceUid, match.getName(), match.getType(), match.getId())
-                        : operation(uid, interfaceUid, call.path(), call.method(), null);
+                E2ESequenceSnapshot.OperationDraft draft = operation(uid, interfaceUid, call.path(), call.method(),
+                        matched ? match.getId() : null);
+                draft.setMatchedOperation(matched ? matchedAttributes(match) : null);
+                return draft;
             });
 
             String callerExtUid = activeOperationByLifeline.get(fromAlias);
@@ -335,8 +339,39 @@ public class PlantUmlE2eDecomposer {
         return draft;
     }
 
-    static String operationUid(String productCode, String method, String path) {
-        String seed = productCode + " " + method + " " + path;
+    static String interfaceCode(String method, String path) {
+        CRC32 crc32 = new CRC32();
+        crc32.update((method + path).getBytes(StandardCharsets.UTF_8));
+        return Long.toHexString(crc32.getValue());
+    }
+
+    static String truncate(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        return trimmed.length() <= MAX_PATH_LENGTH ? trimmed : trimmed.substring(0, MAX_PATH_LENGTH);
+    }
+
+    private Map<String, Object> matchedAttributes(MatchedArchOperation match) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("operationId", match.getId());
+        attributes.put("name", match.getName());
+        attributes.put("type", match.getType());
+        if (match.getInterfaceObj() != null) {
+            attributes.put("interfaceCode", match.getInterfaceObj().getCode());
+            attributes.put("interfaceName", match.getInterfaceObj().getName());
+        }
+        if (match.getContainer() != null) {
+            attributes.put("containerCode", match.getContainer().getCode());
+            attributes.put("containerName", match.getContainer().getName());
+        }
+        if (match.getProduct() != null) {
+            attributes.put("productAlias", match.getProduct().getAlias());
+            attributes.put("productName", match.getProduct().getName());
+        }
+        return attributes;
+    }
+
+    static String operationUid(String productCode, String interfaceCode, String method, String path) {
+        String seed = productCode + " " + interfaceCode + " " + method + " " + path;
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(seed.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(64);

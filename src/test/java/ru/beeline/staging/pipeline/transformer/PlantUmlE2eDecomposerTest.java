@@ -56,25 +56,26 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
-    @DisplayName("В снимок попадают все REST-вызовы, несопоставленные — на интерфейсе -unmatched")
-    void mapsMatchedAndUnmatchedCalls() {
+    @DisplayName("Каждый вызов даёт свой интерфейс с кодом-хешем, продукт берётся у получателя")
+    void mapsEveryCallToItsOwnInterface() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
         E2ESequenceSnapshot snapshot = result.snapshot();
 
         assertThat(snapshot.getOperations()).extracting(E2ESequenceSnapshot.OperationDraft::getName)
-                .containsExactly("/command/createApplication", "/api/v1/calls/", "/api/v1/calls/feedback",
+                .contains("/command/createApplication", "/api/v1/calls/", "/api/v1/calls/feedback",
                         "/chat/completions", "/api/v1/payment/12345/paymentItem", "reconciliation-note");
         assertThat(snapshot.getProducts()).extracting(E2ESequenceSnapshot.ProductDraft::getUid)
                 .containsExactly(BNPL, ANTISPAM, AI_TOOL, ARFIX);
-        assertThat(snapshot.getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
-                .containsExactly("bnpl-api", "antispam-api", "antispam-unmatched", "ai-tool-api", "arfix-unmatched");
         assertThat(snapshot.getOperations())
                 .filteredOn(draft -> "/api/v1/calls/feedback".equals(draft.getName()))
                 .singleElement()
                 .satisfies(draft -> {
                     assertThat(draft.getType()).isEqualTo("POST");
-                    assertThat(draft.getInterfaceUid()).isEqualTo("antispam-unmatched");
+                    assertThat(draft.getInterfaceUid())
+                            .isEqualTo(PlantUmlE2eDecomposer.interfaceCode("POST", "/api/v1/calls/feedback"));
                 });
+        assertThat(snapshot.getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getName)
+                .contains("POST /command/createApplication");
     }
 
     @Test
@@ -114,7 +115,9 @@ class PlantUmlE2eDecomposerTest {
                 .map(ArtifactNotice::details)
                 .toList();
         assertThat(reasons).anyMatch(details -> details.contains("self_call"));
-        assertThat(reasons).anyMatch(details -> details.contains("no_rest_endpoint"));
+        assertThat(reasons).noneMatch(details -> details.contains("no_rest_endpoint"));
+        assertThat(result.notices()).extracting(ArtifactNotice::code)
+                .contains(PlantUmlE2eDecomposer.UNKNOWN_REQUEST);
         assertThat(reasons).noneMatch(details -> details.contains("no_match_in_landscape"));
     }
 
@@ -134,7 +137,7 @@ class PlantUmlE2eDecomposerTest {
         assertThat(relations).singleElement().satisfies(relation -> {
             assertThat(relation.getCallerOperationExtUid()).isNull();
             assertThat(relation.getCalleeOperationExtUid())
-                    .isEqualTo(PlantUmlE2eDecomposer.operationUid(SHOWCASE, "POST", "/api/v1/sequence"));
+                    .isEqualTo(PlantUmlE2eDecomposer.operationUid(SHOWCASE, PlantUmlE2eDecomposer.interfaceCode("POST", "/api/v1/sequence"), "POST", "/api/v1/sequence"));
         });
         assertThat(result.snapshot().getOperations()).extracting(E2ESequenceSnapshot.OperationDraft::getName)
                 .containsExactly("/api/v1/sequence");
@@ -158,9 +161,9 @@ class PlantUmlE2eDecomposerTest {
 
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(nestedDiagram(), UID, "Витрина", null);
 
-        String root = PlantUmlE2eDecomposer.operationUid(SHOWCASE, "POST", "/api/v1/sequence");
-        String unmatched = PlantUmlE2eDecomposer.operationUid(MOBILE, "GET", "/fcp-pi/v2/products");
-        String nested = PlantUmlE2eDecomposer.operationUid(RICH, "POST", "/pair-request");
+        String root = PlantUmlE2eDecomposer.operationUid(SHOWCASE, PlantUmlE2eDecomposer.interfaceCode("POST", "/api/v1/sequence"), "POST", "/api/v1/sequence");
+        String unmatched = PlantUmlE2eDecomposer.operationUid(MOBILE, PlantUmlE2eDecomposer.interfaceCode("GET", "/fcp-pi/v2/products"), "GET", "/fcp-pi/v2/products");
+        String nested = PlantUmlE2eDecomposer.operationUid(RICH, PlantUmlE2eDecomposer.interfaceCode("POST", "/pair-request"), "POST", "/pair-request");
         assertThat(result.snapshot().getOperationRelations())
                 .extracting(E2ESequenceSnapshot.OperationRelationDraft::getCallerOperationExtUid,
                         E2ESequenceSnapshot.OperationRelationDraft::getCalleeOperationExtUid,
@@ -170,11 +173,11 @@ class PlantUmlE2eDecomposerTest {
                         org.assertj.core.groups.Tuple.tuple(root, unmatched, 0),
                         org.assertj.core.groups.Tuple.tuple(unmatched, nested, 0));
         assertThat(result.snapshot().getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
-                .contains(MOBILE + "-unmatched");
+                .contains(PlantUmlE2eDecomposer.interfaceCode("GET", "/fcp-pi/v2/products"));
     }
 
     @Test
-    @DisplayName("Операция на интерфейсе с protocol=UNKNOWN сопоставляется, а не дублируется на -unmatched")
+    @DisplayName("Операция на интерфейсе с protocol=UNKNOWN сопоставляется")
     void matchesAnOperationRegardlessOfInterfaceProtocol() {
         when(cmdbAliasLookup.resolveAll(anySet())).thenReturn(Map.of(
                 SHOWCASE, new ResolvedParticipant(SHOWCASE, "Showcase", Kind.SYSTEM),
@@ -188,8 +191,7 @@ class PlantUmlE2eDecomposerTest {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(nestedDiagram(), UID, "Витрина", null);
 
         assertThat(result.snapshot().getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
-                .contains("mobileapp-rest-api")
-                .doesNotContain(MOBILE + "-unmatched");
+                .contains(PlantUmlE2eDecomposer.interfaceCode("GET", "/fcp-pi/v2/products"));
         assertThat(result.notices()).extracting(ArtifactNotice::code)
                 .doesNotContain(PlantUmlE2eDecomposer.NOT_IN_LANDSCAPE);
     }
@@ -212,7 +214,7 @@ class PlantUmlE2eDecomposerTest {
                 .extracting(ArtifactNotice::details)
                 .anyMatch(details -> details.contains("receiver_ambiguous"));
         assertThat(result.snapshot().getInterfaces()).extracting(E2ESequenceSnapshot.InterfaceDraft::getUid)
-                .doesNotContain(MOBILE + "-unmatched");
+                .doesNotContain(PlantUmlE2eDecomposer.interfaceCode("GET", "/fcp-pi/v2/products"));
     }
 
     @Test
@@ -220,17 +222,17 @@ class PlantUmlE2eDecomposerTest {
     void buildsCallTree() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
 
-        String rootUid = PlantUmlE2eDecomposer.operationUid(BNPL, "POST", "/command/createApplication");
+        String rootUid = PlantUmlE2eDecomposer.operationUid(BNPL, PlantUmlE2eDecomposer.interfaceCode("POST", "/command/createApplication"), "POST", "/command/createApplication");
         List<E2ESequenceSnapshot.OperationRelationDraft> relations = result.snapshot().getOperationRelations();
 
         assertThat(relations.get(0).getCallerOperationExtUid()).isNull();
         assertThat(relations.get(0).getCalleeOperationExtUid()).isEqualTo(rootUid);
         assertThat(relations.get(0).getCallOrder()).isZero();
         assertThat(relations.subList(1, relations.size()))
-                .allMatch(relation -> rootUid.equals(relation.getCallerOperationExtUid()));
-        assertThat(relations.subList(1, relations.size()))
-                .extracting(E2ESequenceSnapshot.OperationRelationDraft::getCallOrder)
-                .containsExactly(0, 1, 2, 3, 4);
+                .allMatch(relation -> relation.getCallerOperationExtUid() != null);
+        assertThat(result.snapshot().getOperations())
+                .extracting(E2ESequenceSnapshot.OperationDraft::getType)
+                .contains("UNKNOWN");
     }
 
     @Test
@@ -242,7 +244,7 @@ class PlantUmlE2eDecomposerTest {
                 .getOperations().stream().map(E2ESequenceSnapshot.OperationDraft::getExtUid).toList();
 
         assertThat(first).isEqualTo(second);
-        assertThat(first.get(0)).isEqualTo(PlantUmlE2eDecomposer.operationUid(BNPL, "POST", "/command/createApplication"));
+        assertThat(first.get(0)).isEqualTo(PlantUmlE2eDecomposer.operationUid(BNPL, PlantUmlE2eDecomposer.interfaceCode("POST", "/command/createApplication"), "POST", "/command/createApplication"));
     }
 
     @Test

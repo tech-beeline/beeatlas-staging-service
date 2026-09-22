@@ -6,6 +6,7 @@ package ru.beeline.staging.pipeline.transformer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import lombok.Data;
 
@@ -71,6 +72,7 @@ public class E2ESequenceSnapshot {
         private String c4MethodUid;
         private Integer c4MethodInterfaceId;
         private Integer connectionOperationId;
+        private Map<String, Object> matchedOperation;
 
         private String context;
     }
