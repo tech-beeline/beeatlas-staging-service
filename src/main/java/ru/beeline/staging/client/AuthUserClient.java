@@ -22,7 +22,7 @@ public class AuthUserClient {
     private final String baseUrl;
 
     public AuthUserClient(RestTemplate restTemplate,
-                          @Value("${staging.auth-service.base-url:}") String baseUrl) {
+                          @Value("${integration.auth-server-url:}") String baseUrl) {
         this.restTemplate = restTemplate;
         this.baseUrl = baseUrl;
     }

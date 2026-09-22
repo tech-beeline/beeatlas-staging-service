@@ -24,6 +24,7 @@ spring:
     open-in-view: false
 
 integration:
+  auth-server-url: ${INTEGRATION_AUTH_SERVER_URL:}
   cx-server-url: ${INTEGRATION_CX_SERVER_URL:}
   e2e-publish:
     retry-count: ${INTEGRATION_E2E_PUBLISH_RETRY_COUNT:3}
@@ -41,8 +42,6 @@ staging:
     base-url: ${INTEGRATION_DOCUMENT_SERVER_URL:}
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:}
-  auth-service:
-    base-url: ${INTEGRATION_AUTH_SERVER_URL:}
   sparx:
     datasource:
       url: ${STAGING_SPARX_DATASOURCE_URL:}
