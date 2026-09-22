@@ -16,6 +16,7 @@ public class MatchedArchOperation {
     private String name;
     private String type;
     private String productCode;
+    private String requestedMethodName;
     private String error;
     private Boolean notFound;
 

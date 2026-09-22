@@ -308,6 +308,32 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
+    @DisplayName("Совпадение с другим именем параметра сшивается по эху запроса")
+    void stitchesAMatchWhoseCatalogNameDiffersFromTheRequestedPath() {
+        when(cmdbAliasLookup.resolveAll(anySet())).thenReturn(Map.of(
+                SHOWCASE, new ResolvedParticipant(SHOWCASE, "Showcase", Kind.SYSTEM)));
+        MatchedArchOperation matched = match(SHOWCASE, "/api/v1/product/{code}", "GET",
+                "ext_product-api", "ext_container_product");
+        matched.setRequestedMethodName("/api/v1/product/{cmdb}");
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of(matched));
+
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose("""
+                @startuml
+                participant fdmshowcaseapp
+                participant rich
+                rich -> fdmshowcaseapp: GET /api/v1/product/{cmdb}
+                @enduml
+                """, UID, "Витрина", null);
+
+        assertThat(result.snapshot().getOperations()).singleElement().satisfies(draft -> {
+            assertThat(draft.getConnectionOperationId()).isEqualTo(matched.getId());
+            assertThat(draft.getMatchedOperation()).containsEntry("name", "/api/v1/product/{code}");
+        });
+        assertThat(result.notices()).extracting(ArtifactNotice::code)
+                .doesNotContain(PlantUmlE2eDecomposer.NOT_IN_LANDSCAPE);
+    }
+
+    @Test
     @DisplayName("Данные сопоставленной арх-операции складываются в снимок для UI")
     void keepsMatchedArchOperationAttributes() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);

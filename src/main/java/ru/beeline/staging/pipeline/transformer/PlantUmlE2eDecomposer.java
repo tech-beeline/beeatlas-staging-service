@@ -185,7 +185,8 @@ public class PlantUmlE2eDecomposer {
             if (Boolean.TRUE.equals(match.getNotFound()) || match.getName() == null) {
                 continue;
             }
-            byKey.putIfAbsent(matchKey(match.getProductCode(), match.getName(), match.getType()), match);
+            String requested = match.getRequestedMethodName() != null ? match.getRequestedMethodName() : match.getName();
+            byKey.putIfAbsent(matchKey(match.getProductCode(), requested, match.getType()), match);
         }
         return byKey;
     }
