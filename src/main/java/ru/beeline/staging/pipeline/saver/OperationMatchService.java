@@ -34,7 +34,8 @@ public class OperationMatchService {
                                            Double rps, Double latency, Double errorRate,
                                            String description, String returnType, Long techCapabilityVersionId,
                                            InterfaceVersion ifaceVersionOrNull, String jsonPointer,
-                                           Long rawDataRefId, Long batchId, String branch) {
+                                           Long rawDataRefId, Long batchId, String branch,
+                                           Integer connectionOperationId) {
         boolean[] created = {false};
         OperationEntity entity = operationRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -70,6 +71,7 @@ public class OperationMatchService {
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
         version.setBranchName(branch);
+        version.setConnectionOperationId(connectionOperationId);
         return operationVersionRepository.save(version);
     }
 

@@ -122,6 +122,7 @@ public class ActualE2eScenarioRepository {
                                 'type', c.type,
                                 'uid', c.ext_uid,
                                 'interface_code', c.interface_code,
+                                'connection_operation_id', c.connection_operation_id,
                                 'sla', jsonb_build_object( 
                                     'rps',c.rps,
                                     'latency', c.latency,

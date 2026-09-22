@@ -238,8 +238,8 @@ public class PlantUmlE2eDecomposer {
                 }
                 notices.add(implicitCast(uid, "operation", "sla=null", "warning"));
                 return matched
-                        ? operation(uid, interfaceUid, match.getName(), match.getType())
-                        : operation(uid, interfaceUid, call.path(), call.method());
+                        ? operation(uid, interfaceUid, match.getName(), match.getType(), match.getId())
+                        : operation(uid, interfaceUid, call.path(), call.method(), null);
             });
 
             String callerExtUid = activeOperationByLifeline.get(fromAlias);
@@ -307,12 +307,14 @@ public class PlantUmlE2eDecomposer {
         return draft;
     }
 
-    private E2ESequenceSnapshot.OperationDraft operation(String extUid, String interfaceUid, String name, String type) {
+    private E2ESequenceSnapshot.OperationDraft operation(String extUid, String interfaceUid, String name, String type,
+            Integer connectionOperationId) {
         E2ESequenceSnapshot.OperationDraft draft = new E2ESequenceSnapshot.OperationDraft();
         draft.setExtUid(extUid);
         draft.setInterfaceUid(interfaceUid);
         draft.setName(name);
         draft.setType(type);
+        draft.setConnectionOperationId(connectionOperationId);
         return draft;
     }
 

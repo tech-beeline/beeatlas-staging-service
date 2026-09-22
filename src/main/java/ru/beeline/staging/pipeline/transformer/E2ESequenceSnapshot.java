@@ -70,6 +70,7 @@ public class E2ESequenceSnapshot {
         private Double errorRate;
         private String c4MethodUid;
         private Integer c4MethodInterfaceId;
+        private Integer connectionOperationId;
 
         private String context;
     }

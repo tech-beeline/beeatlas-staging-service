@@ -87,6 +87,9 @@ public class E2eV2PublishRequestMapper {
         String rawInterfaceCode = text(node, "interface_code");
         dto.setParentInterfaceCode(compoundCodeByRawCode.getOrDefault(rawInterfaceCode, rawInterfaceCode));
         dto.setSla(mapSla(node.path("sla")));
+        dto.setConnectionOperationId(node.hasNonNull("connection_operation_id")
+                ? node.get("connection_operation_id").asInt()
+                : null);
         return dto;
     }
 

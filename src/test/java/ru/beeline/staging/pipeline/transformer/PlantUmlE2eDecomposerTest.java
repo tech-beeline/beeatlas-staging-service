@@ -78,6 +78,22 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
+    @DisplayName("Сопоставленный вызов несёт id арх-операции, несопоставленный — пустой")
+    void keepsTheMatchedArchOperationIdOnTheDraft() {
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
+
+        assertThat(result.snapshot().getOperations())
+                .filteredOn(draft -> "/command/createApplication".equals(draft.getName()))
+                .singleElement()
+                .satisfies(draft -> assertThat(draft.getConnectionOperationId())
+                        .isEqualTo(Math.abs((BNPL + "/command/createApplication" + "POST").hashCode())));
+        assertThat(result.snapshot().getOperations())
+                .filteredOn(draft -> "/api/v1/calls/feedback".equals(draft.getName()))
+                .singleElement()
+                .satisfies(draft -> assertThat(draft.getConnectionOperationId()).isNull());
+    }
+
+    @Test
     @DisplayName("Несопоставленные вызовы не исключаются, а выносятся в warning notice")
     void reportsUnmatchedCalls() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
@@ -308,6 +324,7 @@ class PlantUmlE2eDecomposerTest {
     private MatchedArchOperation match(String productCode, String name, String type,
             String interfaceCode, String containerCode) {
         MatchedArchOperation matched = new MatchedArchOperation();
+        matched.setId(Math.abs((productCode + name + type).hashCode()));
         matched.setName(name);
         matched.setType(type);
         matched.setProductCode(productCode);

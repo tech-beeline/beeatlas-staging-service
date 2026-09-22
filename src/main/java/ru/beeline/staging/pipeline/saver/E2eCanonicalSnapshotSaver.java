@@ -110,7 +110,8 @@ public class E2eCanonicalSnapshotSaver {
                     draft.getExtUid(), draft.getExtUid(), draft.getName(), draft.getType(),
                     draft.getRps(), draft.getLatency(), draft.getErrorRate(),
                     null, null, null,
-                    ifaceVersion, draft.getContext(), rawDataRefId, batchId, branch);
+                    ifaceVersion, draft.getContext(), rawDataRefId, batchId, branch,
+                    draft.getConnectionOperationId());
             operationVersionsByExtUid.put(draft.getExtUid(), version);
         }
 

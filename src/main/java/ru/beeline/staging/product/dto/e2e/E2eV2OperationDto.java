@@ -14,4 +14,5 @@ public class E2eV2OperationDto {
     private String description;
     private String parentInterfaceCode;
     private E2eOperationSlaDto sla;
+    private Integer connectionOperationId;
 }

@@ -38,6 +38,9 @@ public class OperationVersion {
     @Column(name = "json_data", columnDefinition = "jsonb")
     private String jsonData;
 
+    @Column(name = "connection_operation_id")
+    private Integer connectionOperationId;
+
     @Column(name = "tech_capability_version_id")
     private Long techCapabilityVersionId;
 
