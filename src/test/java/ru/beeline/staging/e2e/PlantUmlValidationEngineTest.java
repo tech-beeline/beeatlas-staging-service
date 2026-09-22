@@ -1,5 +1,6 @@
 package ru.beeline.staging.e2e;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import ru.beeline.staging.dto.e2e.RecognizedParticipant;
 import ru.beeline.staging.dto.e2e.UnrecognizedCall;
@@ -36,11 +37,9 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isFalse();
+        assertThat(result.valid()).isTrue();
         assertThat(result.recognizedParticipants()).hasSize(4);
-        assertThat(result.unrecognizedParticipants())
-                .extracting(UnrecognizedParticipant::alias)
-                .containsExactly("Client");
+        assertThat(result.unrecognizedParticipants()).isEmpty();
         assertThat(result.recognizedCalls()).hasSize(7);
         assertThat(result.unrecognizedCalls()).hasSize(4);
     }
@@ -104,7 +103,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isFalse();
+        assertThat(result.valid()).isTrue();
         assertThat(result.recognizedCalls()).hasSize(6);
         assertThat(result.recognizedCalls())
                 .extracting(call -> call.httpMethod() + " " + call.path())
@@ -121,6 +120,23 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
+    @DisplayName("Актор не участвует в проверке участников и не роняет валидацию")
+    void ignoresActors() {
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(fixture("universal.puml"));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.unrecognizedParticipants()).isEmpty();
+        assertThat(result.findings()).extracting(Finding::code)
+                .doesNotContain("e2e.validation.participant.unrecognized");
+    }
+
+    @Test
     void failsValidationWhenAParticipantIsNotInCmdb() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
@@ -131,7 +147,7 @@ class PlantUmlValidationEngineTest {
         EngineResult result = engine.validate(fixture("universal.puml"));
 
         assertThat(result.valid()).isFalse();
-        assertThat(result.unrecognizedParticipants()).hasSize(5);
+        assertThat(result.unrecognizedParticipants()).hasSize(4);
         assertThat(result.findings())
                 .extracting(Finding::code)
                 .contains("e2e.validation.participant.unrecognized");
@@ -147,7 +163,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isFalse();
+        assertThat(result.valid()).isTrue();
         assertThat(result.recognizedCalls()).isEmpty();
         assertThat(result.unrecognizedCalls()).hasSize(11);
         assertThat(result.findings())
@@ -172,7 +188,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isFalse();
+        assertThat(result.valid()).isTrue();
         assertThat(result.findings())
                 .filteredOn(f -> f.code().equals("e2e.validation.call.check_failed"))
                 .hasSize(2);

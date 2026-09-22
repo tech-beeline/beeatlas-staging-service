@@ -73,6 +73,9 @@ public class PlantUmlValidationEngine {
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias = new HashMap<>();
         Set<String> ambiguousAliases = new LinkedHashSet<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
+            if (isActor(participant)) {
+                continue;
+            }
             CmdbAliasLookup.ResolvedParticipant match = hasText(participant.name()) ? resolved.get(participant.name()) : null;
             if (match == null) {
                 String prefix = mnemonicPrefix(participant.name());
@@ -196,6 +199,10 @@ public class PlantUmlValidationEngine {
         }
         int dot = name.indexOf('.');
         return dot > 0 ? name.substring(0, dot) : null;
+    }
+
+    private static boolean isActor(ParsedDiagram.Participant participant) {
+        return "ACTOR".equalsIgnoreCase(participant.declaredKind());
     }
 
     private static boolean hasText(String value) {
