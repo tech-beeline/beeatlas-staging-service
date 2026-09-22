@@ -15,6 +15,7 @@ import ru.beeline.staging.domain.PipelineDefinitionEntry;
 import ru.beeline.staging.pipeline.PipelineDefinitions;
 import ru.beeline.staging.pipeline.adapter.ArtifactAdapter;
 import ru.beeline.staging.pipeline.preadapter.ArtifactPreAdapter;
+import ru.beeline.staging.pipeline.publisher.ArtifactPublisher;
 import ru.beeline.staging.pipeline.saver.ArtifactSaver;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.pipeline.validator.ArtifactValidator;
@@ -36,6 +37,7 @@ public class ModuleCatalogPublisher {
     private final List<ArtifactValidator>   validators;
     private final List<ArtifactTransformer> transformers;
     private final List<ArtifactSaver>       savers;
+    private final List<ArtifactPublisher>   publishers;
     private final PipelineDefinitions       pipelineDefinitions;
 
     private final ModuleCatalogEntryRepository       moduleCatalogRepository;
@@ -56,6 +58,8 @@ public class ModuleCatalogPublisher {
         validators.forEach(m   -> save("validator",   m.moduleCode(), m.description()));
         transformers.forEach(m -> save("transformer", m.moduleCode(), m.description()));
         savers.forEach(m       -> save("saver",       m.moduleCode(), m.description()));
+        publishers.forEach(m   -> save("publisher",   m.moduleCode(), m.description()));
+        save("manual", PipelineDefinitions.MANUAL_MODULE_CODE, "Ожидание решения пользователя перед публикацией");
 
         log.info("Module catalog published: {} pre-adapter, {} adapter, {} validator, {} transformer, {} saver",
                 preAdapters.size(), adapters.size(), validators.size(), transformers.size(), savers.size());

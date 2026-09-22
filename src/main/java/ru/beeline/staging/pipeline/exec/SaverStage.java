@@ -71,7 +71,6 @@ public class SaverStage implements ArtifactPipelineStage {
             if (pipelineRunService.isAlreadyFullyProcessed(uid, type, rawDataRefId)) {
                 log.info("stage=saver, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping save", uid, rawDataRefId);
                 pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
-                pipelineRunService.completeRun(runId);
                 return;
             }
 
@@ -96,7 +95,6 @@ public class SaverStage implements ArtifactPipelineStage {
             Object batchId = output.get("batchId");
             String outputSummary = batchId != null ? "batchId=" + batchId : "saved=true";
             pipelineRunService.completeStage(stageLogId, outputSummary, StageSupport.buildSummary(output));
-            pipelineRunService.completeRun(runId);
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
             throw e;

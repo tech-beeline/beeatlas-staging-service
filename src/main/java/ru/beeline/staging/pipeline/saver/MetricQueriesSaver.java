@@ -21,7 +21,6 @@ public class MetricQueriesSaver implements ArtifactSaver {
     public static final String MODULE_CODE = "metric-queries-saver";
 
     private final MetricQueryTemplateSnapshotSaver snapshotSaver;
-    private final DashboardServicePublishClient    publishClient;
     private final PipelineRunService               pipelineRunService;
     private final ObjectMapper                     objectMapper;
 
@@ -29,7 +28,7 @@ public class MetricQueriesSaver implements ArtifactSaver {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Persists the metric-queries canonical snapshot and publishes it to dashboard-service"; }
+    public String description() { return "Persists the metric-queries canonical snapshot"; }
 
     @Override
     public SaveResult save(String artifactUid, String artifactType, long rawDataRefId,
@@ -52,8 +51,8 @@ public class MetricQueriesSaver implements ArtifactSaver {
             log.info("Saved metric-queries snapshot for uid={}: batchId={}", artifactUid, batchId);
         }
 
-        boolean published = publishClient.publish(snapshot, rawDataRefId);
 
-        return SaveResult.of(Map.of("batchId", batchId != null ? batchId : -1L, "published", published));
+
+        return SaveResult.of(Map.of("batchId", batchId != null ? batchId : -1L));
     }
 }
