@@ -151,7 +151,7 @@ public class PlantUmlValidationEngine {
 
         boolean found;
         try {
-            found = restEndpointLookup.exists(receiver.alias(), receiver.name(), method, path);
+            found = restEndpointLookup.exists(receiver.productAlias(), method, path);
         } catch (RuntimeException e) {
             log.warn("REST endpoint check failed for {} {} on '{}': {}", method, path, message.toAlias(), e.toString());
             findings.add(Finding.warning("e2e.validation.call.check_failed",
@@ -168,9 +168,9 @@ public class PlantUmlValidationEngine {
             return;
         }
         findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
-                "Эндпоинт " + method + " " + path + " не найден у '" + message.toAlias() + "' в CMDB. Проверьте"
-                        + " метод и путь (регистр, слэши) или убедитесь, что операция вообще зарегистрирована"
-                        + " в CMDB у этой системы/контейнера.",
+                "Эндпоинт " + method + " " + path + " не найден в архитектуре продукта '" + receiver.productAlias()
+                        + "' у '" + message.toAlias() + "'. Путь и метод должны совпадать с записью каталога"
+                        + " целиком, включая имена path-параметров, а сама операция — лежать в ветке main.",
                 message.line(), message.line(), elementRef));
         unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
     }

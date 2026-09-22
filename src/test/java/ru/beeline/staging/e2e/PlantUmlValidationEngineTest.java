@@ -31,7 +31,7 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
@@ -52,7 +52,7 @@ class PlantUmlValidationEngineTest {
                 "b2c-digital-payments-bnpl", new ResolvedParticipant(
                         "b2c-digital-payments-bnpl", "b2c-digital-payments-bnpl", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
@@ -68,7 +68,7 @@ class PlantUmlValidationEngineTest {
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
                 "ext_Example", new ResolvedParticipant("ext_Example", "Example System", Kind.CONTAINER)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(DOTTED_MNEMONIC_PUML);
@@ -86,19 +86,19 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), eq("POST"), eq("/command/createApplication")))
+        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), eq("POST"), eq("/command/createApplication")))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("antispam"), anyString(), eq("GET"), eq("/api/v1/calls/")))
+        when(restEndpointLookup.exists(eq("antispam"), eq("GET"), eq("/api/v1/calls/")))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("antispam"), anyString(), eq("POST"), eq("/api/v1/calls/feedback")))
+        when(restEndpointLookup.exists(eq("antispam"), eq("POST"), eq("/api/v1/calls/feedback")))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), eq("POST"), eq("/chat/completions")))
+        when(restEndpointLookup.exists(eq("ai-tool"), eq("POST"), eq("/chat/completions")))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), eq("POST"), eq("/command/completePayment")))
+        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), eq("POST"), eq("/command/completePayment")))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("arfix"), anyString(), eq("GET"), eq("/api/v1/payment/12345/paymentItem")))
+        when(restEndpointLookup.exists(eq("arfix"), eq("GET"), eq("/api/v1/payment/12345/paymentItem")))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("arfix"), anyString(), eq("POST"), eq("reconciliation-note")))
+        when(restEndpointLookup.exists(eq("arfix"), eq("POST"), eq("reconciliation-note")))
                 .thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
@@ -125,7 +125,7 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
@@ -142,7 +142,7 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
@@ -160,13 +160,13 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(eq("arfix"), anyString(), anyString(), anyString()))
+        when(restEndpointLookup.exists(eq("arfix"), anyString(), anyString()))
                 .thenThrow(new RuntimeException("boom"));
-        when(restEndpointLookup.exists(eq("antispam"), anyString(), anyString(), anyString()))
+        when(restEndpointLookup.exists(eq("antispam"), anyString(), anyString()))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), anyString(), anyString()))
+        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), anyString()))
                 .thenReturn(true);
-        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), anyString(), anyString()))
+        when(restEndpointLookup.exists(eq("b2c-digital-payments-bnpl"), anyString(), anyString()))
                 .thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
@@ -183,9 +183,9 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(eq("antispam"), anyString(), eq("GET"), eq("/api/v1/calls/")))
+        when(restEndpointLookup.exists(eq("antispam"), eq("GET"), eq("/api/v1/calls/")))
                 .thenReturn(false);
-        when(restEndpointLookup.exists(eq("ai-tool"), anyString(), eq("GET"), eq("/api/v1/calls/")))
+        when(restEndpointLookup.exists(eq("ai-tool"), eq("GET"), eq("/api/v1/calls/")))
                 .thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
@@ -201,7 +201,7 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(false);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(false);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
@@ -260,7 +260,7 @@ class PlantUmlValidationEngineTest {
                         "dashboard", new ResolvedParticipant("dashboard", "Dashboard", Kind.CONTAINER,
                                 "fdmshowcaseapp"))));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(AMBIGUOUS_MNEMONIC_PUML);
@@ -284,7 +284,7 @@ class PlantUmlValidationEngineTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         String text = fixture("universal.puml");

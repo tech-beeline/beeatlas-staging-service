@@ -43,7 +43,7 @@ class E2eValidationControllerTest {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
         PlantUmlValidationEngine engine =
                 new PlantUmlValidationEngine(new PlantUmlDiagramParser(), cmdbAliasLookup, restEndpointLookup);
 
