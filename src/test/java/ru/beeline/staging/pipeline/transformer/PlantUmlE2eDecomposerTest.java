@@ -23,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PlantUmlE2eDecomposerTest {
@@ -245,6 +247,84 @@ class PlantUmlE2eDecomposerTest {
 
         assertThat(first).isEqualTo(second);
         assertThat(first.get(0)).isEqualTo(PlantUmlE2eDecomposer.operationUid(BNPL, PlantUmlE2eDecomposer.interfaceCode("POST", "/command/createApplication"), "POST", "/command/createApplication"));
+    }
+
+    @Test
+    @DisplayName("Один и тот же путь у разных получателей даёт разные операции")
+    void doesNotCollapseTheSamePathCalledOnDifferentParticipants() {
+        when(cmdbAliasLookup.resolveAll(anySet())).thenReturn(Map.of(
+                SHOWCASE, new ResolvedParticipant(SHOWCASE, "Showcase", Kind.SYSTEM),
+                MOBILE, new ResolvedParticipant(MOBILE, "Mobile", Kind.SYSTEM),
+                RICH, new ResolvedParticipant(RICH, "Rich", Kind.SYSTEM)));
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of());
+
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose("""
+                @startuml
+                participant fdmshowcaseapp
+                participant mobileapp
+                participant rich
+                fdmshowcaseapp -> mobileapp: POST /workspace
+                fdmshowcaseapp -> rich: POST /workspace
+                @enduml
+                """, UID, "Витрина", null);
+
+        assertThat(result.snapshot().getOperations())
+                .extracting(E2ESequenceSnapshot.OperationDraft::getExtUid)
+                .doesNotHaveDuplicates()
+                .hasSize(2);
+        assertThat(result.snapshot().getOperations())
+                .extracting(E2ESequenceSnapshot.OperationDraft::getInterfaceUid)
+                .containsOnly(PlantUmlE2eDecomposer.interfaceCode("POST", "/workspace"));
+        assertThat(result.snapshot().getProducts())
+                .extracting(E2ESequenceSnapshot.ProductDraft::getUid)
+                .containsExactlyInAnyOrder(MOBILE, RICH);
+    }
+
+    @Test
+    @DisplayName("Нераспознанный вызов становится операцией UNKNOWN, путь обрезается и сопоставление не запрашивается")
+    void registersAnUnparsedCallAsAnUnknownRequest() {
+        when(cmdbAliasLookup.resolveAll(anySet())).thenReturn(Map.of(
+                SHOWCASE, new ResolvedParticipant(SHOWCASE, "Showcase", Kind.SYSTEM),
+                MOBILE, new ResolvedParticipant(MOBILE, "Mobile", Kind.SYSTEM)));
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of());
+        String longLabel = "получает справочник " + "я".repeat(300);
+
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose("""
+                @startuml
+                participant fdmshowcaseapp
+                participant mobileapp
+                fdmshowcaseapp -> mobileapp: %s
+                @enduml
+                """.formatted(longLabel), UID, "Витрина", null);
+
+        assertThat(result.snapshot().getOperations()).singleElement().satisfies(draft -> {
+            assertThat(draft.getType()).isEqualTo("UNKNOWN");
+            assertThat(draft.getName()).hasSize(255).startsWith("получает справочник");
+            assertThat(draft.getConnectionOperationId()).isNull();
+        });
+        assertThat(result.notices()).extracting(ArtifactNotice::code)
+                .contains(PlantUmlE2eDecomposer.UNKNOWN_REQUEST);
+        verify(productServiceClient, never()).searchMatchedOperations(anyList());
+    }
+
+    @Test
+    @DisplayName("Данные сопоставленной арх-операции складываются в снимок для UI")
+    void keepsMatchedArchOperationAttributes() {
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
+
+        assertThat(result.snapshot().getOperations())
+                .filteredOn(draft -> "/command/createApplication".equals(draft.getName()))
+                .singleElement()
+                .satisfies(draft -> assertThat(draft.getMatchedOperation())
+                        .containsEntry("name", "/command/createApplication")
+                        .containsEntry("type", "POST")
+                        .containsEntry("interfaceCode", "bnpl-api")
+                        .containsEntry("containerCode", "bnpl-gateway")
+                        .containsEntry("productAlias", BNPL));
+        assertThat(result.snapshot().getOperations())
+                .filteredOn(draft -> "/api/v1/calls/feedback".equals(draft.getName()))
+                .singleElement()
+                .satisfies(draft -> assertThat(draft.getMatchedOperation()).isNull());
     }
 
     @Test

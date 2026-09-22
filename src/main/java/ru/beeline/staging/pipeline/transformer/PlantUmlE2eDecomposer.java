@@ -75,21 +75,21 @@ public class PlantUmlE2eDecomposer {
         ParsedDiagram diagram = outcome.diagram();
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolved = resolveParticipants(diagram);
         List<Call> calls = collectCalls(diagram, resolved, notices);
+        if (calls.isEmpty()) {
+            return new Result(snapshot, notices);
+        }
+
         List<OperationMatchCandidate> candidates = candidatesOf(calls);
-        if (candidates.isEmpty()) {
-            return new Result(snapshot, notices);
+        Map<String, MatchedArchOperation> matchByKey = Map.of();
+        if (!candidates.isEmpty()) {
+            try {
+                matchByKey = indexMatches(productServiceClient.searchMatchedOperations(candidates));
+            } catch (RuntimeException e) {
+                notices.add(notice(SEARCH_UNAVAILABLE, "error", Map.of("artifactUid", artifactUid,
+                        "reason", String.valueOf(e.getMessage()))));
+                return new Result(snapshot, notices);
+            }
         }
-
-        List<MatchedArchOperation> matches;
-        try {
-            matches = productServiceClient.searchMatchedOperations(candidates);
-        } catch (RuntimeException e) {
-            notices.add(notice(SEARCH_UNAVAILABLE, "error", Map.of("artifactUid", artifactUid,
-                    "reason", String.valueOf(e.getMessage()))));
-            return new Result(snapshot, notices);
-        }
-
-        Map<String, MatchedArchOperation> matchByKey = indexMatches(matches);
         buildSnapshot(snapshot, calls, matchByKey, notices);
         return new Result(snapshot, notices);
     }
