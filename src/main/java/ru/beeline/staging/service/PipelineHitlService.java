@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.pipelinerun.ApplyPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunResponse;
+import ru.beeline.staging.dto.pipelinerun.DeclinePipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsResponse;
 import ru.beeline.staging.dto.usecase.ImportDecision;
@@ -40,6 +41,7 @@ public class PipelineHitlService {
     private static final String CANCELLED_STATUS = "cancelled";
     private static final String REVIEWING_STATUS = "reviewing";
     private static final String APPLYING_STATUS = "applying";
+    private static final String DECLINED_STATUS = "completed_without_publish";
     private static final String DEFAULT_CANCEL_REASON = "Отменено пользователем";
     private static final Set<String> REVIEW_STATUSES = Set.of("awaiting_review", REVIEWING_STATUS);
 
@@ -99,6 +101,17 @@ public class PipelineHitlService {
         int remaining = unresolvedParts(runId, unmappedParts).size();
         log.info("Accepted {} decision(s) for run {}: remaining={}", decisions.size(), runId, remaining);
         return new PipelineRunDecisionsResponse(runId, REVIEWING_STATUS, decisions.size(), remaining);
+    }
+
+    public DeclinePipelineRunResponse decline(Long runId) {
+        PipelineRun run = requireRun(runId);
+        requireReviewStatus(run, "отказаться от публикации");
+
+        if (pipelineRunRepository.markDeclined(runId) == 0) {
+            throw conflict(runId, run, "нельзя отказаться от публикации");
+        }
+        log.info("Run {} declined by user: публикация пропущена", runId);
+        return new DeclinePipelineRunResponse(runId, DECLINED_STATUS);
     }
 
     public ApplyPipelineRunResponse apply(Long runId, String comment) {

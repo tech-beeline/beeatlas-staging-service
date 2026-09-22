@@ -12,6 +12,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import ru.beeline.staging.exception.ActivePipelineRunException;
 import ru.beeline.staging.exception.PipelineRunBadRequestException;
 import ru.beeline.staging.exception.PipelineRunConflictException;
+import ru.beeline.staging.exception.PipelineRunForbiddenException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
 import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 
@@ -51,6 +52,11 @@ public class PipelineRunImportExceptionHandler {
         body.put("error", e.getMessage());
         body.put("unresolvedParts", e.getUnresolvedParts());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(PipelineRunForbiddenException.class)
+    public ResponseEntity<Map<String, Object>> handleForbidden(PipelineRunForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("errorMessage", e.getMessage()));
     }
 
     @ExceptionHandler(PipelineRunConflictException.class)

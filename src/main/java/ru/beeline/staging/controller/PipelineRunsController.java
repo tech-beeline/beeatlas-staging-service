@@ -41,7 +41,8 @@ import java.util.Set;
 public class PipelineRunsController {
 
     private static final Set<String> ALLOWED_STATUSES = Set.of(
-            "pending", "loading", "validating", "transforming", "saving", "publishing", "completed", "failed");
+            "pending", "loading", "validating", "transforming", "saving", "publishing", "completed", "failed",
+            "awaiting_review", "reviewing", "applying", "cancelled", "completed_without_publish");
 
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_ARTIFACT_TYPE_LENGTH = 100;

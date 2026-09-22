@@ -24,12 +24,14 @@ import ru.beeline.staging.dto.pipelinerun.ApplyPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunRequest;
 import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunRequest;
+import ru.beeline.staging.dto.pipelinerun.DeclinePipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CreatePipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunBadRequestResponse;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunErrorResponse;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsResponse;
 import ru.beeline.staging.service.PipelineHitlService;
+import ru.beeline.staging.service.PipelineRunAccessGuard;
 import ru.beeline.staging.service.PipelineRunImportService;
 import ru.beeline.staging.utils.Constant;
 
@@ -41,6 +43,7 @@ public class PipelineRunHitlController {
 
     private final PipelineRunImportService pipelineRunImportService;
     private final PipelineHitlService pipelineHitlService;
+    private final PipelineRunAccessGuard pipelineRunAccessGuard;
 
     @PostMapping
     @Operation(summary = "Запустить импорт артефакта",
@@ -84,7 +87,9 @@ public class PipelineRunHitlController {
     })
     public ResponseEntity<PipelineRunDecisionsResponse> decide(
             @PathVariable Long runId,
+            @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId,
             @RequestBody(required = false) PipelineRunDecisionsRequest request) {
+        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineHitlService.decide(runId, request));
     }
@@ -108,7 +113,9 @@ public class PipelineRunHitlController {
     })
     public ResponseEntity<ApplyPipelineRunResponse> apply(
             @PathVariable Long runId,
+            @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId,
             @RequestBody(required = false) ApplyPipelineRunRequest request) {
+        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
         String comment = request == null ? null : request.getComment();
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineHitlService.apply(runId, comment));
@@ -132,9 +139,31 @@ public class PipelineRunHitlController {
     })
     public ResponseEntity<CancelPipelineRunResponse> cancelPipelineRun(
             @PathVariable Long runId,
+            @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId,
             @RequestBody(required = false) CancelPipelineRunRequest request) {
+        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
         String reason = request == null ? null : request.getReason();
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineHitlService.cancel(runId, reason));
+    }
+
+    @PostMapping("/{runId}/decline")
+    @Operation(summary = "Отказаться от публикации",
+            description = "Завершает запуск без публикации во внешние сервисы: стадия publisher не вызывается, "
+                    + "статус становится completed_without_publish. 403 — решение принимает не автор запуска, "
+                    + "404 — запуск не найден, 409 — запуск не в awaiting_review/reviewing.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "202", description = "Публикация отклонена",
+                    content = @Content(schema = @Schema(implementation = DeclinePipelineRunResponse.class))),
+            @ApiResponse(responseCode = "404", description = "Запуск не найден",
+                    content = @Content(schema = @Schema(implementation = PipelineRunErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "Запуск не в awaiting_review/reviewing",
+                    content = @Content(schema = @Schema(implementation = PipelineRunErrorResponse.class)))
+    })
+    public ResponseEntity<DeclinePipelineRunResponse> decline(
+            @PathVariable Long runId,
+            @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId) {
+        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(pipelineHitlService.decline(runId));
     }
 }

@@ -39,7 +39,7 @@ public class PipelineRunService {
     private final ArtifactNoticeService      noticeService;
     private final MeterRegistry              meterRegistry;
 
-    private static final List<String> DONE_STATUSES = List.of("completed", "cancelled");
+    private static final List<String> DONE_STATUSES = List.of("completed", "cancelled", "completed_without_publish");
 
     @Value("${staging.recovery.max-auto-retries:3}")
     private int maxAutoRetries;

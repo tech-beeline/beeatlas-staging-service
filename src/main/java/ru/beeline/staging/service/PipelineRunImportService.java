@@ -42,7 +42,8 @@ public class PipelineRunImportService {
     private static final String MANUAL_SOURCE = "manual";
     private static final String INITIAL_STATUS = "pending";
     private static final String CANCELLED_STATUS = "cancelled";
-    private static final List<String> TERMINAL_STATUSES = List.of("completed", "failed", CANCELLED_STATUS);
+    private static final List<String> TERMINAL_STATUSES = List.of("completed", "failed", CANCELLED_STATUS,
+            "completed_without_publish");
 
     private static final Map<String, String> SOURCE_SYSTEM_BY_SOURCE = Map.of(
             MANUAL_SOURCE, "beeatlas-ui",

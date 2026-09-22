@@ -41,6 +41,8 @@ staging:
     base-url: ${INTEGRATION_DOCUMENT_SERVER_URL:}
   dashboard:
     base-url: ${INTEGRATION_DASHBOARD_SERVER_URL:}
+  auth-service:
+    base-url: ${INTEGRATION_AUTH_SERVER_URL:}
   sparx:
     datasource:
       url: ${STAGING_SPARX_DATASOURCE_URL:}
