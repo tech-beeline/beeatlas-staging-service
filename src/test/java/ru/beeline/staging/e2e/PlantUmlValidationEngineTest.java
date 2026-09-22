@@ -36,7 +36,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).isFalse();
         assertThat(result.recognizedParticipants()).hasSize(4);
         assertThat(result.unrecognizedParticipants())
                 .extracting(UnrecognizedParticipant::alias)
@@ -104,7 +104,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).isFalse();
         assertThat(result.recognizedCalls()).hasSize(6);
         assertThat(result.recognizedCalls())
                 .extracting(call -> call.httpMethod() + " " + call.path())
@@ -121,7 +121,7 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
-    void flagsUnrecognizedParticipantsAsWarningNotBlockingValidity() {
+    void failsValidationWhenAParticipantIsNotInCmdb() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
@@ -130,7 +130,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).isFalse();
         assertThat(result.unrecognizedParticipants()).hasSize(5);
         assertThat(result.findings())
                 .extracting(Finding::code)
@@ -147,7 +147,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).isFalse();
         assertThat(result.recognizedCalls()).isEmpty();
         assertThat(result.unrecognizedCalls()).hasSize(11);
         assertThat(result.findings())
@@ -172,7 +172,7 @@ class PlantUmlValidationEngineTest {
         PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
         EngineResult result = engine.validate(fixture("universal.puml"));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).isFalse();
         assertThat(result.findings())
                 .filteredOn(f -> f.code().equals("e2e.validation.call.check_failed"))
                 .hasSize(2);

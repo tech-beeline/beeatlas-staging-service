@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.exec;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -92,9 +93,10 @@ public class ValidatorStage implements ArtifactPipelineStage {
 
             List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
 
-            long errorCount = saved.stream().filter(n -> "error".equals(n.level())).count();
+            List<ArtifactNotice> errors = saved.stream().filter(n -> "error".equals(n.level())).toList();
+            long errorCount = errors.size();
             if (errorCount > 0) {
-                throw new IllegalStateException("Validation failed: " + errorCount + " error notice(s) for uid=" + uid);
+                throw new IllegalStateException("Валидация не пройдена (" + errorCount + "): " + reasonsOf(errors));
             }
 
             long warningCount = saved.stream().filter(n -> "warning".equals(n.level())).count();
@@ -109,6 +111,24 @@ public class ValidatorStage implements ArtifactPipelineStage {
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
             throw e;
+        }
+    }
+
+    private String reasonsOf(List<ArtifactNotice> errors) {
+        return errors.stream()
+                .map(this::reasonOf)
+                .filter(reason -> reason != null && !reason.isBlank())
+                .collect(Collectors.joining("; "));
+    }
+
+    private String reasonOf(ArtifactNotice notice) {
+        try {
+            JsonNode details = objectMapper.readTree(notice.details() == null ? "{}" : notice.details());
+            String reason = details.path("reason").asText(null);
+            String line = details.hasNonNull("line") ? " (строка " + details.get("line").asInt() + ")" : "";
+            return reason != null ? reason + line : notice.message();
+        } catch (Exception e) {
+            return notice.message();
         }
     }
 }

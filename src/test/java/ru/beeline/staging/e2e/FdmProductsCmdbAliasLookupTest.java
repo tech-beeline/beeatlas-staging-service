@@ -52,7 +52,7 @@ class FdmProductsCmdbAliasLookupTest {
     }
 
     @Test
-    void marksAMnemonicThatIsBothASystemAliasAndAContainerCodeAsAmbiguous() {
+    void resolvesAMnemonicThatIsBothASystemAliasAndAContainerCodeToTheProduct() {
         ProductAliasSummary product = new ProductAliasSummary();
         product.setAlias("dashboard");
         product.setName("[REMOVED!]Dashboard API&UI");
@@ -66,9 +66,8 @@ class FdmProductsCmdbAliasLookupTest {
         Map<String, ResolvedParticipant> result = lookup.resolveAll(Set.of("dashboard"));
 
         ResolvedParticipant resolved = result.get("dashboard");
-        assertThat(resolved.ambiguous()).isTrue();
+        assertThat(resolved.ambiguous()).isFalse();
         assertThat(resolved.kind()).isEqualTo(Kind.SYSTEM);
-        assertThat(resolved.competingWith().kind()).isEqualTo(Kind.CONTAINER);
-        assertThat(resolved.competingWith().productAlias()).isEqualTo("fdmshowcaseapp");
+        assertThat(resolved.productAlias()).isEqualTo("dashboard");
     }
 }

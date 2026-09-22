@@ -60,7 +60,7 @@ class E2eValidationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.valid").value(true));
+                .andExpect(jsonPath("$.valid").value(false));
     }
 
     @Test

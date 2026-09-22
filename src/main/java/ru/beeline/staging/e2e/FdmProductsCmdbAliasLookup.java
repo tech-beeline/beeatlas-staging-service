@@ -46,8 +46,7 @@ public class FdmProductsCmdbAliasLookup implements CmdbAliasLookup {
             ProductAliasSummary product = productsByLowerAlias.get(key);
             ContainerByCodeSummary container = containersByLowerCode.get(key);
             if (product != null && container != null) {
-                result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM, alias,
-                        asParticipant(alias, container)));
+                result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM));
                 ambiguous++;
             } else if (product != null) {
                 result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM));
@@ -56,7 +55,7 @@ public class FdmProductsCmdbAliasLookup implements CmdbAliasLookup {
             }
         }
 
-        log.info("CMDB alias resolution: total={} recognized={} ambiguous={} unrecognized={}",
+        log.info("CMDB alias resolution: total={} recognized={} resolvedToProduct={} unrecognized={}",
                 aliases.size(), result.size(), ambiguous, aliases.size() - result.size());
         return result;
     }

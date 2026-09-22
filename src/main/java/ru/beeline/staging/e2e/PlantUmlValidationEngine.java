@@ -99,7 +99,7 @@ public class PlantUmlValidationEngine {
                         participant.alias(), match.name(), match.kind().name().toLowerCase(Locale.ROOT), participant.line()));
             } else {
                 unrecognizedParticipants.add(new UnrecognizedParticipant(participant.alias(), participant.line()));
-                findings.add(Finding.warning("e2e.validation.participant.unrecognized",
+                findings.add(Finding.error("e2e.validation.participant.unrecognized",
                         "Участник '" + participant.alias() + "' не найден в CMDB. Проверьте мнемонику:"
                                 + " имя перед 'as' (или сам alias, если 'as' не используется) должно точно"
                                 + " совпадать с alias/кодом системы или контейнера в CMDB — сверьтесь с BeeAtlas.",
