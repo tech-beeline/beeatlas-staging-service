@@ -25,10 +25,9 @@ public class UseCaseCanonicalRepository {
     }
 
     public record StepRow(Long id, String extUid, String name, Integer seq, String scenarioType, String callStatus,
-                          String stepType, Long operationVersionId, Long calleeOperationVersionId, String jsonData,
-                          String calleeOperation, String calleeInterfaceCode, String calleeContainerCode,
-                          String calleeProductCode, String callerOperation, String callerInterfaceCode,
-                          String callerContainerCode, String callerProductCode) {
+                          String stepType, String jsonData, Long calleeOperationVersionId, String operationName,
+                          String operationType, Integer connectionOperationId, String matchedOperationJson,
+                          String interfaceCode, String containerCode, String productAlias) {
     }
 
     private static final String INSERT_USECASE = """
@@ -62,11 +61,10 @@ public class UseCaseCanonicalRepository {
 
     private static final String SELECT_STEPS = """
             SELECT s.id, s.ext_uid, s.name, s.seq, s.scenario_type, s.call_status, s.step_type,
-                   s.operation_version_id, s.callee_operation_version_id, s.json_data::text AS json_data,
-                   ov.name AS callee_operation, i.uid AS callee_interface_code,
-                   c.uid AS callee_container_code, p.uid AS callee_product_code,
-                   cov.name AS caller_operation, ci.uid AS caller_interface_code,
-                   cc.uid AS caller_container_code, cp.uid AS caller_product_code
+                   s.json_data::text AS json_data, s.callee_operation_version_id,
+                   ov.name AS operation_name, ov.json_data ->> 'type' AS operation_type,
+                   ov.connection_operation_id, ov.json_data -> 'matched_operation' AS matched_operation,
+                   i.uid AS interface_code, c.uid AS container_code, p.uid AS product_alias
               FROM staging.usecase_step_versions s
               LEFT JOIN staging.operation_versions ov ON ov.id = s.callee_operation_version_id
               LEFT JOIN staging.interface_versions iv ON iv.id = ov.interface_version_id
@@ -75,22 +73,14 @@ public class UseCaseCanonicalRepository {
               LEFT JOIN staging.containers c ON c.id = cv.container_id
               LEFT JOIN staging.product_versions pv ON pv.id = cv.product_version_id
               LEFT JOIN staging.products p ON p.id = pv.product_id
-              LEFT JOIN staging.operation_versions cov ON cov.id = s.operation_version_id
-              LEFT JOIN staging.interface_versions civ ON civ.id = cov.interface_version_id
-              LEFT JOIN staging.interfaces ci ON ci.id = civ.interface_id
-              LEFT JOIN staging.container_versions ccv ON ccv.id = civ.container_version_id
-              LEFT JOIN staging.containers cc ON cc.id = ccv.container_id
-              LEFT JOIN staging.product_versions cpv ON cpv.id = ccv.product_version_id
-              LEFT JOIN staging.products cp ON cp.id = cpv.product_id
              WHERE s.usecase_version_id = ?
              ORDER BY s.seq, s.id
             """;
 
-    private static final String UPDATE_STEP_CALLEE = """
+    private static final String UPDATE_STEP_DECISION = """
             UPDATE staging.usecase_step_versions
-               SET callee_operation_version_id = ?,
-                   call_status = ?,
-                   json_data = COALESCE(json_data, '{}'::jsonb) || CAST(? AS jsonb)
+               SET call_status = ?,
+                   json_data = (COALESCE(json_data, '{}'::jsonb) - 'reason' - 'suggestion') || CAST(? AS jsonb)
              WHERE id = ?
             """;
 
@@ -102,17 +92,15 @@ public class UseCaseCanonicalRepository {
             rs.getString("scenario_type"),
             rs.getString("call_status"),
             rs.getString("step_type"),
-            (Long) rs.getObject("operation_version_id"),
-            (Long) rs.getObject("callee_operation_version_id"),
             rs.getString("json_data"),
-            rs.getString("callee_operation"),
-            rs.getString("callee_interface_code"),
-            rs.getString("callee_container_code"),
-            rs.getString("callee_product_code"),
-            rs.getString("caller_operation"),
-            rs.getString("caller_interface_code"),
-            rs.getString("caller_container_code"),
-            rs.getString("caller_product_code"));
+            (Long) rs.getObject("callee_operation_version_id"),
+            rs.getString("operation_name"),
+            rs.getString("operation_type"),
+            (Integer) rs.getObject("connection_operation_id"),
+            rs.getString("matched_operation"),
+            rs.getString("interface_code"),
+            rs.getString("container_code"),
+            rs.getString("product_alias"));
 
     private final JdbcTemplate stagingJdbcTemplate;
 
@@ -156,8 +144,8 @@ public class UseCaseCanonicalRepository {
         return stagingJdbcTemplate.query(SELECT_STEPS, STEP_MAPPER, usecaseVersionId);
     }
 
-    public int updateStepCallee(Long stepId, Long calleeOperationVersionId, String callStatus, String jsonPatch) {
-        return stagingJdbcTemplate.update(UPDATE_STEP_CALLEE,
-                calleeOperationVersionId, callStatus, jsonPatch == null ? "{}" : jsonPatch, stepId);
+    public int updateStepDecision(Long stepId, String callStatus, String jsonPatch) {
+        return stagingJdbcTemplate.update(UPDATE_STEP_DECISION,
+                callStatus, jsonPatch == null ? "{}" : jsonPatch, stepId);
     }
 }

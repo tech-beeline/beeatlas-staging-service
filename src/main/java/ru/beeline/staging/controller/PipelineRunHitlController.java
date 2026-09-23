@@ -68,13 +68,15 @@ public class PipelineRunHitlController {
 
     @PostMapping("/{runId}/decisions")
     @Operation(summary = "Принять решения по несмаппированным частям",
-            description = "Записывает решения map_existing (target: containerCode, interfaceCode) или create_new "
-                    + "(newRequest: productCode, containerName, interfaceName, protocol, note) по несмаппированным "
-                    + "частям контекста паузы, применяет их к канонической модели (фаза 2: связи шага и call_status "
-                    + "обновляются in-place) и переводит запуск в reviewing. Повторное решение по partId заменяет "
-                    + "предыдущее. 400 — некорректное решение (в том числе цель map_existing не найдена в ландшафте "
-                    + "или по одной части в запросе несколько решений), 404 — запуск или часть не найдены, "
-                    + "409 — запуск не в awaiting_review/reviewing.")
+            description = "Записывает решения по несопоставленным частям контекста паузы и применяет их "
+                    + "к канонической модели (фаза 2, ADR-029). target — шаг, записанный saver-ом "
+                    + "(stepVersionId, type, name, productAlias, interfaceCode); connectionOperation — операция "
+                    + "из fdm-products (id, operationType, operationName, interfaceCode, containerCode, "
+                    + "productAlias). type=map_existing — операция указана (call_status=architect_specified), "
+                    + "type=planned — архитектурной операции нет (call_status=planned). Запуск переводится "
+                    + "в reviewing; повторное решение по partId заменяет предыдущее. 400 — некорректное решение, "
+                    + "404 — запуск или часть не найдены, 409 — запуск не в awaiting_review/reviewing либо "
+                    + "контекст паузы устарел (stepVersionId или эхо не совпали).")
     @ApiResponses({
             @ApiResponse(responseCode = "202", description = "Решения приняты",
                     content = @Content(schema = @Schema(implementation = PipelineRunDecisionsResponse.class))),

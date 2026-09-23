@@ -10,8 +10,8 @@ public record ImportDecision(
         String partId,
         String decisionType,
         String targetJson,
-        String newRequestJson) {
+        String connectionOperationJson) {
 
     public static final String MAP_EXISTING = "map_existing";
-    public static final String CREATE_NEW = "create_new";
+    public static final String PLANNED = "planned";
 }

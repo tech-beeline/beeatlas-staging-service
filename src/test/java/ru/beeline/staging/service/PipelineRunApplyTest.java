@@ -12,7 +12,6 @@ import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
-import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -41,8 +40,7 @@ class PipelineRunApplyTest {
         pipelineExecutionService = mock(PipelineExecutionService.class);
         manualOperations = mock(ManualOperations.class);
         service = new PipelineHitlService(pipelineRunRepository, importDecisionRepository,
-                pipelineExecutionService, new SimpleMeterRegistry(), manualOperations,
-                mock(UseCaseLandscapeRepository.class), mock(RunBranchResolver.class));
+                pipelineExecutionService, new SimpleMeterRegistry(), manualOperations);
         when(importDecisionRepository.findByRunId(RUN_ID)).thenReturn(List.of());
         when(pipelineRunRepository.markApplying(RUN_ID)).thenReturn(1);
     }
@@ -102,12 +100,8 @@ class PipelineRunApplyTest {
         ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest.Decision decision =
                 new ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest.Decision();
         decision.setPartId("step-1");
-        decision.setType(ImportDecision.CREATE_NEW);
-        decision.setNewRequest(new ObjectMapper().createObjectNode()
-                .put("productCode", "fdmshowcaseapp")
-                .put("containerName", "Product Service")
-                .put("interfaceName", "API")
-                .put("protocol", "REST"));
+        decision.setType(ImportDecision.PLANNED);
+        decision.setTarget(new ObjectMapper().createObjectNode().put("stepVersionId", 1));
         request.setDecisions(List.of(decision));
         return request;
     }

@@ -18,6 +18,6 @@ public class PipelineRunDecisionsRequest {
         private String partId;
         private String type;
         private JsonNode target;
-        private JsonNode newRequest;
+        private JsonNode connectionOperation;
     }
 }

@@ -19,7 +19,6 @@ import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
-import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -44,7 +43,6 @@ class PipelineHitlServiceTest {
     private ImportDecisionRepository importDecisionRepository;
     private PipelineExecutionService pipelineExecutionService;
     private SimpleMeterRegistry meterRegistry;
-    private UseCaseLandscapeRepository landscapeRepository;
     private ManualOperations manualOperations;
     private PipelineHitlService service;
 
@@ -54,28 +52,21 @@ class PipelineHitlServiceTest {
         importDecisionRepository = mock(ImportDecisionRepository.class);
         pipelineExecutionService = mock(PipelineExecutionService.class);
         meterRegistry = new SimpleMeterRegistry();
-        landscapeRepository = mock(UseCaseLandscapeRepository.class);
         manualOperations = mock(ManualOperations.class);
-        RunBranchResolver runBranchResolver = mock(RunBranchResolver.class);
-        when(runBranchResolver.resolve(RUN_ID)).thenReturn("main");
-        when(landscapeRepository.findInterface("users_api.gw.BC-1", "gw.BC-1", "main")).thenReturn(Optional.of(
-                new UseCaseLandscapeRepository.LandscapeInterface(10L, "users_api.gw.BC-1", "gw.BC-1", "BC-1")));
         service = new PipelineHitlService(pipelineRunRepository, importDecisionRepository, pipelineExecutionService,
-                meterRegistry, manualOperations, landscapeRepository, runBranchResolver);
+                meterRegistry, manualOperations);
     }
 
     @Test
-    @DisplayName("map_existing с несуществующими в ландшафте кодами — 400, ничего не пишется")
-    void rejectsMapExistingToMissingTarget() {
+    @DisplayName("Решение без target.stepVersionId — 400, ничего не пишется")
+    void rejectsDecisionWithoutStepVersionId() {
         givenRun("awaiting_review");
         PipelineRunDecisionsRequest.Decision decision = mapExisting("P-02");
-        decision.setTarget(objectMapper.createObjectNode()
-                .put("containerCode", "auto_test_container_x")
-                .put("interfaceCode", "auto_test_interface_x"));
+        decision.setTarget(objectMapper.createObjectNode().put("type", "GET"));
 
         assertThatThrownBy(() -> service.decide(RUN_ID, request(decision)))
                 .isInstanceOf(PipelineRunBadRequestException.class)
-                .hasMessageContaining("auto_test_interface_x");
+                .hasMessageContaining("stepVersionId");
         verify(importDecisionRepository, never()).upsert(anyLong(), anyString(), anyString(), any(), any());
         verify(pipelineRunRepository, never()).markReviewing(anyLong());
     }
@@ -157,8 +148,9 @@ class PipelineHitlServiceTest {
 
         PipelineRunDecisionsResponse response = service.decide(RUN_ID, request(mapExisting("P-02")));
 
-        verify(importDecisionRepository).upsert(RUN_ID, "P-02", "map_existing",
-                "{\"containerCode\":\"gw.BC-1\",\"interfaceCode\":\"users_api.gw.BC-1\"}", null);
+        verify(importDecisionRepository).upsert(eq(RUN_ID), eq("P-02"), eq("map_existing"),
+                org.mockito.ArgumentMatchers.contains("stepVersionId"),
+                org.mockito.ArgumentMatchers.contains("555"));
         assertThat(response.status()).isEqualTo("reviewing");
         assertThat(response.applied()).isEqualTo(1);
         assertThat(response.remaining()).isEqualTo(1);
@@ -175,17 +167,18 @@ class PipelineHitlServiceTest {
         ArgumentCaptor<ImportDecision> applied = ArgumentCaptor.forClass(ImportDecision.class);
         verify(manualOperations).applyDecision(eq("usecase"), eq(RUN_ID), applied.capture());
         assertThat(applied.getValue().partId()).isEqualTo("P-02");
-        assertThat(applied.getValue().targetJson()).contains("users_api.gw.BC-1");
+        assertThat(applied.getValue().targetJson()).contains("stepVersionId");
+        assertThat(applied.getValue().connectionOperationJson()).contains("555");
     }
 
     @Test
-    @DisplayName("create_new без interfaceName — 400, ничего не пишется")
-    void rejectsIncompleteCreateNew() {
+    @DisplayName("map_existing без connectionOperation.id — 400, ничего не пишется")
+    void rejectsMapExistingWithoutConnection() {
         givenRun("awaiting_review");
         PipelineRunDecisionsRequest.Decision decision = new PipelineRunDecisionsRequest.Decision();
         decision.setPartId("P-03");
-        decision.setType("create_new");
-        decision.setNewRequest(objectMapper.createObjectNode().put("productCode", "BC-9").put("containerName", "Pay"));
+        decision.setType("map_existing");
+        decision.setTarget(objectMapper.createObjectNode().put("stepVersionId", 2));
 
         assertThatThrownBy(() -> service.decide(RUN_ID, request(decision)))
                 .isInstanceOf(PipelineRunBadRequestException.class);
@@ -230,7 +223,7 @@ class PipelineHitlServiceTest {
         givenRun("reviewing");
         when(importDecisionRepository.findByRunId(RUN_ID)).thenReturn(List.of(
                 new ImportDecision(1L, RUN_ID, "P-02", "map_existing", "{}", null),
-                new ImportDecision(2L, RUN_ID, "P-03", "create_new", null, "{}")));
+                new ImportDecision(2L, RUN_ID, "P-03", "planned", "{}", null)));
         when(pipelineRunRepository.markApplying(RUN_ID)).thenReturn(1);
 
         ApplyPipelineRunResponse response = service.apply(RUN_ID, "ок, применяю");
@@ -261,8 +254,13 @@ class PipelineHitlServiceTest {
         decision.setPartId(partId);
         decision.setType("map_existing");
         decision.setTarget(objectMapper.createObjectNode()
-                .put("containerCode", "gw.BC-1")
-                .put("interfaceCode", "users_api.gw.BC-1"));
+                .put("stepVersionId", 2)
+                .put("type", "GET")
+                .put("name", "/users"));
+        decision.setConnectionOperation(objectMapper.createObjectNode()
+                .put("id", 555)
+                .put("operationType", "GET")
+                .put("operationName", "/users"));
         return decision;
     }
 

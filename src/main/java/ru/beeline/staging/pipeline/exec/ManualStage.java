@@ -54,6 +54,13 @@ public class ManualStage implements ArtifactPipelineStage {
                 pipelineRunService.completeStage(stageLogId, "decision=accepted", null);
                 return;
             }
+            if (!manualOperations.reviewable(type, runId)) {
+                pipelineRunRepository.advanceStage(runId, run.getStatus());
+                log.info("stage=manual, uid={} — прогон ничего не записал в канон, пауза не требуется",
+                        run.getArtifactUid());
+                pipelineRunService.completeStage(stageLogId, "decision=not_required", null);
+                return;
+            }
             int unmapped = manualOperations.unmappedParts(type, runId).size();
             pipelineRunRepository.pause(runId, PipelineDefinitions.PAUSE_STATUS);
             log.info("stage=manual, uid={} — run {} ожидает решения пользователя в статусе {}, несмаппировано {}",

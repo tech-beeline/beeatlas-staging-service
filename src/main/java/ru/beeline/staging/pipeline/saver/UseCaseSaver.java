@@ -10,17 +10,22 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ArtifactBatch;
+import ru.beeline.staging.domain.canonical.ContainerVersion;
+import ru.beeline.staging.domain.canonical.InterfaceVersion;
+import ru.beeline.staging.domain.canonical.OperationVersion;
+import ru.beeline.staging.domain.canonical.ProductVersion;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.SaveResult;
-import ru.beeline.staging.dto.usecase.UseCaseDraft;
+import ru.beeline.staging.pipeline.transformer.E2ESequenceSnapshot;
+import ru.beeline.staging.pipeline.transformer.UseCaseSnapshot;
 import ru.beeline.staging.repository.UseCaseCanonicalRepository;
 import ru.beeline.staging.repository.UseCaseCanonicalRepository.StepVersionRow;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository;
-import ru.beeline.staging.repository.UseCaseLandscapeRepository.LandscapeOperation;
 import ru.beeline.staging.service.PipelineRunService;
 import ru.beeline.staging.service.RunBranchResolver;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,11 +37,16 @@ public class UseCaseSaver implements ArtifactSaver {
 
     public static final String MODULE_CODE = "usecase-saver";
     public static final String UNMAPPED_SIDE = "match.usecase_step.unmapped_side";
+    public static final String CALL_STATUS_CONFIRMED = "confirmed";
 
-    private static final String SUGGESTION = "map_existing | create_new";
+    private static final String SUGGESTION = "map_existing | planned";
 
     private final UseCaseCanonicalRepository canonicalRepository;
     private final UseCaseLandscapeRepository landscapeRepository;
+    private final ProductMatchService        productMatchService;
+    private final ContainerMatchService      containerMatchService;
+    private final InterfaceMatchService      interfaceMatchService;
+    private final OperationMatchService      operationMatchService;
     private final PipelineRunService         pipelineRunService;
     private final RunBranchResolver          runBranchResolver;
     private final ObjectMapper               objectMapper;
@@ -45,7 +55,9 @@ public class UseCaseSaver implements ArtifactSaver {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Writes the UseCase and its steps to the canonical model (phase 1)"; }
+    public String description() {
+        return "Writes the UseCase, its calls and steps to the canonical model (phase 1)";
+    }
 
     @Override
     @Transactional
@@ -54,87 +66,108 @@ public class UseCaseSaver implements ArtifactSaver {
         if (canonicalSnapshotJson == null || canonicalSnapshotJson.isBlank()) {
             throw new IllegalStateException("canonical_snapshot_json is empty for usecase run " + runId);
         }
-        UseCaseDraft snapshot = objectMapper.readValue(canonicalSnapshotJson, UseCaseDraft.class);
+        UseCaseSnapshot snapshot = objectMapper.readValue(canonicalSnapshotJson, UseCaseSnapshot.class);
+        E2ESequenceSnapshot entities = snapshot.getEntities();
         String branch = runBranchResolver.resolve(runId);
-        UseCaseDraft.Header header = snapshot.usecase() != null
-                ? snapshot.usecase() : new UseCaseDraft.Header(artifactUid, null, null, null);
+        UseCaseSnapshot.Header header = snapshot.getUsecase() != null ? snapshot.getUsecase()
+                : new UseCaseSnapshot.Header();
 
-        Long usecaseId = canonicalRepository.findOrCreateUseCase(artifactUid, header.projectCode());
-        Long biStepVersionId = header.biStepCode() == null ? null
-                : landscapeRepository.findBiStepVersionId(header.biStepCode(), branch).orElse(null);
-        ArtifactBatch batch = pipelineRunService.createBatch(artifactUid, artifactType, runId, rawDataRefId, 0, 0, 0);
+        ArtifactBatch batch = pipelineRunService.createBatch(artifactUid, artifactType, runId, rawDataRefId,
+                0, entities.getInterfaces().size(), entities.getOperations().size(),
+                entities.getProducts().size(), entities.getContainers().size());
+        Long batchId = batch.getId();
+
+        Map<String, OperationVersion> operationsByExtUid =
+                saveEntities(entities, rawDataRefId, batchId, branch);
+
+        Long usecaseId = canonicalRepository.findOrCreateUseCase(artifactUid, header.getProjectCode());
+        Long biStepVersionId = header.getBiStepCode() == null ? null
+                : landscapeRepository.findBiStepVersionId(header.getBiStepCode(), branch).orElse(null);
 
         Map<String, Object> usecaseAttributes = new LinkedHashMap<>();
-        usecaseAttributes.put("code", header.code());
-        usecaseAttributes.put("bi_step_code", header.biStepCode());
+        usecaseAttributes.put("code", header.getCode());
+        usecaseAttributes.put("bi_step_code", header.getBiStepCode());
         Long usecaseVersionId = canonicalRepository.insertUseCaseVersion(usecaseId, biStepVersionId, runId,
-                artifactUid, header.name(), header.projectCode(), branch, json(usecaseAttributes));
+                artifactUid, header.getName(), header.getProjectCode(), branch, json(usecaseAttributes));
 
         List<ArtifactNotice> notices = new ArrayList<>();
-        int stepsSaved = 0;
-        int unmapped = 0;
-
-        for (UseCaseDraft.MappedPart part : snapshot.mappedOrEmpty()) {
-            LandscapeOperation callee = operationOf(part.operation(), part.interfaceCode(), branch);
-            UseCaseDraft.Side callerSide = part.caller();
-            LandscapeOperation caller = callerSide == null ? null
-                    : operationOf(callerSide.operation(), callerSide.interfaceCode(), branch);
+        int unmatched = 0;
+        for (UseCaseSnapshot.Step step : snapshot.getSteps()) {
+            OperationVersion callee = operationsByExtUid.get(step.getCalleeOperationExtUid());
+            OperationVersion caller = operationsByExtUid.get(step.getCallerOperationExtUid());
+            boolean matched = callee != null && callee.getConnectionOperationId() != null;
 
             Map<String, Object> attributes = new LinkedHashMap<>();
-            attributes.put("operation_code", part.operation());
-            attributes.put("interface_code", part.interfaceCode());
-            attributes.put("container_code", part.container());
-            attributes.put("tc_code", part.tcCode());
-            attributes.put("sequence_code", part.sequenceCode());
-            attributes.put("dynamic_diagram_url", part.dynamicDiagramUrl());
-            attributes.put("bi_step_code", header.biStepCode());
-            if (callee == null) {
-                unmapped++;
-                attributes.put("reason", "Операция " + part.operation() + " не найдена в ландшафте ветки " + branch);
+            attributes.put("operation_code", step.getOperationName());
+            attributes.put("operation_type", step.getOperationType());
+            attributes.put("interface_code", step.getInterfaceCode());
+            attributes.put("container_code", step.getProductAlias());
+            attributes.put("product_alias", step.getProductAlias());
+            attributes.put("bi_step_code", header.getBiStepCode());
+            if (!matched) {
+                unmatched++;
+                attributes.put("reason", step.getReason());
                 attributes.put("suggestion", SUGGESTION);
-                notices.add(unmappedNotice(rawDataRefId, artifactUid, part.partId(),
-                        (String) attributes.get("reason")));
+                notices.add(unmappedNotice(rawDataRefId, artifactUid, step.getPartId(), step.getReason()));
             }
 
             canonicalRepository.insertStepVersion(new StepVersionRow(usecaseVersionId,
-                    caller == null ? null : caller.operationVersionId(),
-                    callee == null ? null : callee.operationVersionId(),
-                    part.partId(), part.name(), part.seq(), part.scenarioType(),
-                    callee == null ? null : UseCaseDraft.CALL_STATUS_CONFIRMED,
-                    part.stepType(), branch, json(attributes)));
-            stepsSaved++;
-        }
-
-        for (UseCaseDraft.UnmappedPart part : snapshot.unmappedOrEmpty()) {
-            Map<String, Object> attributes = new LinkedHashMap<>();
-            attributes.put("reason", part.reason());
-            attributes.put("participants", part.participants());
-            attributes.put("suggestion", part.suggestion() == null ? SUGGESTION : part.suggestion());
-            attributes.put("bi_step_code", header.biStepCode());
-
-            canonicalRepository.insertStepVersion(new StepVersionRow(usecaseVersionId, null, null,
-                    part.partId(), part.name(), part.seq(), part.scenarioType(), null, part.stepType(),
-                    branch, json(attributes)));
-            notices.add(unmappedNotice(rawDataRefId, artifactUid, part.partId(), part.reason()));
-            stepsSaved++;
-            unmapped++;
+                    caller != null ? caller.getId() : null,
+                    callee != null ? callee.getId() : null,
+                    step.getPartId(), step.getName(), step.getSeq(), step.getScenarioType(),
+                    matched ? CALL_STATUS_CONFIRMED : null, step.getStepType(), branch, json(attributes)));
         }
 
         pipelineRunService.saveNotices(rawDataRefId, notices);
 
-        log.info("Saved usecase uid={} run={} branch={}: usecaseVersionId={} steps={} unmapped={}",
-                artifactUid, runId, branch, usecaseVersionId, stepsSaved, unmapped);
+        log.info("Saved usecase uid={} run={} branch={}: usecaseVersionId={} steps={} unmatched={} operations={}",
+                artifactUid, runId, branch, usecaseVersionId, snapshot.getSteps().size(), unmatched,
+                operationsByExtUid.size());
         return SaveResult.of(Map.of(
-                "batchId", batch.getId(),
+                "batchId", batchId,
                 "usecaseId", usecaseId,
                 "usecaseVersionId", usecaseVersionId,
-                "stepsSaved", stepsSaved,
-                "unmapped", unmapped));
+                "stepsSaved", snapshot.getSteps().size(),
+                "unmatched", unmatched));
     }
 
-    private LandscapeOperation operationOf(String operationCode, String interfaceCode, String branch) {
-        return operationCode == null ? null
-                : landscapeRepository.findOperationByCode(operationCode, interfaceCode, branch).orElse(null);
+    private Map<String, OperationVersion> saveEntities(E2ESequenceSnapshot entities, long rawDataRefId,
+                                                       Long batchId, String branch) {
+        Map<String, ProductVersion> productsByUid = new HashMap<>();
+        for (E2ESequenceSnapshot.ProductDraft draft : entities.getProducts()) {
+            productsByUid.put(draft.getUid(), productMatchService.matchOrCreate(draft.getUid(), draft.getExtUid(),
+                    draft.getName(), null, null, draft.getContext(), rawDataRefId, batchId, branch));
+        }
+
+        Map<String, ContainerVersion> containersByUid = new HashMap<>();
+        for (E2ESequenceSnapshot.ContainerDraft draft : entities.getContainers()) {
+            ProductVersion product = productsByUid.get(draft.getProductUid());
+            containersByUid.put(draft.getUid(), containerMatchService.matchOrCreate(draft.getUid(), draft.getExtUid(),
+                    draft.getName(), null, null, null, product != null ? product.getId() : null,
+                    draft.getContext(), rawDataRefId, batchId, branch));
+        }
+
+        Map<String, InterfaceVersion> interfacesByUid = new HashMap<>();
+        for (E2ESequenceSnapshot.InterfaceDraft draft : entities.getInterfaces()) {
+            ContainerVersion container = draft.getContainerUid() != null
+                    ? containersByUid.get(draft.getContainerUid()) : null;
+            interfacesByUid.put(draft.getUid(), interfaceMatchService.matchOrCreate(draft.getUid(), draft.getExtUid(),
+                    draft.getProtocol(), draft.getName(), null, null, null, null,
+                    container != null ? container.getId() : null,
+                    draft.getContext(), rawDataRefId, batchId, branch));
+        }
+
+        Map<String, OperationVersion> operationsByExtUid = new HashMap<>();
+        for (E2ESequenceSnapshot.OperationDraft draft : entities.getOperations()) {
+            InterfaceVersion iface = draft.getInterfaceUid() != null
+                    ? interfacesByUid.get(draft.getInterfaceUid()) : null;
+            operationsByExtUid.put(draft.getExtUid(), operationMatchService.matchOrCreate(
+                    draft.getExtUid(), draft.getExtUid(), draft.getName(), draft.getType(),
+                    draft.getRps(), draft.getLatency(), draft.getErrorRate(), null, null, null,
+                    iface, draft.getContext(), rawDataRefId, batchId, branch,
+                    draft.getConnectionOperationId(), draft.getMatchedOperation()));
+        }
+        return operationsByExtUid;
     }
 
     private ArtifactNotice unmappedNotice(long rawDataRefId, String artifactUid, String partId, String reason) {
@@ -143,7 +176,7 @@ public class UseCaseSaver implements ArtifactSaver {
         details.put("reason", reason);
         details.put("suggestion", SUGGESTION);
         return new ArtifactNotice(null, null, UNMAPPED_SIDE, "warning", "match", rawDataRefId,
-                "usecase_step", partId, null, "Сторона вызова не смаппирована — требуется решение",
+                "usecase_step", partId, null, "Шаг не сопоставлен с архитектурной операцией — требуется решение",
                 json(details), null, null, artifactUid, null);
     }
 

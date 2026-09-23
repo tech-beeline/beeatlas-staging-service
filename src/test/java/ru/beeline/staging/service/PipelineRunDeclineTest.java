@@ -11,7 +11,6 @@ import ru.beeline.staging.exception.PipelineRunNotFoundException;
 import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
-import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 
 import java.util.Optional;
 
@@ -35,8 +34,7 @@ class PipelineRunDeclineTest {
         pipelineRunRepository = mock(PipelineRunRepository.class);
         pipelineExecutionService = mock(PipelineExecutionService.class);
         service = new PipelineHitlService(pipelineRunRepository, mock(ImportDecisionRepository.class),
-                pipelineExecutionService, new SimpleMeterRegistry(), mock(ManualOperations.class),
-                mock(UseCaseLandscapeRepository.class), mock(RunBranchResolver.class));
+                pipelineExecutionService, new SimpleMeterRegistry(), mock(ManualOperations.class));
     }
 
     @Test

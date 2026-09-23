@@ -49,6 +49,11 @@ public class ManualOperations {
         return handler == null ? null : handler.pauseContext(runId);
     }
 
+    public boolean reviewable(String artifactType, Long runId) {
+        ArtifactManualOperations handler = registry.get(artifactType);
+        return handler == null || handler.pauseContext(runId) != null;
+    }
+
     public List<String> unmappedParts(String artifactType, Long runId) {
         ArtifactManualOperations handler = registry.get(artifactType);
         return handler == null ? List.of() : handler.unmappedParts(runId);

@@ -43,6 +43,7 @@ class ManualAndPublisherStageTest {
         pipelineRunRepository = mock(PipelineRunRepository.class);
         manualOperations = mock(ManualOperations.class);
         when(pipelineRunService.startStage(anyLong(), anyString(), any())).thenReturn(5L);
+        when(manualOperations.reviewable(anyString(), anyLong())).thenReturn(true);
     }
 
     @Test
@@ -65,6 +66,19 @@ class ManualAndPublisherStageTest {
 
         verify(pipelineRunRepository, never()).pause(anyLong(), anyString());
         verify(pipelineRunService).completeStage(5L, "decision=accepted", null);
+    }
+
+    @Test
+    @DisplayName("Прогон ничего не записал в канон — пауза не нужна, цепочка идёт дальше")
+    void manualStageSkipsThePauseWhenThereIsNothingToReview() {
+        givenRun("usecase", "saving");
+        when(manualOperations.reviewable("usecase", RUN_ID)).thenReturn(false);
+
+        manualStage().execute(RUN_ID);
+
+        verify(pipelineRunRepository, never()).pause(anyLong(), anyString());
+        verify(pipelineRunRepository).advanceStage(RUN_ID, "saving");
+        verify(pipelineRunService).completeStage(5L, "decision=not_required", null);
     }
 
     @Test

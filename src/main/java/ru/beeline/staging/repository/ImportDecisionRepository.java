@@ -16,7 +16,7 @@ public class ImportDecisionRepository {
 
     private static final String SELECT_BY_RUN = """
             SELECT id, run_id, part_id, decision_type, target_json::text AS target_json,
-                   new_request_json::text AS new_request_json
+                   connection_operation_json::text AS connection_operation_json
               FROM staging.import_decisions
              WHERE run_id = ?
              ORDER BY id
@@ -24,12 +24,12 @@ public class ImportDecisionRepository {
 
     private static final String UPSERT = """
             INSERT INTO staging.import_decisions
-                   (run_id, part_id, decision_type, target_json, new_request_json, created_at, updated_at)
+                   (run_id, part_id, decision_type, target_json, connection_operation_json, created_at, updated_at)
             VALUES (?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb), now(), now())
             ON CONFLICT (run_id, part_id) DO UPDATE
                SET decision_type = EXCLUDED.decision_type,
                    target_json = EXCLUDED.target_json,
-                   new_request_json = EXCLUDED.new_request_json,
+                   connection_operation_json = EXCLUDED.connection_operation_json,
                    updated_at = now()
             """;
 
@@ -46,10 +46,10 @@ public class ImportDecisionRepository {
                 rs.getString("part_id"),
                 rs.getString("decision_type"),
                 rs.getString("target_json"),
-                rs.getString("new_request_json")), runId);
+                rs.getString("connection_operation_json")), runId);
     }
 
-    public void upsert(Long runId, String partId, String decisionType, String targetJson, String newRequestJson) {
-        stagingJdbcTemplate.update(UPSERT, runId, partId, decisionType, targetJson, newRequestJson);
+    public void upsert(Long runId, String partId, String decisionType, String targetJson, String connectionJson) {
+        stagingJdbcTemplate.update(UPSERT, runId, partId, decisionType, targetJson, connectionJson);
     }
 }

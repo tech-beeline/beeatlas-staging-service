@@ -12,12 +12,10 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
-import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 import ru.beeline.staging.service.PipelineExecutionService;
 import ru.beeline.staging.service.PipelineHitlService;
 import ru.beeline.staging.service.PipelineRunAccessGuard;
 import ru.beeline.staging.service.PipelineRunImportService;
-import ru.beeline.staging.service.RunBranchResolver;
 
 import java.util.List;
 import java.util.Optional;
@@ -45,8 +43,7 @@ class PipelineRunCancelEndpointTest {
         PipelineRunHitlController controller = new PipelineRunHitlController(
                 mock(PipelineRunImportService.class),
                 new PipelineHitlService(pipelineRunRepository, mock(ImportDecisionRepository.class),
-                        mock(PipelineExecutionService.class), new SimpleMeterRegistry(), manualOperations,
-                        mock(UseCaseLandscapeRepository.class), mock(RunBranchResolver.class)),
+                        mock(PipelineExecutionService.class), new SimpleMeterRegistry(), manualOperations),
                 new PipelineRunAccessGuard(pipelineRunRepository, mock(ru.beeline.staging.client.AuthUserClient.class)));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new PipelineRunImportExceptionHandler())
@@ -120,8 +117,9 @@ class PipelineRunCancelEndpointTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .accept(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"decisions": [{"partId": "P-02", "type": "create_new",
-                                  "newRequest": {"productCode": "BC-9", "containerName": "Pay", "interfaceName": "pay_api"}}]}
+                                {"decisions": [{"partId": "P-02", "type": "map_existing",
+                                  "target": {"stepVersionId": 2, "type": "GET", "name": "/users"},
+                                  "connectionOperation": {"id": 555, "operationType": "GET", "operationName": "/users"}}]}
                                 """))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("reviewing"))

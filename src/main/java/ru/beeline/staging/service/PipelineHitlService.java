@@ -24,7 +24,6 @@ import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
 import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
-import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -49,8 +48,6 @@ public class PipelineHitlService {
     private final PipelineExecutionService pipelineExecutionService;
     private final MeterRegistry meterRegistry;
     private final ManualOperations manualOperations;
-    private final UseCaseLandscapeRepository landscapeRepository;
-    private final RunBranchResolver runBranchResolver;
 
     public CancelPipelineRunResponse cancel(Long runId, String reason) {
         PipelineRun run = requireRun(runId);
@@ -74,10 +71,9 @@ public class PipelineHitlService {
         if (decisions.isEmpty()) {
             throw new PipelineRunBadRequestException("Поле decisions обязательно и не должно быть пустым");
         }
+        requireReviewStatus(run, "принимать решения");
         decisions.forEach(this::validateDecision);
         requireDistinctParts(decisions);
-        requireExistingTargets(runId, decisions);
-        requireReviewStatus(run, "принимать решения");
 
         Set<String> decidableParts = decidablePartsOf(run);
         for (PipelineRunDecisionsRequest.Decision decision : decisions) {
@@ -88,13 +84,13 @@ public class PipelineHitlService {
         }
 
         for (PipelineRunDecisionsRequest.Decision decision : decisions) {
-            boolean mapExisting = ImportDecision.MAP_EXISTING.equals(decision.getType());
             String partId = decision.getPartId().trim();
-            String targetJson = mapExisting ? decision.getTarget().toString() : null;
-            String newRequestJson = mapExisting ? null : decision.getNewRequest().toString();
-            importDecisionRepository.upsert(runId, partId, decision.getType(), targetJson, newRequestJson);
+            String targetJson = decision.getTarget() == null ? null : decision.getTarget().toString();
+            String connectionJson = decision.getConnectionOperation() == null
+                    ? null : decision.getConnectionOperation().toString();
+            importDecisionRepository.upsert(runId, partId, decision.getType(), targetJson, connectionJson);
             manualOperations.applyDecision(run.getArtifactType(), runId,
-                    new ImportDecision(null, runId, partId, decision.getType(), targetJson, newRequestJson));
+                    new ImportDecision(null, runId, partId, decision.getType(), targetJson, connectionJson));
         }
         if (pipelineRunRepository.markReviewing(runId) == 0) {
             throw conflict(runId, run, "нельзя принимать решения");
@@ -154,21 +150,18 @@ public class PipelineHitlService {
         if (decision == null || decision.getPartId() == null || decision.getPartId().isBlank()) {
             throw new PipelineRunBadRequestException("Поле decisions[].partId обязательно");
         }
+        if (!hasNumber(decision.getTarget(), "stepVersionId")) {
+            throw new PipelineRunBadRequestException("Поле decisions[].target.stepVersionId обязательно: partId="
+                    + decision.getPartId());
+        }
         if (ImportDecision.MAP_EXISTING.equals(decision.getType())) {
-            if (!hasText(decision.getTarget(), "containerCode") || !hasText(decision.getTarget(), "interfaceCode")) {
-                throw new PipelineRunBadRequestException("Для map_existing требуются target.containerCode и "
-                        + "target.interfaceCode: partId=" + decision.getPartId());
+            if (!hasNumber(decision.getConnectionOperation(), "id")) {
+                throw new PipelineRunBadRequestException("Для map_existing требуется connectionOperation.id: partId="
+                        + decision.getPartId());
             }
-        } else if (ImportDecision.CREATE_NEW.equals(decision.getType())) {
-            JsonNode request = decision.getNewRequest();
-            if (!hasText(request, "productCode") || !hasText(request, "containerName")
-                    || !hasText(request, "interfaceName")) {
-                throw new PipelineRunBadRequestException("Для create_new требуются newRequest.productCode, "
-                        + "containerName и interfaceName: partId=" + decision.getPartId());
-            }
-        } else {
+        } else if (!ImportDecision.PLANNED.equals(decision.getType())) {
             throw new PipelineRunBadRequestException("Недопустимый тип решения " + decision.getType()
-                    + ": допустимы map_existing, create_new");
+                    + ": допустимы map_existing, planned");
         }
     }
 
@@ -178,21 +171,6 @@ public class PipelineHitlService {
             if (!seen.add(decision.getPartId().trim())) {
                 throw new PipelineRunBadRequestException(
                         "Повторное решение по одной части в запросе: partId=" + decision.getPartId().trim());
-            }
-        }
-    }
-
-    private void requireExistingTargets(Long runId, List<PipelineRunDecisionsRequest.Decision> decisions) {
-        String branch = runBranchResolver.resolve(runId);
-        for (PipelineRunDecisionsRequest.Decision decision : decisions) {
-            if (!ImportDecision.MAP_EXISTING.equals(decision.getType())) {
-                continue;
-            }
-            String containerCode = decision.getTarget().get("containerCode").asText().trim();
-            String interfaceCode = decision.getTarget().get("interfaceCode").asText().trim();
-            if (landscapeRepository.findInterface(interfaceCode, containerCode, branch).isEmpty()) {
-                throw new PipelineRunBadRequestException("Цель map_existing не найдена в ландшафте: containerCode="
-                        + containerCode + " interfaceCode=" + interfaceCode + " partId=" + decision.getPartId());
             }
         }
     }
@@ -226,7 +204,7 @@ public class PipelineHitlService {
         return new PipelineRunConflictException("Запуск в статусе " + status + " — " + action + ": runId=" + runId);
     }
 
-    private static boolean hasText(JsonNode node, String field) {
-        return node != null && node.hasNonNull(field) && !node.get(field).asText().isBlank();
+    private static boolean hasNumber(JsonNode node, String field) {
+        return node != null && node.hasNonNull(field) && node.get(field).isNumber();
     }
 }
