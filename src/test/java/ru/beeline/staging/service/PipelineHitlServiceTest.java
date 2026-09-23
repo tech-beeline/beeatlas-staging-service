@@ -243,6 +243,45 @@ class PipelineHitlServiceTest {
                 .hasMessageContaining("completed");
     }
 
+    @Test
+    @DisplayName("planned с переданной архитектурной операцией — 400, ничего не пишется")
+    void rejectsPlannedWithConnectionOperation() {
+        givenRun("awaiting_review");
+        PipelineRunDecisionsRequest.Decision decision = planned("P-02");
+        decision.setConnectionOperation(objectMapper.createObjectNode().put("id", 555));
+
+        assertThatThrownBy(() -> service.decide(RUN_ID, request(decision)))
+                .isInstanceOf(PipelineRunBadRequestException.class)
+                .hasMessageContaining("planned");
+        verify(importDecisionRepository, never()).upsert(anyLong(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("planned без операции — связь в решении остаётся пустой")
+    void storesPlannedWithoutConnection() {
+        givenRun("awaiting_review");
+        when(pipelineRunRepository.markReviewing(RUN_ID)).thenReturn(1);
+        PipelineRunDecisionsRequest.Decision decision = planned("P-02");
+        decision.setConnectionOperation(objectMapper.createObjectNode());
+
+        service.decide(RUN_ID, request(decision));
+
+        verify(importDecisionRepository).upsert(eq(RUN_ID), eq("P-02"), eq("planned"),
+                org.mockito.ArgumentMatchers.contains("stepVersionId"),
+                org.mockito.ArgumentMatchers.isNull());
+    }
+
+    private PipelineRunDecisionsRequest.Decision planned(String partId) {
+        PipelineRunDecisionsRequest.Decision decision = new PipelineRunDecisionsRequest.Decision();
+        decision.setPartId(partId);
+        decision.setType("planned");
+        decision.setTarget(objectMapper.createObjectNode()
+                .put("stepVersionId", 2)
+                .put("type", "GET")
+                .put("name", "/users"));
+        return decision;
+    }
+
     private PipelineRunDecisionsRequest request(PipelineRunDecisionsRequest.Decision decision) {
         PipelineRunDecisionsRequest request = new PipelineRunDecisionsRequest();
         request.setDecisions(List.of(decision));

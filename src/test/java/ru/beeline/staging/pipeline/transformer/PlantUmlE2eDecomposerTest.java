@@ -58,6 +58,14 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
+    @DisplayName("Код интерфейса — всегда 8 hex-символов, ведущий ноль не теряется")
+    void padsTheInterfaceCode() {
+        assertThat(PlantUmlE2eDecomposer.interfaceCode("POST", "/api/v1/sequence")).isEqualTo("033d51b4");
+        assertThat(PlantUmlE2eDecomposer.interfaceCode("GET", "/api/v1/calls/")).hasSize(8);
+        assertThat(PlantUmlE2eDecomposer.interfaceCode("POST", "/chat/completions")).hasSize(8);
+    }
+
+    @Test
     @DisplayName("Контекст паузы несёт участников, стороны вызова и подписи — того, чего нет в каноне")
     void buildsThePauseContext() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);

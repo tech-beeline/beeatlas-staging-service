@@ -389,7 +389,7 @@ public class PlantUmlE2eDecomposer {
     static String interfaceCode(String method, String path) {
         CRC32 crc32 = new CRC32();
         crc32.update((method + path).getBytes(StandardCharsets.UTF_8));
-        return Long.toHexString(crc32.getValue());
+        return String.format("%08x", crc32.getValue());
     }
 
     static String truncate(String value) {

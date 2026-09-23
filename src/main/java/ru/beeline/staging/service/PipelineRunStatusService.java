@@ -33,7 +33,8 @@ public class PipelineRunStatusService {
     public static final String WAIT_FOR_TERMINAL = "terminal";
 
     private static final Set<String> WAIT_FOR_VALUES = Set.of("awaiting_review", "completed", WAIT_FOR_TERMINAL);
-    private static final Set<String> TERMINAL_STATUSES = Set.of("completed", "failed", "cancelled");
+    private static final Set<String> TERMINAL_STATUSES =
+            Set.of("completed", "failed", "cancelled", "completed_without_publish");
     private static final long DEFERRED_RESULT_GRACE_MS = 1000;
 
     private final PipelineRunStatusRepository statusRepository;

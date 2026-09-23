@@ -87,6 +87,7 @@ public class PipelineHitlService {
             String partId = decision.getPartId().trim();
             String targetJson = decision.getTarget() == null ? null : decision.getTarget().toString();
             String connectionJson = decision.getConnectionOperation() == null
+                    || ImportDecision.PLANNED.equals(decision.getType())
                     ? null : decision.getConnectionOperation().toString();
             importDecisionRepository.upsert(runId, partId, decision.getType(), targetJson, connectionJson);
             manualOperations.applyDecision(run.getArtifactType(), runId,
@@ -159,7 +160,12 @@ public class PipelineHitlService {
                 throw new PipelineRunBadRequestException("Для map_existing требуется connectionOperation.id: partId="
                         + decision.getPartId());
             }
-        } else if (!ImportDecision.PLANNED.equals(decision.getType())) {
+        } else if (ImportDecision.PLANNED.equals(decision.getType())) {
+            if (hasNumber(decision.getConnectionOperation(), "id")) {
+                throw new PipelineRunBadRequestException("Для planned архитектурная операция не передаётся: partId="
+                        + decision.getPartId() + " — используйте map_existing");
+            }
+        } else {
             throw new PipelineRunBadRequestException("Недопустимый тип решения " + decision.getType()
                     + ": допустимы map_existing, planned");
         }

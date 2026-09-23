@@ -56,7 +56,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     }
 
     @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
-           "AND r.status <> 'awaiting_review' AND r.status <> 'reviewing' AND r.status <> 'applying' " +
+           "AND r.status <> 'awaiting_review' AND r.status <> 'reviewing' " +
            "AND r.status <> 'completed_without_publish' " +
            "AND (r.ownerId IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
     List<PipelineRun> findResumeCandidates(@Param("now") LocalDateTime now, Pageable pageable);
@@ -65,7 +65,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     List<PipelineRun> findFailedRetryable(@Param("maxRetries") int maxRetries, Pageable pageable);
 
     @Query("SELECT r FROM PipelineRun r WHERE r.status <> 'completed' AND r.status <> 'failed' AND r.status <> 'cancelled' " +
-           "AND r.status <> 'awaiting_review' AND r.status <> 'reviewing' AND r.status <> 'applying' " +
+           "AND r.status <> 'awaiting_review' AND r.status <> 'reviewing' " +
            "AND r.status <> 'completed_without_publish' " +
            "AND r.resumeCount >= :maxResumeAttempts " +
            "AND (r.leaseExpiresAt IS NULL OR r.leaseExpiresAt < :now) ORDER BY r.startedAt ASC")
@@ -123,7 +123,7 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
     @Modifying(clearAutomatically = true)
     @Query("UPDATE PipelineRun r SET r.status = 'cancelled', r.completedAt = CURRENT_TIMESTAMP, r.failureReason = :reason, " +
            "r.ownerId = NULL, r.leaseExpiresAt = NULL " +
-           "WHERE r.id = :id AND r.status NOT IN ('completed', 'failed', 'cancelled', 'saving', 'publishing', 'applying')")
+           "WHERE r.id = :id AND r.status NOT IN ('completed', 'failed', 'cancelled', 'completed_without_publish', 'saving', 'publishing', 'applying')")
     int markCancelled(@Param("id") Long id, @Param("reason") String reason);
 
     @Transactional
