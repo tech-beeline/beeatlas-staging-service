@@ -1,0 +1,19 @@
+@startuml
+' SFDM-4149 / TC-10: типы сценария и шага из фрагментов.
+' main/action — вне фрагментов; alternative/condition — alt и else; main/loop — loop; exception/exception — opt.
+actor Client
+participant "fdmshowcaseapp" as Showcase
+participant "fdmshowcaseapp" as Backend
+Client -> Showcase: GET /api/v1/sfdm4149/main
+alt успех
+  Showcase -> Backend: GET /api/v1/sfdm4149/alt-ok
+else ошибка
+  Showcase -> Backend: DELETE /api/v1/sfdm4149/alt-fail
+end
+loop три попытки
+  Showcase -> Backend: PUT /api/v1/sfdm4149/retry
+end
+opt уведомление
+  Showcase -> Backend: POST /api/v1/sfdm4149/notify
+end
+@enduml

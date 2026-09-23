@@ -1,0 +1,15 @@
+@startuml
+' SFDM-4149 / TC-01..TC-09: смешанный случай.
+' P-01 — участник есть в CMDB, REST-вызов: шаг получает свою операцию, ищется в fdm-products.
+' P-02 — участника нет в CMDB: операция не создаётся, у шага в target только stepVersionId.
+' P-03 — сообщение без REST-вызова: операция типа UNKNOWN.
+actor Client
+participant "fdmshowcaseapp" as Showcase
+participant ghost as Ghost
+Client -> Showcase: GET /api/v1/products
+alt найдено
+  Showcase -> Ghost: POST /api/v1/sfdm4149/payments
+else не найдено
+  Showcase -> Ghost: Уточняет у оператора
+end
+@enduml

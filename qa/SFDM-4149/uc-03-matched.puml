@@ -1,0 +1,9 @@
+@startuml
+' SFDM-4149 / TC-11: автосопоставление с архитектурой.
+' ВАЖНО: перед прогоном заменить участника и пути на те, что реально есть
+' в fdm-products (продукт по alias, метод + путь в его архитектуре).
+' Ожидание: шаг сразу в mapped с callStatus=confirmed и заполненным connectionOperation.
+actor Client
+participant "ЗАМЕНИТЬ_НА_ALIAS_ПРОДУКТА" as Target
+Client -> Target: GET /ЗАМЕНИТЬ/НА/СУЩЕСТВУЮЩИЙ/ПУТЬ
+@enduml
