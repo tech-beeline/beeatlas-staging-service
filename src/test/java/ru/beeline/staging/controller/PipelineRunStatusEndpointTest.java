@@ -71,14 +71,14 @@ class PipelineRunStatusEndpointTest {
     }
 
     @Test
-    @DisplayName("В паузе awaiting_review блок result сериализуется из draft_json")
+    @DisplayName("В паузе awaiting_review блок result собирается из канонической модели")
     void returnsResultBlock() throws Exception {
         ObjectNode draft = JsonNodeFactory.instance.objectNode();
         draft.putObject("usecase").put("code", "UC-001");
         draft.putArray("mapped").addObject().put("partId", "P-01").put("status", "confirmed");
         draft.putArray("unmapped").addObject().put("partId", "P-04").put("suggestion", "map_existing | create_new");
         when(statusRepository.findSnapshot(RUN_ID)).thenReturn(Optional.of(
-                new PipelineRunStatusSnapshot(RUN_ID, "usecase", "UC-001", "awaiting_review", "transformer", 0, draft)));
+                new PipelineRunStatusSnapshot(RUN_ID, "usecase", "UC-001", "awaiting_review", "manual", 0, draft)));
 
         MvcResult started = mockMvc.perform(get("/api/v1/pipeline-runs/{runId}/status", RUN_ID)
                         .accept(MediaType.APPLICATION_JSON)
@@ -89,7 +89,7 @@ class PipelineRunStatusEndpointTest {
         mockMvc.perform(asyncDispatch(started))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("awaiting_review"))
-                .andExpect(jsonPath("$.stage").value("transformer"))
+                .andExpect(jsonPath("$.stage").value("manual"))
                 .andExpect(jsonPath("$.result.usecase.code").value("UC-001"))
                 .andExpect(jsonPath("$.result.mapped[0].status").value("confirmed"))
                 .andExpect(jsonPath("$.result.unmapped[0].partId").value("P-04"))

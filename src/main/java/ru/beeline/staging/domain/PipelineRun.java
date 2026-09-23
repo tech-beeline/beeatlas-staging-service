@@ -81,9 +81,6 @@ public class PipelineRun {
     @Column(name = "supersedes_run_id")
     private Long supersedesRunId;
 
-    @Column(name = "draft_json")
-    private String draftJson;
-
     @Column(name = "owner_id")
     private String ownerId;
 

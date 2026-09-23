@@ -14,6 +14,7 @@ import ru.beeline.staging.pipeline.adapter.PlantUmlE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.SparxE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.StructurizrSequenceAdapter;
 import ru.beeline.staging.pipeline.adapter.UseCaseAdapter;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.pipeline.preadapter.MetricQueriesPreAdapter;
 import ru.beeline.staging.pipeline.publisher.E2ePublisher;
 import ru.beeline.staging.pipeline.publisher.MetricQueriesPublisher;
@@ -41,11 +42,9 @@ public class PipelineDefinitions {
         public static final List<String> STAGE_ORDER = List.of("pre-adapter", "adapter", "validator", "transformer",
                         "saver", "manual", "publisher");
 
-        public static final String MANUAL_MODULE_CODE = "manual-operations";
+        public static final String MANUAL_MODULE_CODE = ManualOperations.MODULE_CODE;
 
         public static final String PAUSE_STATUS = "awaiting_review";
-
-        private static final Map<String, String> PAUSE_AFTER_STAGE = Map.of("usecase", "transformer");
 
         private static final Map<String, Map<String, String>> DEFINITIONS = Map.of(
 
@@ -54,6 +53,7 @@ public class PipelineDefinitions {
                                         "validator", UseCaseValidator.MODULE_CODE,
                                         "transformer", UseCaseTransformer.MODULE_CODE,
                                         "saver", UseCaseSaver.MODULE_CODE,
+                                        "manual", MANUAL_MODULE_CODE,
                                         "publisher", NoopPublisher.MODULE_CODE),
                         "e2e-plantuml", Map.of(
                                         "adapter", PlantUmlE2EAdapter.MODULE_CODE,
@@ -91,10 +91,6 @@ public class PipelineDefinitions {
         public boolean hasStage(String artifactType, String stageKey) {
                 Map<String, String> moduleMap = moduleMapFor(artifactType);
                 return moduleMap != null && moduleMap.containsKey(stageKey);
-        }
-
-        public String pauseAfterStage(String artifactType) {
-                return artifactType == null ? null : PAUSE_AFTER_STAGE.get(artifactType);
         }
 
         public Map<String, Map<String, String>> all() {

@@ -15,7 +15,6 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.TransformResult;
-import ru.beeline.staging.pipeline.PipelineDefinitions;
 import ru.beeline.staging.pipeline.transformer.ArtifactTransformer;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
@@ -45,7 +44,6 @@ public class TransformerStage implements ArtifactPipelineStage {
     private final ModuleResolver            moduleResolver;
     private final PipelineRunService        pipelineRunService;
     private final SourceSystemRepository    sourceSystemRepository;
-    private final PipelineDefinitions       pipelineDefinitions;
 
     private Map<String, ArtifactTransformer> registry;
 
@@ -90,12 +88,8 @@ public class TransformerStage implements ArtifactPipelineStage {
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8),
                     StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
             String snapshotJson = objectMapper.writeValueAsString(result.snapshot());
-            boolean pauseAfterTransform = stageName().equals(pipelineDefinitions.pauseAfterStage(artifactType));
-
-            if (!pauseAfterTransform) {
-                ref.setCanonicalSnapshotJson(snapshotJson);
-                rawDataRefRepository.save(ref);
-            }
+            ref.setCanonicalSnapshotJson(snapshotJson);
+            rawDataRefRepository.save(ref);
 
             List<ArtifactNotice> noticesToSave = result.notices().size() > MAX_NOTICES
                     ? aggregateByCodeAndReason(result.notices())
@@ -104,11 +98,6 @@ public class TransformerStage implements ArtifactPipelineStage {
             long errorCount = saved.stream().filter(n -> "error".equals(n.level())).count();
             if (errorCount > 0) {
                 throw new IllegalStateException("Transform failed: " + errorCount + " error notice(s) for uid=" + uid);
-            }
-
-            if (pauseAfterTransform) {
-                pipelineRunRepository.pause(runId, PipelineDefinitions.PAUSE_STATUS, snapshotJson);
-                log.info("stage=transformer, uid={} — run {} paused in {}", uid, runId, PipelineDefinitions.PAUSE_STATUS);
             }
 
             Map<String, Object> output = Map.of(

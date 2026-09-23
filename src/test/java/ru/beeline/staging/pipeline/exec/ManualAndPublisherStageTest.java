@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.pipeline.PipelineDefinitions;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.pipeline.publisher.ArtifactPublisher;
 import ru.beeline.staging.pipeline.publisher.E2ePublisher;
 import ru.beeline.staging.repository.PipelineRunRepository;
@@ -34,11 +35,13 @@ class ManualAndPublisherStageTest {
     private final PipelineDefinitions pipelineDefinitions = new PipelineDefinitions();
     private PipelineRunService pipelineRunService;
     private PipelineRunRepository pipelineRunRepository;
+    private ManualOperations manualOperations;
 
     @BeforeEach
     void setUp() {
         pipelineRunService = mock(PipelineRunService.class);
         pipelineRunRepository = mock(PipelineRunRepository.class);
+        manualOperations = mock(ManualOperations.class);
         when(pipelineRunService.startStage(anyLong(), anyString(), any())).thenReturn(5L);
     }
 
@@ -49,8 +52,8 @@ class ManualAndPublisherStageTest {
 
         manualStage().execute(RUN_ID);
 
-        verify(pipelineRunRepository).pause(RUN_ID, PipelineDefinitions.PAUSE_STATUS, null);
-        verify(pipelineRunService).completeStage(5L, "decision=awaited", null);
+        verify(pipelineRunRepository).pause(RUN_ID, PipelineDefinitions.PAUSE_STATUS);
+        verify(pipelineRunService).completeStage(5L, "decision=awaited", Map.of("awaitingReview", true, "unmapped", 0));
     }
 
     @Test
@@ -60,7 +63,7 @@ class ManualAndPublisherStageTest {
 
         manualStage().execute(RUN_ID);
 
-        verify(pipelineRunRepository, never()).pause(anyLong(), anyString(), any());
+        verify(pipelineRunRepository, never()).pause(anyLong(), anyString());
         verify(pipelineRunService).completeStage(5L, "decision=accepted", null);
     }
 
@@ -72,7 +75,7 @@ class ManualAndPublisherStageTest {
         manualStage().execute(RUN_ID);
 
         verifyNoInteractions(pipelineRunService);
-        verify(pipelineRunRepository, never()).pause(anyLong(), anyString(), any());
+        verify(pipelineRunRepository, never()).pause(anyLong(), anyString());
     }
 
     @Test
@@ -112,6 +115,7 @@ class ManualAndPublisherStageTest {
                 .containsExactly("pre-adapter", "adapter", "validator", "transformer", "saver", "manual", "publisher");
         assertThat(pipelineDefinitions.hasStage("e2e-plantuml", "manual")).isTrue();
         assertThat(pipelineDefinitions.hasStage("e2e-sequence", "manual")).isFalse();
+        assertThat(pipelineDefinitions.hasStage("usecase", "manual")).isTrue();
         assertThat(pipelineDefinitions.moduleMapFor("e2e-plantuml").get("publisher"))
                 .isEqualTo(E2ePublisher.MODULE_CODE);
     }
@@ -127,7 +131,7 @@ class ManualAndPublisherStageTest {
     }
 
     private ManualStage manualStage() {
-        return new ManualStage(pipelineDefinitions, pipelineRunService, pipelineRunRepository);
+        return new ManualStage(pipelineDefinitions, manualOperations, pipelineRunService, pipelineRunRepository);
     }
 
     private PublisherStage publisherStage(ArtifactPublisher publisher) {

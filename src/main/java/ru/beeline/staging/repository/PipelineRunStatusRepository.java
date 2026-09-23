@@ -4,14 +4,13 @@
 
 package ru.beeline.staging.repository;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunStatusSnapshot;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 
 import java.util.List;
 import java.util.Optional;
@@ -31,7 +30,6 @@ public class PipelineRunStatusRepository {
                 r.artifact_type,
                 r.artifact_uid,
                 r.status,
-                r.draft_json,
                 (SELECT l.stage_name
                    FROM staging.pipeline_stage_logs l
                   WHERE l.run_id = r.id
@@ -45,13 +43,13 @@ public class PipelineRunStatusRepository {
             WHERE r.id = ?
             """;
 
-    private final JdbcTemplate stagingJdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final JdbcTemplate      stagingJdbcTemplate;
+    private final ManualOperations  manualOperations;
 
     public PipelineRunStatusRepository(@Qualifier("stagingJdbcTemplate") JdbcTemplate stagingJdbcTemplate,
-                                       ObjectMapper objectMapper) {
+                                       ManualOperations manualOperations) {
         this.stagingJdbcTemplate = stagingJdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.manualOperations = manualOperations;
     }
 
     public Optional<String> findStatus(Long runId) {
@@ -62,26 +60,27 @@ public class PipelineRunStatusRepository {
     public Optional<PipelineRunStatusSnapshot> findSnapshot(Long runId) {
         List<PipelineRunStatusSnapshot> rows = stagingJdbcTemplate.query(SELECT_SNAPSHOT, (rs, rowNum) -> {
             String status = rs.getString("status");
+            String artifactType = rs.getString("artifact_type");
             return new PipelineRunStatusSnapshot(
                     rs.getLong("run_id"),
-                    rs.getString("artifact_type"),
+                    artifactType,
                     rs.getString("artifact_uid"),
                     status,
                     rs.getString("stage"),
                     rs.getInt("notices_count"),
-                    result(runId, status, rs.getString("draft_json")));
+                    result(runId, artifactType, status));
         }, runId);
         return rows.stream().findFirst();
     }
 
-    JsonNode result(Long runId, String status, String draftJson) {
-        if (!STATUSES_WITH_RESULT.contains(status) || draftJson == null || draftJson.isBlank()) {
+    JsonNode result(Long runId, String artifactType, String status) {
+        if (!STATUSES_WITH_RESULT.contains(status)) {
             return null;
         }
         try {
-            return objectMapper.readTree(draftJson);
-        } catch (JsonProcessingException e) {
-            log.warn("draft_json запуска {} не является корректным JSON, result не отдаётся", runId, e);
+            return manualOperations.pauseContext(artifactType, runId);
+        } catch (RuntimeException e) {
+            log.warn("Не удалось собрать контекст паузы запуска {} из канонической модели", runId, e);
             return null;
         }
     }

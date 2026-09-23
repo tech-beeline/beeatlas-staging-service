@@ -1,19 +1,16 @@
 package ru.beeline.staging.pipeline.saver;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import ru.beeline.staging.domain.ArtifactBatch;
-import ru.beeline.staging.domain.PipelineRun;
+import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.SaveResult;
-import ru.beeline.staging.dto.usecase.ImportDecision;
 import ru.beeline.staging.dto.usecase.UseCaseDraft;
-import ru.beeline.staging.repository.ImportDecisionRepository;
-import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.UseCaseCanonicalRepository;
-import ru.beeline.staging.repository.UseCaseCanonicalRepository.RequiredOperationVersionRow;
 import ru.beeline.staging.repository.UseCaseCanonicalRepository.StepVersionRow;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository.LandscapeOperation;
@@ -39,21 +36,19 @@ import static org.mockito.Mockito.when;
 class UseCaseSaverTest {
 
     private static final long RUN_ID = 7788L;
+    private static final long RAW_DATA_REF_ID = 42L;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private PipelineRunRepository pipelineRunRepository;
-    private ImportDecisionRepository importDecisionRepository;
     private UseCaseCanonicalRepository canonicalRepository;
     private UseCaseLandscapeRepository landscapeRepository;
+    private PipelineRunService pipelineRunService;
     private UseCaseSaver saver;
 
     @BeforeEach
     void setUp() {
-        pipelineRunRepository = mock(PipelineRunRepository.class);
-        importDecisionRepository = mock(ImportDecisionRepository.class);
         canonicalRepository = mock(UseCaseCanonicalRepository.class);
         landscapeRepository = mock(UseCaseLandscapeRepository.class);
-        PipelineRunService pipelineRunService = mock(PipelineRunService.class);
+        pipelineRunService = mock(PipelineRunService.class);
         RunBranchResolver runBranchResolver = mock(RunBranchResolver.class);
 
         ArtifactBatch batch = new ArtifactBatch();
@@ -62,78 +57,78 @@ class UseCaseSaverTest {
                 .thenReturn(batch);
         when(runBranchResolver.resolve(RUN_ID)).thenReturn("design");
         when(canonicalRepository.findOrCreateUseCase("UC-001", "PRJ-1")).thenReturn(1L);
-        when(canonicalRepository.insertUseCaseVersion(eq(1L), any(), eq("UC-001"), any(), any(), eq("design"), any()))
-                .thenReturn(10L);
-        when(canonicalRepository.findOrCreateRequiredOperation(anyString(), anyLong(), anyString(), anyString()))
-                .thenReturn(100L);
-        when(canonicalRepository.insertRequiredOperationVersion(any())).thenReturn(200L);
+        when(canonicalRepository.insertUseCaseVersion(eq(1L), any(), eq(RUN_ID), eq("UC-001"), any(), any(),
+                eq("design"), any())).thenReturn(10L);
 
-        saver = new UseCaseSaver(pipelineRunRepository, importDecisionRepository, canonicalRepository,
-                landscapeRepository, pipelineRunService, runBranchResolver, objectMapper);
+        saver = new UseCaseSaver(canonicalRepository, landscapeRepository, pipelineRunService, runBranchResolver,
+                objectMapper);
     }
 
     @Test
-    @DisplayName("Mapped-часть — confirmed + matched, map_existing — architect_specified, create_new — planned/required")
-    void appliesDraftAndDecisions() throws Exception {
-        givenRunWithDraft();
+    @DisplayName("Фаза 1: смаппированный шаг связан с версией операции, несмаппированные — без связей")
+    void writesStepsWithAndWithoutOperationLinks() throws Exception {
         when(landscapeRepository.findOperationByCode("/orders", "orders_api", "design"))
                 .thenReturn(Optional.of(new LandscapeOperation(34L, "/orders", "orders_api", "api", "BC-2")));
-        when(importDecisionRepository.findByRunId(RUN_ID)).thenReturn(List.of(
-                new ImportDecision(1L, RUN_ID, "P-02", "map_existing",
-                        "{\"containerCode\":\"gw.BC-1\",\"interfaceCode\":\"users_api.gw.BC-1\"}", null),
-                new ImportDecision(2L, RUN_ID, "P-03", "create_new", null,
-                        "{\"productCode\":\"BC-9\",\"containerName\":\"Payment Adapter\",\"interfaceName\":\"payments_api\",\"protocol\":\"REST\"}")));
 
-        SaveResult result = saver.save("UC-001", "usecase", 42L, RUN_ID, null);
+        SaveResult result = saver.save("UC-001", "usecase", RAW_DATA_REF_ID, RUN_ID, snapshot());
 
         ArgumentCaptor<StepVersionRow> steps = ArgumentCaptor.forClass(StepVersionRow.class);
         verify(canonicalRepository, times(3)).insertStepVersion(steps.capture());
-        assertThat(steps.getAllValues()).extracting(StepVersionRow::extUid, StepVersionRow::callStatus)
+        assertThat(steps.getAllValues()).extracting(StepVersionRow::extUid,
+                        StepVersionRow::calleeOperationVersionId, StepVersionRow::callStatus)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("P-01", "confirmed"),
-                        org.assertj.core.groups.Tuple.tuple("P-02", "architect_specified"),
-                        org.assertj.core.groups.Tuple.tuple("P-03", "planned"));
+                        Tuple.tuple("P-01", 34L, "confirmed"),
+                        Tuple.tuple("P-02", null, null),
+                        Tuple.tuple("P-03", null, null));
         assertThat(steps.getAllValues()).allSatisfy(step -> assertThat(step.branchName()).isEqualTo("design"));
+        assertThat(result.summary()).containsEntry("batchId", 15L)
+                .containsEntry("usecaseVersionId", 10L)
+                .containsEntry("stepsSaved", 3)
+                .containsEntry("unmapped", 2);
+    }
 
-        ArgumentCaptor<RequiredOperationVersionRow> requirements = ArgumentCaptor.forClass(RequiredOperationVersionRow.class);
-        verify(canonicalRepository, times(3)).insertRequiredOperationVersion(requirements.capture());
-        assertThat(requirements.getAllValues()).extracting(RequiredOperationVersionRow::status,
-                        RequiredOperationVersionRow::operationVersionId, RequiredOperationVersionRow::productUid)
+    @Test
+    @DisplayName("По каждой несмаппированной стороне пишется notice с причиной и вариантами решения")
+    void writesNoticesForUnmappedSides() throws Exception {
+        when(landscapeRepository.findOperationByCode("/orders", "orders_api", "design"))
+                .thenReturn(Optional.of(new LandscapeOperation(34L, "/orders", "orders_api", "api", "BC-2")));
+
+        saver.save("UC-001", "usecase", RAW_DATA_REF_ID, RUN_ID, snapshot());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ArtifactNotice>> notices = ArgumentCaptor.forClass(List.class);
+        verify(pipelineRunService).saveNotices(eq(RAW_DATA_REF_ID), notices.capture());
+        assertThat(notices.getValue()).extracting(ArtifactNotice::code, ArtifactNotice::level,
+                        ArtifactNotice::entityUid)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("matched", 34L, "BC-2"),
-                        org.assertj.core.groups.Tuple.tuple("required", null, "gw.BC-1"),
-                        org.assertj.core.groups.Tuple.tuple("required", null, "BC-9"));
-        verify(canonicalRepository).findOrCreateRequiredOperation("1:operation:/orders", 1L, "/orders", "operation");
-        verify(canonicalRepository).findOrCreateRequiredOperation("1:interface:payments_api", 1L, "payments_api", "interface");
-
-        assertThat(result.summary()).containsEntry("batchId", 15L).containsEntry("stepsSaved", 3)
-                .containsEntry("requiredOperationsCreated", 1);
+                        Tuple.tuple(UseCaseSaver.UNMAPPED_SIDE, "warning", "P-02"),
+                        Tuple.tuple(UseCaseSaver.UNMAPPED_SIDE, "warning", "P-03"));
     }
 
     @Test
-    @DisplayName("Несмаппированная часть без решения — применение падает, шаги не пишутся")
-    void failsWithoutDecision() {
-        givenRunWithDraft();
-        when(importDecisionRepository.findByRunId(RUN_ID)).thenReturn(List.of());
+    @DisplayName("Операция исчезла из ландшафта — шаг пишется без связи и попадает в контекст паузы")
+    void leavesTheStepUnlinkedWhenTheOperationIsGone() throws Exception {
+        when(landscapeRepository.findOperationByCode(anyString(), any(), anyString())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> saver.save("UC-001", "usecase", 42L, RUN_ID, null))
+        SaveResult result = saver.save("UC-001", "usecase", RAW_DATA_REF_ID, RUN_ID, snapshot());
+
+        ArgumentCaptor<StepVersionRow> steps = ArgumentCaptor.forClass(StepVersionRow.class);
+        verify(canonicalRepository, times(3)).insertStepVersion(steps.capture());
+        assertThat(steps.getAllValues().get(0).calleeOperationVersionId()).isNull();
+        assertThat(steps.getAllValues().get(0).callStatus()).isNull();
+        assertThat(result.summary()).containsEntry("unmapped", 3);
+    }
+
+    @Test
+    @DisplayName("Пустой canonical_snapshot_json — запись невозможна")
+    void failsWithoutASnapshot() {
+        assertThatThrownBy(() -> saver.save("UC-001", "usecase", RAW_DATA_REF_ID, RUN_ID, "  "))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("P-02");
-    }
-
-    @Test
-    @DisplayName("Пустой draft_json — применение невозможно")
-    void failsWithoutDraft() {
-        PipelineRun run = new PipelineRun();
-        run.setId(RUN_ID);
-        when(pipelineRunRepository.findById(RUN_ID)).thenReturn(Optional.of(run));
-
-        assertThatThrownBy(() -> saver.save("UC-001", "usecase", 42L, RUN_ID, null))
-                .isInstanceOf(IllegalStateException.class);
+                .hasMessageContaining("canonical_snapshot_json");
         verify(canonicalRepository, never()).findOrCreateUseCase(anyString(), any());
     }
 
-    private void givenRunWithDraft() {
+    private String snapshot() throws Exception {
         UseCaseDraft draft = new UseCaseDraft(
                 new UseCaseDraft.Header("UC-001", "Онлайн-заказ", null, "PRJ-1"), "design",
                 List.of(new UseCaseDraft.MappedPart("P-01", "interaction", 1, "main", "action", "POST /orders",
@@ -142,13 +137,6 @@ class UseCaseSaverTest {
                                 "callee", List.of("gw"), "не найдено", "map_existing | create_new"),
                         new UseCaseDraft.UnmappedPart("P-03", "interaction", 3, "main", "action", "POST /pay",
                                 "callee", List.of("pay"), "не найдено", "map_existing | create_new")));
-        PipelineRun run = new PipelineRun();
-        run.setId(RUN_ID);
-        try {
-            run.setDraftJson(objectMapper.writeValueAsString(draft));
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
-        when(pipelineRunRepository.findById(RUN_ID)).thenReturn(Optional.of(run));
+        return objectMapper.writeValueAsString(draft);
     }
 }

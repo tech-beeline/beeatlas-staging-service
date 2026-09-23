@@ -5,7 +5,6 @@
 package ru.beeline.staging.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,11 +17,11 @@ import ru.beeline.staging.dto.pipelinerun.DeclinePipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsResponse;
 import ru.beeline.staging.dto.usecase.ImportDecision;
-import ru.beeline.staging.dto.usecase.UseCaseDraft;
 import ru.beeline.staging.exception.PipelineRunBadRequestException;
 import ru.beeline.staging.exception.PipelineRunConflictException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
 import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository;
@@ -49,7 +48,7 @@ public class PipelineHitlService {
     private final ImportDecisionRepository importDecisionRepository;
     private final PipelineExecutionService pipelineExecutionService;
     private final MeterRegistry meterRegistry;
-    private final ObjectMapper objectMapper;
+    private final ManualOperations manualOperations;
     private final UseCaseLandscapeRepository landscapeRepository;
     private final RunBranchResolver runBranchResolver;
 
@@ -80,9 +79,9 @@ public class PipelineHitlService {
         requireExistingTargets(runId, decisions);
         requireReviewStatus(run, "принимать решения");
 
-        Set<String> unmappedParts = unmappedPartsOf(run);
+        Set<String> decidableParts = decidablePartsOf(run);
         for (PipelineRunDecisionsRequest.Decision decision : decisions) {
-            if (!unmappedParts.contains(decision.getPartId().trim())) {
+            if (!decidableParts.contains(decision.getPartId().trim())) {
                 throw new PipelineRunNotFoundException(
                         "Часть не найдена в контексте паузы: runId=" + runId + " partId=" + decision.getPartId());
             }
@@ -90,15 +89,18 @@ public class PipelineHitlService {
 
         for (PipelineRunDecisionsRequest.Decision decision : decisions) {
             boolean mapExisting = ImportDecision.MAP_EXISTING.equals(decision.getType());
-            importDecisionRepository.upsert(runId, decision.getPartId().trim(), decision.getType(),
-                    mapExisting ? decision.getTarget().toString() : null,
-                    mapExisting ? null : decision.getNewRequest().toString());
+            String partId = decision.getPartId().trim();
+            String targetJson = mapExisting ? decision.getTarget().toString() : null;
+            String newRequestJson = mapExisting ? null : decision.getNewRequest().toString();
+            importDecisionRepository.upsert(runId, partId, decision.getType(), targetJson, newRequestJson);
+            manualOperations.applyDecision(run.getArtifactType(), runId,
+                    new ImportDecision(null, runId, partId, decision.getType(), targetJson, newRequestJson));
         }
         if (pipelineRunRepository.markReviewing(runId) == 0) {
             throw conflict(runId, run, "нельзя принимать решения");
         }
 
-        int remaining = unresolvedParts(runId, unmappedParts).size();
+        int remaining = unresolvedParts(run).size();
         log.info("Accepted {} decision(s) for run {}: remaining={}", decisions.size(), runId, remaining);
         return new PipelineRunDecisionsResponse(runId, REVIEWING_STATUS, decisions.size(), remaining);
     }
@@ -118,7 +120,7 @@ public class PipelineHitlService {
         PipelineRun run = requireRun(runId);
         requireReviewStatus(run, "применить");
 
-        List<String> unresolved = unresolvedParts(runId, unmappedPartsOrEmpty(run));
+        List<String> unresolved = unresolvedParts(run);
         if (!unresolved.isEmpty()) {
             throw new PipelineRunUnresolvedPartsException(
                     "Есть несмаппированные части без решений: runId=" + runId, unresolved);
@@ -195,36 +197,28 @@ public class PipelineHitlService {
         }
     }
 
-    private Set<String> unmappedPartsOf(PipelineRun run) {
-        if (!hasDraft(run)) {
+    private Set<String> decidablePartsOf(PipelineRun run) {
+        Set<String> parts = new LinkedHashSet<>(unmappedParts(run));
+        parts.addAll(decidedParts(run.getId()));
+        if (parts.isEmpty()) {
             throw new PipelineRunConflictException("У запуска нет контекста паузы: runId=" + run.getId());
         }
-        return parseUnmappedParts(run);
+        return parts;
     }
 
-    private Set<String> unmappedPartsOrEmpty(PipelineRun run) {
-        return hasDraft(run) ? parseUnmappedParts(run) : Set.of();
+    private List<String> unmappedParts(PipelineRun run) {
+        return manualOperations.unmappedParts(run.getArtifactType(), run.getId());
     }
 
-    private boolean hasDraft(PipelineRun run) {
-        return run.getDraftJson() != null && !run.getDraftJson().isBlank();
-    }
-
-    private Set<String> parseUnmappedParts(PipelineRun run) {
-        try {
-            return objectMapper.readValue(run.getDraftJson(), UseCaseDraft.class).unmappedOrEmpty().stream()
-                    .map(UseCaseDraft.UnmappedPart::partId)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-        } catch (Exception e) {
-            throw new IllegalStateException("draft_json запуска " + run.getId() + " не читается", e);
-        }
-    }
-
-    private List<String> unresolvedParts(Long runId, Set<String> unmappedParts) {
-        Set<String> decided = importDecisionRepository.findByRunId(runId).stream()
+    private Set<String> decidedParts(Long runId) {
+        return importDecisionRepository.findByRunId(runId).stream()
                 .map(ImportDecision::partId)
-                .collect(Collectors.toSet());
-        return unmappedParts.stream().filter(partId -> !decided.contains(partId)).toList();
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private List<String> unresolvedParts(PipelineRun run) {
+        Set<String> decided = decidedParts(run.getId());
+        return unmappedParts(run).stream().filter(partId -> !decided.contains(partId)).toList();
     }
 
     private PipelineRunConflictException conflict(Long runId, PipelineRun run, String action) {

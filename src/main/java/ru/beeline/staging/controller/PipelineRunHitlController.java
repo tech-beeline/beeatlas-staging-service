@@ -69,8 +69,9 @@ public class PipelineRunHitlController {
     @PostMapping("/{runId}/decisions")
     @Operation(summary = "Принять решения по несмаппированным частям",
             description = "Записывает решения map_existing (target: containerCode, interfaceCode) или create_new "
-                    + "(newRequest: productCode, containerName, interfaceName, protocol, note) по частям "
-                    + "draft_json.unmapped и переводит запуск в reviewing. Повторное решение по partId заменяет "
+                    + "(newRequest: productCode, containerName, interfaceName, protocol, note) по несмаппированным "
+                    + "частям контекста паузы, применяет их к канонической модели (фаза 2: связи шага и call_status "
+                    + "обновляются in-place) и переводит запуск в reviewing. Повторное решение по partId заменяет "
                     + "предыдущее. 400 — некорректное решение (в том числе цель map_existing не найдена в ландшафте "
                     + "или по одной части в запросе несколько решений), 404 — запуск или часть не найдены, "
                     + "409 — запуск не в awaiting_review/reviewing.")

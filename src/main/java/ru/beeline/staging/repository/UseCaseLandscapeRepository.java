@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -54,6 +55,18 @@ public class UseCaseLandscapeRepository {
              WHERE lower(ov.name) = lower(?)
                AND (CAST(? AS text) IS NULL OR lower(i.uid) = lower(CAST(? AS text)))
             """ + CURRENT_OPERATION_IN_BRANCH;
+
+    private static final String FIND_OPERATIONS_BY_INTERFACE = OPERATION_SELECT + """
+             WHERE lower(i.uid) = lower(?)
+               AND lower(COALESCE(c.uid, '')) = lower(?)
+               AND COALESCE(ov.branch_name, 'main') = ?
+               AND ov.created_at = (SELECT max(o2.created_at)
+                                      FROM staging.operation_versions o2
+                                     WHERE o2.operation_id IS NOT DISTINCT FROM ov.operation_id
+                                       AND COALESCE(o2.branch_name, 'main') = COALESCE(ov.branch_name, 'main'))
+             ORDER BY ov.name, ov.id
+             LIMIT ?
+            """;
 
     private static final String FIND_INTERFACE = """
             SELECT iv.id AS interface_version_id, i.uid AS interface_code, c.uid AS container_code, p.uid AS product_code
@@ -114,6 +127,12 @@ public class UseCaseLandscapeRepository {
         return stagingJdbcTemplate.query(FIND_OPERATION_BY_CODE, OPERATION_MAPPER,
                 operationCode, interfaceCode, interfaceCode, branch)
                 .stream().findFirst();
+    }
+
+    public List<LandscapeOperation> findOperationsByInterface(String interfaceCode, String containerCode,
+                                                              String branch, int limit) {
+        return stagingJdbcTemplate.query(FIND_OPERATIONS_BY_INTERFACE, OPERATION_MAPPER,
+                interfaceCode, containerCode, branch, limit);
     }
 
     public Optional<LandscapeInterface> findInterface(String interfaceCode, String containerCode, String branch) {

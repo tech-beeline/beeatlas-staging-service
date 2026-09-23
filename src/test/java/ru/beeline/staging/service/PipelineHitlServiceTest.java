@@ -5,17 +5,18 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.pipelinerun.ApplyPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.CancelPipelineRunResponse;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsRequest;
 import ru.beeline.staging.dto.pipelinerun.PipelineRunDecisionsResponse;
 import ru.beeline.staging.dto.usecase.ImportDecision;
-import ru.beeline.staging.dto.usecase.UseCaseDraft;
 import ru.beeline.staging.exception.PipelineRunBadRequestException;
 import ru.beeline.staging.exception.PipelineRunConflictException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
 import ru.beeline.staging.exception.PipelineRunUnresolvedPartsException;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,6 +45,7 @@ class PipelineHitlServiceTest {
     private PipelineExecutionService pipelineExecutionService;
     private SimpleMeterRegistry meterRegistry;
     private UseCaseLandscapeRepository landscapeRepository;
+    private ManualOperations manualOperations;
     private PipelineHitlService service;
 
     @BeforeEach
@@ -52,12 +55,13 @@ class PipelineHitlServiceTest {
         pipelineExecutionService = mock(PipelineExecutionService.class);
         meterRegistry = new SimpleMeterRegistry();
         landscapeRepository = mock(UseCaseLandscapeRepository.class);
+        manualOperations = mock(ManualOperations.class);
         RunBranchResolver runBranchResolver = mock(RunBranchResolver.class);
         when(runBranchResolver.resolve(RUN_ID)).thenReturn("main");
         when(landscapeRepository.findInterface("users_api.gw.BC-1", "gw.BC-1", "main")).thenReturn(Optional.of(
                 new UseCaseLandscapeRepository.LandscapeInterface(10L, "users_api.gw.BC-1", "gw.BC-1", "BC-1")));
         service = new PipelineHitlService(pipelineRunRepository, importDecisionRepository, pipelineExecutionService,
-                meterRegistry, objectMapper, landscapeRepository, runBranchResolver);
+                meterRegistry, manualOperations, landscapeRepository, runBranchResolver);
     }
 
     @Test
@@ -161,6 +165,20 @@ class PipelineHitlServiceTest {
     }
 
     @Test
+    @DisplayName("Решение применяется к канону сразу — фаза 2 в окне паузы")
+    void appliesDecisionToTheCanonicalModel() {
+        givenRun("awaiting_review");
+        when(pipelineRunRepository.markReviewing(RUN_ID)).thenReturn(1);
+
+        service.decide(RUN_ID, request(mapExisting("P-02")));
+
+        ArgumentCaptor<ImportDecision> applied = ArgumentCaptor.forClass(ImportDecision.class);
+        verify(manualOperations).applyDecision(eq("usecase"), eq(RUN_ID), applied.capture());
+        assertThat(applied.getValue().partId()).isEqualTo("P-02");
+        assertThat(applied.getValue().targetJson()).contains("users_api.gw.BC-1");
+    }
+
+    @Test
     @DisplayName("create_new без interfaceName — 400, ничего не пишется")
     void rejectsIncompleteCreateNew() {
         givenRun("awaiting_review");
@@ -254,21 +272,7 @@ class PipelineHitlServiceTest {
         run.setStatus(status);
         run.setArtifactType("usecase");
         run.setArtifactUid("UC-001");
-        run.setDraftJson(draftJson());
         when(pipelineRunRepository.findById(RUN_ID)).thenReturn(Optional.of(run));
-    }
-
-    private String draftJson() {
-        UseCaseDraft draft = new UseCaseDraft(new UseCaseDraft.Header("UC-001", "Заказ", null, "PRJ-1"), "main",
-                List.of(),
-                List.of(new UseCaseDraft.UnmappedPart("P-02", "interaction", 2, "main", "action", "GET /users",
-                                "callee", List.of("gw"), "не найдено", "map_existing | create_new"),
-                        new UseCaseDraft.UnmappedPart("P-03", "interaction", 3, "main", "action", "POST /pay",
-                                "callee", List.of("pay"), "не найдено", "map_existing | create_new")));
-        try {
-            return objectMapper.writeValueAsString(draft);
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
+        when(manualOperations.unmappedParts("usecase", RUN_ID)).thenReturn(List.of("P-02", "P-03"));
     }
 }

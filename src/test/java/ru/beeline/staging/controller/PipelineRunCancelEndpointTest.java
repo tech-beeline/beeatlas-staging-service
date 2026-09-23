@@ -9,7 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import ru.beeline.staging.domain.PipelineRun;
-import ru.beeline.staging.dto.usecase.UseCaseDraft;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository;
@@ -35,15 +35,17 @@ class PipelineRunCancelEndpointTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private PipelineRunRepository pipelineRunRepository;
+    private ManualOperations manualOperations;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         pipelineRunRepository = mock(PipelineRunRepository.class);
+        manualOperations = mock(ManualOperations.class);
         PipelineRunHitlController controller = new PipelineRunHitlController(
                 mock(PipelineRunImportService.class),
                 new PipelineHitlService(pipelineRunRepository, mock(ImportDecisionRepository.class),
-                        mock(PipelineExecutionService.class), new SimpleMeterRegistry(), objectMapper,
+                        mock(PipelineExecutionService.class), new SimpleMeterRegistry(), manualOperations,
                         mock(UseCaseLandscapeRepository.class), mock(RunBranchResolver.class)),
                 new PipelineRunAccessGuard(pipelineRunRepository, mock(ru.beeline.staging.client.AuthUserClient.class)));
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
@@ -143,10 +145,7 @@ class PipelineRunCancelEndpointTest {
         run.setId(RUN_ID);
         run.setStatus(status);
         run.setArtifactType("usecase");
-        run.setDraftJson(objectMapper.writeValueAsString(new UseCaseDraft(
-                new UseCaseDraft.Header("UC-001", "Заказ", null, "PRJ-1"), "main", List.of(),
-                List.of(new UseCaseDraft.UnmappedPart("P-02", "interaction", 1, "main", "action", "GET /users",
-                        "callee", List.of("gw"), "не найдено", "map_existing | create_new")))));
         when(pipelineRunRepository.findById(RUN_ID)).thenReturn(Optional.of(run));
+        when(manualOperations.unmappedParts("usecase", RUN_ID)).thenReturn(List.of("P-02"));
     }
 }

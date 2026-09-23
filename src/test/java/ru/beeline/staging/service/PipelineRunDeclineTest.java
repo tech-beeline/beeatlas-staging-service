@@ -1,6 +1,5 @@
 package ru.beeline.staging.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,6 +8,7 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.dto.pipelinerun.DeclinePipelineRunResponse;
 import ru.beeline.staging.exception.PipelineRunConflictException;
 import ru.beeline.staging.exception.PipelineRunNotFoundException;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.repository.ImportDecisionRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.UseCaseLandscapeRepository;
@@ -35,7 +35,7 @@ class PipelineRunDeclineTest {
         pipelineRunRepository = mock(PipelineRunRepository.class);
         pipelineExecutionService = mock(PipelineExecutionService.class);
         service = new PipelineHitlService(pipelineRunRepository, mock(ImportDecisionRepository.class),
-                pipelineExecutionService, new SimpleMeterRegistry(), new ObjectMapper(),
+                pipelineExecutionService, new SimpleMeterRegistry(), mock(ManualOperations.class),
                 mock(UseCaseLandscapeRepository.class), mock(RunBranchResolver.class));
     }
 

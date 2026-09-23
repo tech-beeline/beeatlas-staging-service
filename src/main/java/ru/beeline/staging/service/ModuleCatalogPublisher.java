@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.staging.domain.ModuleCatalogEntry;
 import ru.beeline.staging.domain.PipelineDefinitionEntry;
 import ru.beeline.staging.pipeline.PipelineDefinitions;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.pipeline.adapter.ArtifactAdapter;
 import ru.beeline.staging.pipeline.preadapter.ArtifactPreAdapter;
 import ru.beeline.staging.pipeline.publisher.ArtifactPublisher;
@@ -38,6 +39,7 @@ public class ModuleCatalogPublisher {
     private final List<ArtifactTransformer> transformers;
     private final List<ArtifactSaver>       savers;
     private final List<ArtifactPublisher>   publishers;
+    private final ManualOperations          manualOperations;
     private final PipelineDefinitions       pipelineDefinitions;
 
     private final ModuleCatalogEntryRepository       moduleCatalogRepository;
@@ -59,7 +61,7 @@ public class ModuleCatalogPublisher {
         transformers.forEach(m -> save("transformer", m.moduleCode(), m.description()));
         savers.forEach(m       -> save("saver",       m.moduleCode(), m.description()));
         publishers.forEach(m   -> save("publisher",   m.moduleCode(), m.description()));
-        save("manual", PipelineDefinitions.MANUAL_MODULE_CODE, "Ожидание решения пользователя перед публикацией");
+        save("manual", manualOperations.moduleCode(), manualOperations.description());
 
         log.info("Module catalog published: {} pre-adapter, {} adapter, {} validator, {} transformer, {} saver",
                 preAdapters.size(), adapters.size(), validators.size(), transformers.size(), savers.size());

@@ -305,6 +305,7 @@ public class PipelineRunService {
             case "validator"   -> "validating";
             case "transformer" -> "transforming";
             case "saver"       -> "saving";
+            case "manual"      -> "awaiting_review";
             case "publisher"   -> "publishing";
             default            -> stageName;
         };
