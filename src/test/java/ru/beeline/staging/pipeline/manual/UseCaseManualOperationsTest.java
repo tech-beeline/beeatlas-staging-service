@@ -95,9 +95,24 @@ class UseCaseManualOperationsTest {
     }
 
     @Test
-    @DisplayName("Несопоставленные части — шаги без connection_operation_id")
+    @DisplayName("Требуют решения — шаги без call_status")
     void listsUnmappedParts() {
         assertThat(manualOperations.unmappedParts(RUN_ID)).containsExactly("P-02");
+    }
+
+    @Test
+    @DisplayName("Шаг с решением planned уходит из unmapped, connectionOperation остаётся пустым")
+    void movesPlannedStepsOutOfUnmapped() {
+        when(canonicalRepository.findSteps(USECASE_VERSION_ID)).thenReturn(List.of(matchedStep(), plannedStep()));
+
+        JsonNode context = manualOperations.pauseContext(RUN_ID);
+
+        assertThat(context.path("unmapped")).isEmpty();
+        JsonNode planned = context.path("mapped").get(1);
+        assertThat(planned.path("partId").asText()).isEqualTo("P-02");
+        assertThat(planned.path("callStatus").asText()).isEqualTo("planned");
+        assertThat(planned.path("connectionOperation").isEmpty()).isTrue();
+        assertThat(manualOperations.unmappedParts(RUN_ID)).isEmpty();
     }
 
     @Test
@@ -205,6 +220,11 @@ class UseCaseManualOperationsTest {
                 "{\"operation_code\":\"/orders\"}", 101L, "/orders", "POST", 4242,
                 "{\"operationId\":4242,\"name\":\"/orders\",\"type\":\"POST\",\"interfaceCode\":\"orders_api\"}",
                 "iface-1", "BC-2", "BC-2");
+    }
+
+    private static StepRow plannedStep() {
+        return new StepRow(2L, "P-02", "GET /status", 2, "main", "planned", "action", "{}",
+                102L, "/status", "GET", null, null, "iface-1", "BC-2", "BC-2");
     }
 
     private static StepRow unmatchedStep() {

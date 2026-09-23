@@ -74,9 +74,9 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
                     step.calleeOperationVersionId(), step.operationType(), step.operationName(),
                     step.productAlias(), step.interfaceCode());
 
-            if (step.connectionOperationId() == null) {
+            if (step.callStatus() == null) {
                 unmapped.add(new UseCasePauseContext.Part(step.extUid(), step.seq(), step.scenarioType(),
-                        step.stepType(), step.name(), step.callStatus(), target,
+                        step.stepType(), step.name(), null, target,
                         UseCasePauseContext.ConnectionOperation.EMPTY, text(attributes, "reason"),
                         textOr(attributes, "suggestion", SUGGESTION)));
             } else {
@@ -98,7 +98,7 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
             return List.of();
         }
         return canonicalRepository.findSteps(version.id()).stream()
-                .filter(step -> step.connectionOperationId() == null)
+                .filter(step -> step.callStatus() == null)
                 .map(StepRow::extUid)
                 .toList();
     }
@@ -214,6 +214,9 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
     }
 
     private UseCasePauseContext.ConnectionOperation connectionOf(StepRow step) {
+        if (step.connectionOperationId() == null) {
+            return UseCasePauseContext.ConnectionOperation.EMPTY;
+        }
         JsonNode matched = readJson(step.matchedOperationJson());
         return new UseCasePauseContext.ConnectionOperation(step.connectionOperationId(),
                 text(matched, "type"), text(matched, "name"), text(matched, "interfaceCode"),
