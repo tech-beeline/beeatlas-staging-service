@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.beeline.staging.domain.Configuration;
@@ -62,13 +63,17 @@ public class AdminController {
 
     @PostMapping("/pipeline-runs/{runId}/retry")
     public ResponseEntity<Map<String, Object>> retryPipelineRun(@PathVariable Long runId) {
-        PipelineRun run = pipelineRunRepository.findById(runId)
-                .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
+        PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
+        if (run == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Pipeline run not found", "runId", runId));
+        }
+        if (!"failed".equals(run.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Pipeline run is not failed", "runId", runId, "status", run.getStatus()));
+        }
 
         if (run.getArtifactUid() == null) {
-            if (!"failed".equals(run.getStatus())) {
-                throw new IllegalStateException("PipelineRun " + runId + " is not failed (status=" + run.getStatus() + ")");
-            }
             Configuration config = configurationRepository.findById(run.getConfigurationId())
                     .orElseThrow(() -> new NoSuchElementException("Configuration not found: " + run.getConfigurationId()));
             pipelineTickScheduler.startScan(config);
