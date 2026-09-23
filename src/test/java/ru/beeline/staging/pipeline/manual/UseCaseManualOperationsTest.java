@@ -136,7 +136,7 @@ class UseCaseManualOperationsTest {
                 .hasMessageContaining("operationCode");
 
         verify(canonicalRepository, never()).updateStepCallee(anyLong(), anyLong(), anyString(), anyString());
-        assertThat(savedNotice().code()).isEqualTo("usecase.saver.decision.apply_failed");
+        assertThat(failureNotice().code()).isEqualTo("usecase.saver.decision.apply_failed");
     }
 
     @Test
@@ -180,6 +180,12 @@ class UseCaseManualOperationsTest {
 
     private ImportDecision decision(String type, String targetJson, String newRequestJson) {
         return new ImportDecision(null, RUN_ID, "P-02", type, targetJson, newRequestJson);
+    }
+
+    private ArtifactNotice failureNotice() {
+        ArgumentCaptor<ArtifactNotice> notice = ArgumentCaptor.forClass(ArtifactNotice.class);
+        verify(noticeService).saveNoticeInNewTransaction(eq(RAW_DATA_REF_ID), notice.capture());
+        return notice.getValue();
     }
 
     @SuppressWarnings("unchecked")

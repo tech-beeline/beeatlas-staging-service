@@ -135,10 +135,13 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
                         + ": partId=" + decision.partId());
             }
         } catch (RuntimeException e) {
-            saveNotice(run, DECISION_FAILED, "error", step.extUid(),
-                    "Не удалось применить решение по части " + decision.partId(),
-                    Map.of("part_id", decision.partId(), "decision_type", decision.decisionType(),
-                            "reason", String.valueOf(e.getMessage())));
+            if (run.getRawDataRefId() != null) {
+                noticeService.saveNoticeInNewTransaction(run.getRawDataRefId(),
+                        notice(run, DECISION_FAILED, "error", step.extUid(),
+                                "Не удалось применить решение по части " + decision.partId(),
+                                Map.of("part_id", decision.partId(), "decision_type", decision.decisionType(),
+                                        "reason", String.valueOf(e.getMessage()))));
+            }
             throw e;
         }
     }
@@ -244,9 +247,14 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
         if (run.getRawDataRefId() == null) {
             return;
         }
-        noticeService.saveNotices(run.getRawDataRefId(), List.of(new ArtifactNotice(null, null, code, level, "match",
-                run.getRawDataRefId(), "usecase_step", entityUid, null, message, jsonData(details), null, null,
-                run.getArtifactUid(), null)));
+        noticeService.saveNotices(run.getRawDataRefId(),
+                List.of(notice(run, code, level, entityUid, message, details)));
+    }
+
+    private ArtifactNotice notice(PipelineRun run, String code, String level, String entityUid, String message,
+                                  Map<String, Object> details) {
+        return new ArtifactNotice(null, null, code, level, "match", run.getRawDataRefId(), "usecase_step",
+                entityUid, null, message, jsonData(details), null, null, run.getArtifactUid(), null);
     }
 
     private String jsonData(Map<String, Object> attributes) {
