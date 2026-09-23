@@ -118,7 +118,7 @@ public class PipelineHitlService {
         PipelineRun run = requireRun(runId);
         requireReviewStatus(run, "применить");
 
-        List<String> unresolved = unresolvedParts(runId, unmappedPartsOf(run));
+        List<String> unresolved = unresolvedParts(runId, unmappedPartsOrEmpty(run));
         if (!unresolved.isEmpty()) {
             throw new PipelineRunUnresolvedPartsException(
                     "Есть несмаппированные части без решений: runId=" + runId, unresolved);
@@ -196,9 +196,21 @@ public class PipelineHitlService {
     }
 
     private Set<String> unmappedPartsOf(PipelineRun run) {
-        if (run.getDraftJson() == null || run.getDraftJson().isBlank()) {
+        if (!hasDraft(run)) {
             throw new PipelineRunConflictException("У запуска нет контекста паузы: runId=" + run.getId());
         }
+        return parseUnmappedParts(run);
+    }
+
+    private Set<String> unmappedPartsOrEmpty(PipelineRun run) {
+        return hasDraft(run) ? parseUnmappedParts(run) : Set.of();
+    }
+
+    private boolean hasDraft(PipelineRun run) {
+        return run.getDraftJson() != null && !run.getDraftJson().isBlank();
+    }
+
+    private Set<String> parseUnmappedParts(PipelineRun run) {
         try {
             return objectMapper.readValue(run.getDraftJson(), UseCaseDraft.class).unmappedOrEmpty().stream()
                     .map(UseCaseDraft.UnmappedPart::partId)
