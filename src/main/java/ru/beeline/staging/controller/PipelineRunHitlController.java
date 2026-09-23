@@ -92,7 +92,7 @@ public class PipelineRunHitlController {
             @PathVariable Long runId,
             @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId,
             @RequestBody(required = false) PipelineRunDecisionsRequest request) {
-        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
+        pipelineRunAccessGuard.requireAuthor(runId, userId);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineHitlService.decide(runId, request));
     }
@@ -118,7 +118,7 @@ public class PipelineRunHitlController {
             @PathVariable Long runId,
             @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId,
             @RequestBody(required = false) ApplyPipelineRunRequest request) {
-        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
+        pipelineRunAccessGuard.requireAuthor(runId, userId);
         String comment = request == null ? null : request.getComment();
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(pipelineHitlService.apply(runId, comment));
@@ -166,7 +166,7 @@ public class PipelineRunHitlController {
     public ResponseEntity<DeclinePipelineRunResponse> decline(
             @PathVariable Long runId,
             @RequestHeader(value = Constant.USER_ID_HEADER, required = false) Integer userId) {
-        pipelineRunAccessGuard.requireDecisionRights(runId, userId);
+        pipelineRunAccessGuard.requireAuthor(runId, userId);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(pipelineHitlService.decline(runId));
     }
 }

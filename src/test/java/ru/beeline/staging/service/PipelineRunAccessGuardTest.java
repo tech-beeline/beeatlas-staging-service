@@ -38,7 +38,7 @@ class PipelineRunAccessGuardTest {
     void authorDecidesWithoutAskingAuth() {
         givenRunWithAuthor(434318);
 
-        assertThatCode(() -> guard.requireDecisionRights(RUN_ID, 434318)).doesNotThrowAnyException();
+        assertThatCode(() -> guard.requireAuthor(RUN_ID, 434318)).doesNotThrowAnyException();
 
         verify(authUserClient, never()).isAdministrator(any());
     }
@@ -48,12 +48,25 @@ class PipelineRunAccessGuardTest {
     void runWithoutAnAuthorIsOpen() {
         givenRunWithAuthor(null);
 
+        assertThatCode(() -> guard.requireAuthor(RUN_ID, 1)).doesNotThrowAnyException();
         assertThatCode(() -> guard.requireDecisionRights(RUN_ID, 1)).doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("Администратор может принять решение за автора")
-    void administratorMayDecideForTheAuthor() {
+    @DisplayName("Администратор не принимает решения за автора — постановка SFDM-4160")
+    void administratorMayNotDecideForTheAuthor() {
+        givenRunWithAuthor(434318);
+        when(authUserClient.isAdministrator(7)).thenReturn(true);
+
+        assertThatThrownBy(() -> guard.requireAuthor(RUN_ID, 7))
+                .isInstanceOf(PipelineRunForbiddenException.class)
+                .hasMessageContaining("только пользователь, который его запустил");
+        verify(authUserClient, never()).isAdministrator(any());
+    }
+
+    @Test
+    @DisplayName("Отменить чужой запуск администратор по-прежнему может")
+    void administratorMayCancelForeignRun() {
         givenRunWithAuthor(434318);
         when(authUserClient.isAdministrator(7)).thenReturn(true);
 
@@ -66,7 +79,7 @@ class PipelineRunAccessGuardTest {
         givenRunWithAuthor(434318);
         when(authUserClient.isAdministrator(7)).thenReturn(false);
 
-        assertThatThrownBy(() -> guard.requireDecisionRights(RUN_ID, 7))
+        assertThatThrownBy(() -> guard.requireAuthor(RUN_ID, 7))
                 .isInstanceOf(PipelineRunForbiddenException.class)
                 .hasMessageContaining("только пользователь, который его запустил");
     }
@@ -76,7 +89,7 @@ class PipelineRunAccessGuardTest {
     void missingUserIdIsRejected() {
         givenRunWithAuthor(434318);
 
-        assertThatThrownBy(() -> guard.requireDecisionRights(RUN_ID, null))
+        assertThatThrownBy(() -> guard.requireAuthor(RUN_ID, null))
                 .isInstanceOf(PipelineRunForbiddenException.class);
     }
 
