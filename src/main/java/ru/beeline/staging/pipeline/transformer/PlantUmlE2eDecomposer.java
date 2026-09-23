@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.client.ProductServiceClient;
+import ru.beeline.staging.dto.e2e.E2ePlantUmlPauseContext;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.e2e.CmdbAliasLookup;
 import ru.beeline.staging.e2e.ParseOutcome;
@@ -55,7 +56,8 @@ public class PlantUmlE2eDecomposer {
     private final ProductServiceClient productServiceClient;
     private final ObjectMapper objectMapper;
 
-    public record Result(E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices) {}
+    public record Result(E2ESequenceSnapshot snapshot, List<ArtifactNotice> notices,
+                         E2ePlantUmlPauseContext pauseContext) {}
 
     public Result decompose(String plantUmlText, String artifactUid, String name, String biStepCode) {
         List<ArtifactNotice> notices = new ArrayList<>();
@@ -64,19 +66,22 @@ public class PlantUmlE2eDecomposer {
         if (biStepCode != null && !biStepCode.isBlank()) {
             snapshot.getBiSteps().add(biStep(biStepCode));
         }
+        E2ePlantUmlPauseContext.E2e e2e = new E2ePlantUmlPauseContext.E2e(artifactUid, name, biStepCode);
 
         ParseOutcome outcome = parser.parse(plantUmlText);
         if (!outcome.isParsed()) {
             notices.add(notice(PARSE_FAILED, "error", Map.of("artifactUid", artifactUid,
                     "reason", outcome.findings().isEmpty() ? "unparseable" : outcome.findings().get(0).message())));
-            return new Result(snapshot, notices);
+            return new Result(snapshot, notices, null);
         }
 
         ParsedDiagram diagram = outcome.diagram();
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolved = resolveParticipants(diagram);
+        List<E2ePlantUmlPauseContext.Participant> participants = participantsOf(diagram, resolved);
         List<Call> calls = collectCalls(diagram, resolved, notices);
         if (calls.isEmpty()) {
-            return new Result(snapshot, notices);
+            return new Result(snapshot, notices,
+                    new E2ePlantUmlPauseContext(e2e, participants, List.of()));
         }
 
         List<OperationMatchCandidate> candidates = candidatesOf(calls);
@@ -87,11 +92,29 @@ public class PlantUmlE2eDecomposer {
             } catch (RuntimeException e) {
                 notices.add(notice(SEARCH_UNAVAILABLE, "error", Map.of("artifactUid", artifactUid,
                         "reason", String.valueOf(e.getMessage()))));
-                return new Result(snapshot, notices);
+                return new Result(snapshot, notices, null);
             }
         }
-        buildSnapshot(snapshot, calls, matchByKey, notices);
-        return new Result(snapshot, notices);
+        List<E2ePlantUmlPauseContext.Request> requests = new ArrayList<>();
+        buildSnapshot(snapshot, calls, matchByKey, notices, requests);
+        return new Result(snapshot, notices, new E2ePlantUmlPauseContext(e2e, participants, requests));
+    }
+
+    private List<E2ePlantUmlPauseContext.Participant> participantsOf(
+            ParsedDiagram diagram, Map<String, CmdbAliasLookup.ResolvedParticipant> resolved) {
+
+        List<E2ePlantUmlPauseContext.Participant> participants = new ArrayList<>();
+        for (ParsedDiagram.Participant participant : diagram.participants()) {
+            CmdbAliasLookup.ResolvedParticipant match = resolved.get(participant.alias());
+            boolean isResolved = match != null && !match.ambiguous();
+            participants.add(new E2ePlantUmlPauseContext.Participant(
+                    participant.alias(),
+                    isResolved,
+                    isResolved ? match.productAlias() : null,
+                    isResolved ? match.name() : participant.name(),
+                    isResolved ? match.kind().name().toLowerCase(Locale.ROOT) : null));
+        }
+        return participants;
     }
 
     private record Call(ParsedDiagram.Message message, String method, String path,
@@ -192,7 +215,8 @@ public class PlantUmlE2eDecomposer {
     }
 
     private void buildSnapshot(E2ESequenceSnapshot snapshot, List<Call> calls,
-            Map<String, MatchedArchOperation> matchByKey, List<ArtifactNotice> notices) {
+            Map<String, MatchedArchOperation> matchByKey, List<ArtifactNotice> notices,
+            List<E2ePlantUmlPauseContext.Request> requests) {
         Map<String, E2ESequenceSnapshot.ProductDraft> products = new LinkedHashMap<>();
         Map<String, E2ESequenceSnapshot.ContainerDraft> containers = new LinkedHashMap<>();
         Map<String, E2ESequenceSnapshot.InterfaceDraft> interfaces = new LinkedHashMap<>();
@@ -257,6 +281,11 @@ public class PlantUmlE2eDecomposer {
             relation.setCallOrder(callOrder);
             snapshot.getOperationRelations().add(relation);
 
+            requests.add(new E2ePlantUmlPauseContext.Request(requests.size(), fromAlias, toAlias,
+                    call.message().label(), call.method(), call.path(), UNKNOWN_TYPE.equals(call.method()),
+                    productUid, interfaceUid, call.method() + " " + call.path(),
+                    matchOf(call, match, matched)));
+
             activeOperationByLifeline.put(toAlias, operationExtUid);
             excludedParentLineByLifeline.remove(toAlias);
         }
@@ -265,6 +294,23 @@ public class PlantUmlE2eDecomposer {
         snapshot.getContainers().addAll(containers.values());
         snapshot.getInterfaces().addAll(interfaces.values());
         snapshot.getOperations().addAll(operations.values());
+    }
+
+    private E2ePlantUmlPauseContext.Match matchOf(Call call, MatchedArchOperation match, boolean matched) {
+        if (UNKNOWN_TYPE.equals(call.method())) {
+            return E2ePlantUmlPauseContext.Match.of(E2ePlantUmlPauseContext.SKIPPED);
+        }
+        if (!matched) {
+            return E2ePlantUmlPauseContext.Match.of(E2ePlantUmlPauseContext.NOT_FOUND);
+        }
+        return new E2ePlantUmlPauseContext.Match(E2ePlantUmlPauseContext.MATCHED, match.getId(),
+                match.getName(), match.getType(),
+                match.getInterfaceObj() != null ? match.getInterfaceObj().getCode() : null,
+                match.getInterfaceObj() != null ? match.getInterfaceObj().getName() : null,
+                match.getContainer() != null ? match.getContainer().getCode() : null,
+                match.getContainer() != null ? match.getContainer().getName() : null,
+                match.getProduct() != null ? match.getProduct().getAlias() : null,
+                match.getProduct() != null ? match.getProduct().getName() : null);
     }
 
     private String productUid(Call call, MatchedArchOperation match) {

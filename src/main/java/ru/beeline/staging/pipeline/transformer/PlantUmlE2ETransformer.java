@@ -35,6 +35,6 @@ public class PlantUmlE2ETransformer implements ArtifactTransformer {
                 MODULE_CODE, artifactUid, snapshot.getProducts().size(), snapshot.getContainers().size(),
                 snapshot.getInterfaces().size(), snapshot.getOperations().size(),
                 snapshot.getOperationRelations().size());
-        return TransformResult.of(snapshot, result.notices());
+        return TransformResult.of(snapshot, result.notices(), result.pauseContext());
     }
 }

@@ -58,6 +58,30 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
+    @DisplayName("Контекст паузы несёт участников, стороны вызова и подписи — того, чего нет в каноне")
+    void buildsThePauseContext() {
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
+
+        assertThat(result.pauseContext()).isNotNull();
+        assertThat(result.pauseContext().e2e().uid()).isEqualTo(UID);
+        assertThat(result.pauseContext().e2e().name()).isEqualTo("Оплата");
+        assertThat(result.pauseContext().participants()).isNotEmpty();
+        assertThat(result.pauseContext().participants())
+                .allSatisfy(participant -> assertThat(participant.alias()).isNotBlank());
+        assertThat(result.pauseContext().requests()).isNotEmpty();
+        assertThat(result.pauseContext().requests()).allSatisfy(request -> {
+            assertThat(request.fromAlias()).isNotBlank();
+            assertThat(request.toAlias()).isNotBlank();
+            assertThat(request.label()).isNotBlank();
+            assertThat(request.interfaceCode()).isNotBlank();
+            assertThat(request.match().status()).isIn("matched", "not_found", "skipped");
+        });
+        assertThat(result.pauseContext().requests())
+                .filteredOn(request -> request.unknown())
+                .allSatisfy(request -> assertThat(request.match().status()).isEqualTo("skipped"));
+    }
+
+    @Test
     @DisplayName("Каждый вызов даёт свой интерфейс с кодом-хешем, продукт берётся у получателя")
     void mapsEveryCallToItsOwnInterface() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);

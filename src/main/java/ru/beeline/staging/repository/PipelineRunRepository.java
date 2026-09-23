@@ -128,6 +128,11 @@ public interface PipelineRunRepository extends JpaRepository<PipelineRun, Long> 
 
     @Transactional
     @Modifying
+    @Query("UPDATE PipelineRun r SET r.draftJson = :draftJson WHERE r.id = :id")
+    int saveDraftJson(@Param("id") Long id, @Param("draftJson") String draftJson);
+
+    @Transactional
+    @Modifying
     @Query("UPDATE PipelineRun r SET r.status = :status, " +
            "r.executionStartedAt = COALESCE(r.executionStartedAt, CURRENT_TIMESTAMP) " +
            "WHERE r.id = :id AND r.status <> 'cancelled'")

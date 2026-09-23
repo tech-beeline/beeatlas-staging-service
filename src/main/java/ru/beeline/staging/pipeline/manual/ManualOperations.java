@@ -51,7 +51,7 @@ public class ManualOperations {
 
     public boolean reviewable(String artifactType, Long runId) {
         ArtifactManualOperations handler = registry.get(artifactType);
-        return handler == null || handler.pauseContext(runId) != null;
+        return handler == null || handler.pauseRequired(runId);
     }
 
     public List<String> unmappedParts(String artifactType, Long runId) {

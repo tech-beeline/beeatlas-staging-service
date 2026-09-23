@@ -15,6 +15,10 @@ public interface ArtifactManualOperations {
 
     JsonNode pauseContext(Long runId);
 
+    default boolean pauseRequired(Long runId) {
+        return pauseContext(runId) != null;
+    }
+
     List<String> unmappedParts(Long runId);
 
     void applyDecision(Long runId, ImportDecision decision);

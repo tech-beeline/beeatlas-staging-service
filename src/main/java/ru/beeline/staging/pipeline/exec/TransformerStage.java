@@ -91,6 +91,10 @@ public class TransformerStage implements ArtifactPipelineStage {
             ref.setCanonicalSnapshotJson(snapshotJson);
             rawDataRefRepository.save(ref);
 
+            if (result.pauseContext() != null) {
+                pipelineRunRepository.saveDraftJson(runId, objectMapper.writeValueAsString(result.pauseContext()));
+            }
+
             List<ArtifactNotice> noticesToSave = result.notices().size() > MAX_NOTICES
                     ? aggregateByCodeAndReason(result.notices())
                     : result.notices();
