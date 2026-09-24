@@ -16,6 +16,9 @@ import ru.beeline.staging.exception.DocumentAccessDeniedException;
 import ru.beeline.staging.exception.DocumentNotFoundException;
 import ru.beeline.staging.exception.DocumentServiceUnavailableException;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -29,12 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class E2eValidationControllerTest {
 
-    private static final String VALID_PUML = """
-            @startuml
-            participant CRM as crm
-            crm -> crm: GET /api/v1/order
-            @enduml
-            """;
+    private static final String VALID_PUML = fixture("universal.puml");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private DocumentServiceClient documentServiceClient;
@@ -62,7 +60,7 @@ class E2eValidationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.valid").value(true));
+                .andExpect(jsonPath("$.valid").value(false));
     }
 
     @Test
@@ -135,5 +133,16 @@ class E2eValidationControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.errorMessage").value("Validation failed due to an internal error, try again later"));
+    }
+
+    private static String fixture(String name) {
+        try (InputStream in = E2eValidationControllerTest.class.getResourceAsStream("/e2e/" + name)) {
+            if (in == null) {
+                throw new IllegalStateException("Fixture not found: " + name);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

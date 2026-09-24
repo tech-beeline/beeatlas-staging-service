@@ -50,11 +50,6 @@ public class PipelineRun {
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt = LocalDateTime.now();
 
-    // Set once, the first time startStage() runs for this run (see PipelineRunService#startStage).
-    // Deliberately separate from startedAt, which stays at row-creation time — startedAt is
-    // load-bearing for stuck-run/backlog detection (PipelineTickScheduler) and resume-candidate
-    // ordering (PipelineResumeScheduler), both of which need "how long has this existed", not "how
-    // long has it been executing".
     @Column(name = "execution_started_at")
     private LocalDateTime executionStartedAt;
 
@@ -73,8 +68,27 @@ public class PipelineRun {
     @Column(name = "parent_run_id")
     private Long parentRunId;
 
+    @Column(name = "payload", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String payload;
+
+    @Column(name = "source_id")
+    private Integer sourceId;
+
+    @Column(name = "branch")
+    private String branch;
+
+    @Column(name = "supersedes_run_id")
+    private Long supersedesRunId;
+
+    @Column(name = "draft_json")
+    private String draftJson;
+
     @Column(name = "owner_id")
     private String ownerId;
+
+    @Column(name = "created_by_user_id")
+    private Integer createdByUserId;
 
     @Column(name = "lease_expires_at")
     private LocalDateTime leaseExpiresAt;
@@ -82,12 +96,12 @@ public class PipelineRun {
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount = 0;
 
-    // Snapshot of this scan's own children, written once at fan-out time (see
-    // PipelineRunService#snapshotChildRunIds). NULL for child runs and for scans predating V0014.
-    // @JdbcTypeCode required — columnDefinition alone is DDL-only (ddl-auto: none, so it's never even
-    // read) and does nothing for the runtime JDBC binding. Without it Hibernate doesn't serialize
-    // List<Long> as jsonb, so every write here was silently going in wrong — this is why
-    // childStatsSnapshot came back empty on dev even for freshly-run scans.
+    @Column(name = "resume_count", nullable = false)
+    private Integer resumeCount = 0;
+
+    @Column(name = "blocked_at")
+    private LocalDateTime blockedAt;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "child_run_ids", columnDefinition = "jsonb")
     private List<Long> childRunIds;

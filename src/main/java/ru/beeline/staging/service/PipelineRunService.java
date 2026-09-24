@@ -15,6 +15,7 @@ import ru.beeline.staging.domain.PipelineDefinitionEntry;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.PipelineStageLog;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
+import ru.beeline.staging.exception.PipelineRunCancelledException;
 import ru.beeline.staging.repository.ArtifactBatchRepository;
 import ru.beeline.staging.repository.PipelineDefinitionEntryRepository;
 import ru.beeline.staging.repository.PipelineRunRepository;
@@ -38,7 +39,7 @@ public class PipelineRunService {
     private final ArtifactNoticeService      noticeService;
     private final MeterRegistry              meterRegistry;
 
-    private static final List<String> DONE_STATUSES = List.of("completed");
+    private static final List<String> DONE_STATUSES = List.of("completed", "cancelled", "completed_without_publish");
 
     @Value("${staging.recovery.max-auto-retries:3}")
     private int maxAutoRetries;
@@ -54,6 +55,9 @@ public class PipelineRunService {
         run.setStatus("pending");
         run.setStartedAt(LocalDateTime.now());
         run.setParentRunId(scanRunId);
+        run.setCreatedByUserId(scanRunId == null ? null : runRepository.findById(scanRunId)
+                .map(PipelineRun::getCreatedByUserId)
+                .orElse(null));
         run.setPipelineDefinitionId(pipelineDefinitionRepository.findByArtifactTypeAndCurrentTrue(artifactType)
                 .map(PipelineDefinitionEntry::getId)
                 .orElse(null));
@@ -62,10 +66,7 @@ public class PipelineRunService {
 
     @Transactional
     public void setRawDataRefId(Long runId, Long rawDataRefId) {
-        runRepository.findById(runId).ifPresent(run -> {
-            run.setRawDataRefId(rawDataRefId);
-            runRepository.save(run);
-        });
+        runRepository.updateRawDataRefId(runId, rawDataRefId);
     }
 
     public boolean isAlreadyCompleted(Long runId) {
@@ -92,11 +93,9 @@ public class PipelineRunService {
     public Long startStage(Long runId, String stageName, String inputData) {
         PipelineRun run = runRepository.findById(runId)
                 .orElseThrow(() -> new NoSuchElementException("PipelineRun not found: " + runId));
-        run.setStatus(stageToStatus(stageName));
-        if (run.getExecutionStartedAt() == null) {
-            run.setExecutionStartedAt(LocalDateTime.now());
+        if (runRepository.advanceStage(runId, stageToStatus(stageName)) == 0) {
+            throw new PipelineRunCancelledException(runId, stageName);
         }
-        runRepository.save(run);
 
         PipelineStageLog log = new PipelineStageLog();
         log.setRunId(runId);
@@ -116,6 +115,15 @@ public class PipelineRunService {
             entry.setOutputData(outputData);
             entry.setSummaryJson(summary);
             stageLogRepository.save(entry);
+            runRepository.resetResumeCount(entry.getRunId());
+        });
+    }
+
+    @Transactional
+    public void updateStageSummary(Long stageLogId, Map<String, Object> summary) {
+        stageLogRepository.findById(stageLogId).ifPresent(entry -> {
+            entry.setSummaryJson(summary);
+            stageLogRepository.save(entry);
         });
     }
 
@@ -133,10 +141,21 @@ public class PipelineRunService {
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "failed").increment();
     }
 
-    // One transaction: completeStage + completeRun + all children, so a crash mid-fan-out can't
-    // leave a partial set of children behind.
+    public enum Disposition {
+        CREATED,
+        REQUEUED,
+        IN_FLIGHT,
+        BLOCKED
+    }
+
+    public record ChildOutcome(String artifactUid, PipelineRun run, Disposition disposition) {
+        public boolean ownedByThisScan() {
+            return disposition == Disposition.CREATED || disposition == Disposition.REQUEUED;
+        }
+    }
+
     @Transactional
-    public List<PipelineRun> finishScanWithChildren(Long scanRunId, Long stageLogId, String outputData,
+    public List<ChildOutcome> finishScanWithChildren(Long scanRunId, Long stageLogId, String outputData,
                                                       Map<String, Object> summary, String artifactType,
                                                       Long configurationId, String batchId,
                                                       List<String> artifactUids) {
@@ -148,35 +167,47 @@ public class PipelineRunService {
             stageLogRepository.save(entry);
         });
         runRepository.markCompleted(scanRunId, "completed");
+        runRepository.resetResumeCount(scanRunId);
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
 
-        // A found artifact may already have an undrained (or failed-but-retryable) run from a
-        // previous scan of this config — reuse it instead of piling on a duplicate every cycle.
-        // Only "completed" excludes reuse; "failed" is deliberately included (unlike the old
-        // NOT IN (completed,failed) check) — otherwise a failed run sitting between failure and
-        // the next auto-retry sweep looked "not queued" to this check, so a new scan would create
-        // a second copy for the same artifact right alongside it.
-        List<PipelineRun> children = new java.util.ArrayList<>(artifactUids.size());
+        List<ChildOutcome> outcomes = new java.util.ArrayList<>(artifactUids.size());
         for (String uid : artifactUids) {
             PipelineRun existing = runRepository
                     .findFirstByArtifactUidAndArtifactTypeAndStatusNotInOrderByStartedAtDesc(uid, artifactType, DONE_STATUSES)
                     .orElse(null);
             if (existing == null) {
-                children.add(createRun(uid, artifactType, configurationId, batchId, scanRunId));
+                outcomes.add(new ChildOutcome(uid, createRun(uid, artifactType, configurationId, batchId, scanRunId),
+                        Disposition.CREATED));
                 continue;
             }
-            if ("failed".equals(existing.getStatus()) && existing.getRetryCount() < maxAutoRetries) {
-                runRepository.markRetrying(existing.getId());
+            if (!"failed".equals(existing.getStatus())) {
+                outcomes.add(new ChildOutcome(uid, existing, Disposition.IN_FLIGHT));
+                continue;
             }
-            children.add(existing);
+            if (existing.getRetryCount() >= maxAutoRetries) {
+                if (existing.getBlockedAt() == null) {
+                    existing.setBlockedAt(LocalDateTime.now());
+                    runRepository.save(existing);
+                }
+                outcomes.add(new ChildOutcome(uid, existing, Disposition.BLOCKED));
+                continue;
+            }
+            runRepository.markRetrying(existing.getId());
+            reassignParent(existing, scanRunId);
+            outcomes.add(new ChildOutcome(uid, existing, Disposition.REQUEUED));
         }
-        return children;
+        return outcomes;
     }
 
-    // Written once, right after fan-out (see PipelineExecutionService#executeScan) — the only moment
-    // "which artifacts did this scan find" is unambiguous. Deliberately not kept in sync afterwards:
-    // an artifact rediscovered by a later scan still belongs to this snapshot, since this scan really
-    // did find it. Only each run's *status* (read live via child_run_ids at query time) changes.
+    private void reassignParent(PipelineRun run, Long newParentRunId) {
+        Long previousParent = run.getParentRunId();
+        if (newParentRunId.equals(previousParent)) return;
+        if (previousParent != null) {
+            runRepository.removeChildFromSnapshot(previousParent, run.getId());
+        }
+        runRepository.updateParentRunId(run.getId(), newParentRunId);
+    }
+
     @Transactional
     public void snapshotChildRunIds(Long scanRunId, List<Long> childRunIds) {
         runRepository.findById(scanRunId).ifPresent(scan -> {
@@ -192,9 +223,30 @@ public class PipelineRunService {
         meterRegistry.counter("staging_pipeline_runs_total", "artifact_type", artifactType, "status", "completed").increment();
     }
 
-    // markCompleted/markFailed are bulk UPDATEs and don't return the entity, so fetched separately.
     private String artifactTypeOf(Long runId) {
         return runRepository.findById(runId).map(PipelineRun::getArtifactType).orElse("unknown");
+    }
+
+    @Transactional
+    public void failStalledRun(Long runId, int resumeAttempts, int retryCeiling) {
+        PipelineRun run = runRepository.findById(runId).orElse(null);
+        if (run == null || DONE_STATUSES.contains(run.getStatus()) || "failed".equals(run.getStatus())) return;
+
+        String stage = stageLogRepository.findRunningStageNames(runId).stream().findFirst().orElse(run.getStatus());
+        String reason = "Stalled: claimed " + resumeAttempts + " times with no stage completing; "
+                + "forced terminal by the stall watchdog";
+
+        int abandoned = stageLogRepository.abandonRunningStages(runId, reason);
+        if (runRepository.markStalled(runId, reason, stage, retryCeiling) == 0) return;
+
+        meterRegistry.counter("staging_pipeline_runs_stalled_total",
+                "artifact_type", run.getArtifactType(),
+                "kind", run.getArtifactUid() == null ? "scan" : "artifact").increment();
+        log.error("Stall watchdog force-failed pipelineRunId={} (type={}, {}, configId={}, startedAt={}): "
+                        + "{} resume claims, no progress, {} dangling stage log(s) closed. "
+                        + "Root cause is upstream of this — check the last '{}' stage failure for this run.",
+                runId, run.getArtifactType(), run.getArtifactUid() == null ? "scan" : "artifact=" + run.getArtifactUid(),
+                run.getConfigurationId(), run.getStartedAt(), resumeAttempts, abandoned, stage);
     }
 
     @Transactional
@@ -253,6 +305,7 @@ public class PipelineRunService {
             case "validator"   -> "validating";
             case "transformer" -> "transforming";
             case "saver"       -> "saving";
+            case "manual"      -> "awaiting_review";
             case "publisher"   -> "publishing";
             default            -> stageName;
         };

@@ -30,10 +30,6 @@ public class SparxE2ERepository {
 			      WHERE p.stereotype = 'e2e_diagram'
 			      """;
 
-	// Full raw export of one e2e scenario:
-	// entrance_diagram_uid/diagrams/objects/systems/containers/interfaces/operations,
-	// no collapsing of internal calls — that happens downstream in
-	// ScenarioDecomposer.
 	private static final String FETCH_SCENARIO_RAW = """
 									            WITH RECURSIVE cte_scenario AS (
 									                    	SELECT
@@ -42,7 +38,6 @@ public class SparxE2ERepository {
 									                    		name,
 									                    		0 as object_id
 									                    	FROM t_diagram WHERE ea_guid=?
--- Рекурсивный обход иерархии ProvidedInterface (classifier-цепочка).
 ), cte_api_parent AS (
     SELECT object_id AS child_id,
         object_id,
@@ -58,7 +53,6 @@ public class SparxE2ERepository {
             AND r.connector_type = 'Generalization'
         JOIN t_object o ON o.object_id = r.start_object_id
 ),
--- Связь "объект -> дочерняя Sequence-диаграмма" через xref DefaultDiagram.
 cte_diagram_link AS (
     SELECT od.diagram_id,
         o.object_id,
@@ -78,7 +72,6 @@ cte_diagram_link AS (
             AND od.diagram_id <> d.diagram_id
     WHERE x.name = 'DefaultDiagram'
 ),
--- Рекурсивный сбор всех диаграмм сценария.
 cte_diagrams AS (
     SELECT diagram_id,
         uid,
@@ -105,7 +98,6 @@ cte_all_diagrams AS (
     FROM cte_diagrams cd
         JOIN t_diagram d ON d.diagram_id = cd.diagram_id
 ),
--- Сообщения (Sequence-коннекторы) диаграмм сценария.
 cte_diagram_messages AS (
     SELECT DISTINCT c.diagramid AS diagram_id,
         c.ea_guid AS uid,
@@ -116,7 +108,6 @@ cte_diagram_messages AS (
         c.seqno,
         c.pdata1,
         c.pdata4,
-        -- operation_guid из t_connectortag
         (
             SELECT ct.value
             FROM t_connectortag ct
@@ -124,7 +115,6 @@ cte_diagram_messages AS (
                 AND ct.property = 'operation_guid'
             LIMIT 1
         ) AS operation_guid,
-        -- Связь с дочерней диаграммой
         l.ea_guid AS linked_diagram_uid
     FROM t_connector c
         JOIN t_diagramobjects so ON so.object_id = c.start_object_id
@@ -138,8 +128,6 @@ cte_diagram_messages AS (
         )
         AND c.connector_type = 'Sequence'
 ),
--- Два способа привязки API-компонента к владеющему softwareSystem:
--- structurizr-путь имеет приоритет над manual-путём.
 cte_api_raw AS (
     SELECT sys.object_id AS system_id,
         cn.object_id AS container_id,
@@ -201,7 +189,6 @@ cte_api_raw AS (
     WHERE app.stereotype = 'softwareSystem'
 ),
 cte_api AS (
-    -- Дедупликация по api_id: structurizr (приоритет 0) над manual (приоритет 1).
     SELECT *
     FROM (
             SELECT *,
@@ -233,9 +220,6 @@ cte_objects AS (
             FROM cte_diagrams
         )
 ),
--- Кандидаты C4-методов: один ряд на (операция, C4-метод), сматченный по имени.
--- Используется единым источником и для построения operations[].c4_methods[],
--- и для набора интерфейсов C4-методов (cte_interface_ids).
 cte_c4_methods AS (
     SELECT ap.api_id AS operation_interface_id,
         ap.system_id AS operation_system_id,
@@ -294,7 +278,6 @@ cte_operations AS (
             ),
             '[]'::jsonb
         ) AS tags,
-        -- C4-методы операции (агрегация кандидатов из cte_c4_methods)
         COALESCE(
             (
                 SELECT jsonb_agg(
@@ -321,7 +304,6 @@ cte_operations AS (
             FROM cte_diagram_messages
         )
 ),
--- Единый набор id интерфейсов: первичные интерфейсы операций + интерфейсы C4-методов.
 cte_interface_ids AS (
     SELECT DISTINCT interface_id
     FROM cte_operations
@@ -377,7 +359,6 @@ cte_interfaces_raw AS (
         LEFT JOIN cte_api api ON api.api_id = ii.interface_id
 ),
 cte_interfaces AS (
-    -- G16: дедупликация интерфейсов по id (interface_id), сохраняется первый
     SELECT DISTINCT ON (id) id,
         code,
         name,
@@ -408,8 +389,6 @@ cte_diagram_detail AS (
     FROM cte_diagrams d
         JOIN t_diagram dd ON dd.diagram_id = d.diagram_id
 ),
--- Владельцы интерфейсов (актуально в т.ч. для интерфейсов C4-методов,
--- т.к. cte_interfaces теперь содержит и их).
 cte_systems AS (
     SELECT DISTINCT s.object_id AS id,
         s.name,
@@ -516,7 +495,6 @@ SELECT jsonb_build_object(
 			log.warn("Sparx datasource not configured (staging.sparx.datasource.url not set) — returning empty list");
 			return List.of();
 		}
-		// DEBUG: log datasource metadata
 		try {
 			var ds = sparxJdbcTemplate.getDataSource();
 			if (ds != null) {
@@ -542,13 +520,6 @@ SELECT jsonb_build_object(
 		});
 	}
 
-	/**
-	 * Full raw export of one e2e scenario
-	 * (entrance_diagram_uid/diagrams/objects/systems/containers/interfaces/operations),
-	 * straight from Sparx EA — no collapsing. Returns the jsonb payload as text
-	 * (Postgres builds the JSON
-	 * server-side); {@code null} if the datasource isn't configured.
-	 */
 	public String fetchScenarioRaw(String entranceDiagramUid) {
 		if (sparxJdbcTemplate == null) {
 			log.warn("Sparx datasource not configured (staging.sparx.datasource.url not set) — cannot fetch uid={}",

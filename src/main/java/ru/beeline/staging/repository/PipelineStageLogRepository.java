@@ -23,4 +23,12 @@ public interface PipelineStageLogRepository extends JpaRepository<PipelineStageL
     @Modifying
     @Query("UPDATE PipelineStageLog l SET l.status = 'failed', l.completedAt = CURRENT_TIMESTAMP, l.failureReason = :reason WHERE l.id = :id")
     void markFailed(@Param("id") Long id, @Param("reason") String reason);
+    @Modifying
+    @Query("UPDATE PipelineStageLog l SET l.status = 'failed', l.completedAt = CURRENT_TIMESTAMP, " +
+           "l.failureReason = :reason WHERE l.runId = :runId AND l.status = 'running'")
+    int abandonRunningStages(@Param("runId") Long runId, @Param("reason") String reason);
+
+    @Query("SELECT l.stageName FROM PipelineStageLog l WHERE l.runId = :runId AND l.status = 'running' " +
+           "ORDER BY l.startedAt DESC")
+    List<String> findRunningStageNames(@Param("runId") Long runId);
 }

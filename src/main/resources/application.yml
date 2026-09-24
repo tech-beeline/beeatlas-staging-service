@@ -24,6 +24,8 @@ spring:
     open-in-view: false
 
 integration:
+  auth-server-url: ${INTEGRATION_AUTH_SERVER_URL:}
+  cx-server-url: ${INTEGRATION_CX_SERVER_URL:}
   e2e-publish:
     retry-count: ${INTEGRATION_E2E_PUBLISH_RETRY_COUNT:3}
     retry-delay-ms: ${INTEGRATION_E2E_PUBLISH_RETRY_DELAY_MS:1000}
@@ -59,8 +61,18 @@ staging:
   recovery:
     check-interval-ms: 300000      # 5 min — how often failed runs are checked for auto-retry
     max-auto-retries: 3
+    stall-check-interval-ms: 60000 # 1 min — how often the stall watchdog sweeps for runs making no progress
+    # Claims without a single stage completing before a run is force-failed. At the 5 min lease
+    # above this is ~1h of provable non-progress. Raise it only if a *single* stage legitimately
+    # runs longer than that — resumeCount resets on every completed stage, so long chains are safe.
+    max-resume-attempts: 12
   scheduler:
     tick-interval-ms: 60000        # PipelineTickScheduler: how often due configurations are scanned
+  run-status:
+    default-timeout-ms: 30000
+    max-timeout-ms: 60000
+    poll-interval-ms: 500
+    poller-threads: 2
 
 management:
   endpoints:

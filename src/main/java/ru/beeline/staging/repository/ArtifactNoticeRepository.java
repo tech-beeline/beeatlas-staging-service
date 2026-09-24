@@ -14,6 +14,6 @@ public interface ArtifactNoticeRepository extends JpaRepository<ArtifactNoticeEn
 
     List<ArtifactNoticeEntity> findByNoticeTypeId(Long noticeTypeId);
 
-    Optional<ArtifactNoticeEntity> findByRawDataContextIdAndNoticeTypeIdAndDetails(
+    Optional<ArtifactNoticeEntity> findFirstByRawDataContextIdAndNoticeTypeIdAndDetailsOrderByIdAsc(
             Long rawDataContextId, Long noticeTypeId, String details);
 }

@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -11,12 +12,6 @@ import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Fixtures below are trimmed/re-typed versions of the panels[0] content from
- * documentation/staging-service/source-artefacts/metric-queries/grafana-dashbaord-samples/
- * {prometheus,opensearch}-dashbaord.json (not read from that sibling repo directly — tests
- * shouldn't depend on paths outside this repo).
- */
 class MetricQueriesTransformerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -52,7 +47,7 @@ class MetricQueriesTransformerTest {
             }
             """;
 
-        TransformResult result = transformer.transform("beeatlas", raw);
+        TransformResult result = transformer.transform("beeatlas", raw, StageContext.empty());
         MetricQueriesObjectPublish snapshot = (MetricQueriesObjectPublish) result.snapshot();
 
         assertThat(snapshot.entityType()).isEqualTo("product");
@@ -79,8 +74,6 @@ class MetricQueriesTransformerTest {
         assertThat(totalRate.template().path("expr").asText())
                 .isEqualTo("sum (delta (http_server_requests_seconds_count{uri=~\"(?i){{uri}}\", method=\"{{method}}\"}[{{aggregation_period}}]))");
 
-        // A95 deduped against A75 (same metric_code+datasource.type, identical skeleton after
-        // percentile substitution) — duplicate_refId only, no latency_percentile_mismatch.
         assertThat(result.notices()).extracting(ArtifactNotice::code)
                 .contains("metric_queries.transform.warning.duplicate_refId")
                 .doesNotContain("metric_queries.transform.warning.latency_percentile_mismatch");
@@ -121,16 +114,16 @@ class MetricQueriesTransformerTest {
             }
             """;
 
-        TransformResult result = transformer.transform("grafana-source-1", raw);
+        TransformResult result = transformer.transform("grafana-source-1", raw, StageContext.empty());
         MetricQueriesObjectPublish snapshot = (MetricQueriesObjectPublish) result.snapshot();
 
         assertThat(snapshot.metricTemplates()).hasSize(4);
 
         MetricTemplate latency = findByCode(snapshot, "latency_percentile");
         JsonNode latencyTemplate = latency.template();
-        assertThat(latencyTemplate.path("datasource").path("type").asText()).isEqualTo("opensearch"); // normalized from elasticsearch
+        assertThat(latencyTemplate.path("datasource").path("type").asText()).isEqualTo("opensearch");
         assertThat(latencyTemplate.path("datasource").path("uid").asText()).isEqualTo("os-uid-1");
-        assertThat(latencyTemplate.has("expr")).isFalse();       // junk field stripped for opensearch
+        assertThat(latencyTemplate.has("expr")).isFalse();
         assertThat(latencyTemplate.path("query").asText())
                 .contains("{{uri_regex}}").contains("{{method}}")
                 .doesNotContain("$METHOD").doesNotContain("REGEX_URI");
@@ -141,7 +134,6 @@ class MetricQueriesTransformerTest {
         assertThat(latencyTemplate.path("percentile").asDouble()).isEqualTo(75.0);
 
         MetricTemplate clientError = findByCode(snapshot, "client_error_rate");
-        // "auto" interval is left untouched per spec (not a fixed period to parameterize)
         assertThat(clientError.template().path("bucketAggs").get(0).path("settings").path("interval").asText())
                 .isEqualTo("auto");
     }
@@ -156,7 +148,7 @@ class MetricQueriesTransformerTest {
             }
             """;
 
-        TransformResult result = transformer.transform("uid-1", raw);
+        TransformResult result = transformer.transform("uid-1", raw, StageContext.empty());
         MetricQueriesObjectPublish snapshot = (MetricQueriesObjectPublish) result.snapshot();
 
         assertThat(snapshot.metricTemplates()).isEmpty();

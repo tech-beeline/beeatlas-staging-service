@@ -2,7 +2,6 @@
  * Copyright (c) 2024 PJSC VimpelCom
  */
 
-
 package ru.beeline.staging.pipeline.saver;
 
 import lombok.RequiredArgsConstructor;
@@ -20,11 +19,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Find-or-create + versioning for the e2e_scenario identity (BLG-004/ADR-011, CMP-03).
- * Non-primary attribute (description) is serialized into {@code json_data}
- * via {@link JsonDataValidator} instead of the column setter.
- */
 @Service
 @RequiredArgsConstructor
 public class E2eScenarioMatchService {
@@ -35,7 +29,7 @@ public class E2eScenarioMatchService {
 
     @Transactional
     public E2eScenarioVersion matchOrCreate(String uid, String extUid, String name, String description,
-                                             Long biStepVersionId, String jsonPointer, Long rawDataRefId, Long batchId) {
+                                             Long biStepVersionId, String jsonPointer, Long rawDataRefId, Long batchId, String branch) {
         boolean[] created = {false};
         E2eScenario entity = e2eScenarioRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -53,7 +47,6 @@ public class E2eScenarioMatchService {
         version.setBiStepVersionId(biStepVersionId);
         version.setExtUid(extUid);
         version.setName(name);
-        // CMP-03: serialize non-primary attribute into json_data instead of column setter
         Map<String, Object> attrs = new HashMap<>();
         if (description != null) attrs.put("description", description);
         String jsonData = JsonDataValidator.toJsonData(attrs);
@@ -62,6 +55,7 @@ public class E2eScenarioMatchService {
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        version.setBranchName(branch);
         return e2eScenarioVersionRepository.save(version);
     }
 

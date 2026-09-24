@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.adapter;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -19,18 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-adapter-spec.md
- * — keep in sync with that spec.
- *
- * <p>Note on metadata: the spec describes pre-adapter passing {@code metadata} (entity_type/name/
- * apiMetricTemplateUrl) to the adapter stage. In the current core, {@code AdapterStage.execute()}
- * calls {@code adapter.load(uid, sourceId, null)} — metadata is never actually threaded through.
- * Rather than touch the core stage classes, this adapter re-resolves the object by uid from
- * Sparx EA itself — the same pattern already used
- * by {@link StructurizrSequenceAdapter}, which re-fetches product info from fdm-products instead of
- * trusting passed metadata.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -47,10 +36,6 @@ public class MetricQueriesAdapter implements ArtifactAdapter {
     private final RawDataRefRepository         rawDataRefRepository;
     private final ObjectMapper                 objectMapper;
 
-    // In-memory caches, scoped to this singleton bean's JVM lifetime (BR-007-04). The core has no
-    // explicit scan-cycle start/end hook to clear these between pre-adapter runs; ${DATASOURCE}
-    // resolution and dashboard content change rarely enough that an unbounded, un-expired cache is
-    // an acceptable trade-off here rather than adding new core wiring for it.
     private final Map<String, String> dashboardCache = new ConcurrentHashMap<>();
     private final Map<String, List<GrafanaDatasource>> datasourceCache = new ConcurrentHashMap<>();
     private static final String DATASOURCES_CACHE_KEY = "all";
@@ -62,7 +47,7 @@ public class MetricQueriesAdapter implements ArtifactAdapter {
     public String description() { return "Loads a Grafana dashboard (Full Export) by the object's api-metric-template URL"; }
 
     @Override
-    public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {
+    public Map<String, Object> load(String artifactUid, String sourceId, StageContext context) throws Exception {
         MetricQueriesSourceMeta source = sparxMetricQueriesRepository.findByUid(artifactUid)
                 .orElseThrow(() -> new IllegalStateException(
                         "Object no longer carries api-metric-template in Sparx EA: uid=" + artifactUid));
@@ -100,12 +85,6 @@ public class MetricQueriesAdapter implements ArtifactAdapter {
         return Map.of("rawDataRefId", result.getId(), "contentHash", contentHash, "skipped", !inserted);
     }
 
-    /**
-     * §6 step 4 of adapter-spec: resolve the `${DATASOURCE}` templating variable to a real
-     * datasource uid via GET /api/datasources. All three failure branches are hard errors — the
-     * artifact is rejected (thrown exception fails the adapter stage, matching every other error
-     * scenario in this stage).
-     */
     private Map<String, Object> resolveDatasources(JsonNode dashboardRoot) {
         JsonNode templatingList = dashboardRoot.path("dashboard").path("templating").path("list");
         JsonNode datasourceVar = null;

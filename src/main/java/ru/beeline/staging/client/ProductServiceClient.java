@@ -10,10 +10,12 @@ import org.springframework.stereotype.Repository;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-import ru.beeline.staging.product.dto.ContainerSummary;
+import ru.beeline.staging.product.dto.ContainerByCodeSummary;
 import ru.beeline.staging.product.dto.OperationSearchResponse;
 import ru.beeline.staging.product.dto.ProductAliasSummary;
 import ru.beeline.staging.product.dto.ProductSummary;
+import ru.beeline.staging.product.dto.search.MatchedArchOperation;
+import ru.beeline.staging.product.dto.search.OperationMatchCandidate;
 
 import java.util.List;
 import java.util.Optional;
@@ -54,10 +56,6 @@ public class ProductServiceClient {
         }
     }
 
-    /**
-     * Batch lookup of products (systems) by CMDB alias. Aliases are matched case-insensitively
-     * by fdm-products; only found products are returned (GET /api/v1/product/by-aliases).
-     */
     public List<ProductAliasSummary> getByAliases(List<String> aliases) {
         if (aliases == null || aliases.isEmpty()) {
             return List.of();
@@ -74,26 +72,37 @@ public class ProductServiceClient {
         }
     }
 
-    /**
-     * Containers of a product (system), CMDB alias in {@code code} (GET /api/v1/product/{cmdb}/container).
-     */
-    public List<ContainerSummary> getContainers(String cmdb) {
-        String url = baseUrl + "/api/v1/product/" + cmdb + "/container";
-        log.info("Fetching containers: cmdb={} url={}", cmdb, url);
-        try {
-            ContainerSummary[] containers = restTemplate.getForObject(url, ContainerSummary[].class);
-            return containers != null ? List.of(containers) : List.of();
-        } catch (HttpClientErrorException.NotFound e) {
+    public List<ContainerByCodeSummary> getContainersByCodes(List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
             return List.of();
+        }
+        String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/container/by-codes")
+                .queryParam("codes", codes)
+                .toUriString();
+        log.info("Fetching containers by codes: count={} url={}", codes.size(), url);
+        try {
+            ContainerByCodeSummary[] containers = restTemplate.getForObject(url, ContainerByCodeSummary[].class);
+            return containers != null ? List.of(containers) : List.of();
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to fetch containers: cmdb=" + cmdb + " url=" + url + " — " + e.getMessage(), e);
+            throw new IllegalStateException("Failed to fetch containers by codes: url=" + url + " — " + e.getMessage(), e);
         }
     }
 
-    /**
-     * Operation search by path fragment and HTTP method (GET /api/v1/operation). fdm-products matches
-     * {@code path} with a substring ILIKE — callers must re-filter the result for an exact path match.
-     */
+    public List<MatchedArchOperation> searchMatchedOperations(List<OperationMatchCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return List.of();
+        }
+        String url = baseUrl + "/api/v1/operation/search-matched";
+        log.info("Searching matched operations: candidates={} url={}", candidates.size(), url);
+        try {
+            MatchedArchOperation[] matched = restTemplate.postForObject(url, candidates, MatchedArchOperation[].class);
+            return matched != null ? List.of(matched) : List.of();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to search matched operations: url=" + url
+                    + " candidates=" + candidates.size() + " — " + e.getMessage(), e);
+        }
+    }
+
     public OperationSearchResponse searchOperation(String path, String type) {
         String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v1/operation")
                 .queryParam("path", path)

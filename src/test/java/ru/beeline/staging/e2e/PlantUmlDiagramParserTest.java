@@ -13,30 +13,41 @@ class PlantUmlDiagramParserTest {
     private final PlantUmlDiagramParser parser = new PlantUmlDiagramParser();
 
     @Test
-    void parsesParticipantsAndMessagesFromValidSequenceDiagram() {
-        ParseOutcome outcome = parser.parse(fixture("valid.puml"));
+    void parsesParticipantsAndMessagesFromTheUniversalFixture() {
+        ParseOutcome outcome = parser.parse(fixture("universal.puml"));
 
         assertThat(outcome.isParsed()).isTrue();
         assertThat(outcome.diagram().participants())
                 .extracting(ParsedDiagram.Participant::alias)
-                .containsExactlyInAnyOrder("crm", "billing");
+                .containsExactlyInAnyOrder("Client", "BNPL", "Antispam", "AITool", "ARFix");
         assertThat(outcome.diagram().participants())
+                .filteredOn(p -> p.alias().equals("BNPL"))
                 .extracting(ParsedDiagram.Participant::name)
-                .containsExactlyInAnyOrder("CRM", "BILLING");
-        assertThat(outcome.diagram().messages()).hasSize(2);
-        assertThat(outcome.diagram().messages().get(0).label()).contains("POST /api/v1/order");
-        assertThat(outcome.diagram().messages().get(0).fromAlias()).isEqualTo("crm");
-        assertThat(outcome.diagram().messages().get(0).toAlias()).isEqualTo("billing");
+                .containsExactly("b2c-digital-payments-bnpl");
+        assertThat(outcome.diagram().messages()).hasSize(11);
+        assertThat(outcome.diagram().messages().get(0).label()).contains("POST /command/createApplication");
+        assertThat(outcome.diagram().messages().get(0).fromAlias()).isEqualTo("Client");
+        assertThat(outcome.diagram().messages().get(0).toAlias()).isEqualTo("BNPL");
+    }
+
+    @Test
+    void locatesTheLineOfABackwardArrowMessageInsteadOfFallingBackToAnotherLine() {
+        ParseOutcome outcome = parser.parse(fixture("universal.puml"));
+
+        assertThat(outcome.diagram().messages())
+                .filteredOn(m -> m.fromAlias().equals("Antispam") && m.toAlias().equals("BNPL"))
+                .extracting(ParsedDiagram.Message::line)
+                .containsExactly(22);
     }
 
     @Test
     void assignsDistinctIncreasingLinesToConsecutiveMessagesOfTheSamePair() {
-        ParseOutcome outcome = parser.parse(fixture("consecutive_messages.puml"));
+        ParseOutcome outcome = parser.parse(fixture("universal.puml"));
 
-        assertThat(outcome.isParsed()).isTrue();
         assertThat(outcome.diagram().messages())
+                .filteredOn(m -> m.fromAlias().equals("BNPL") && m.toAlias().equals("Antispam"))
                 .extracting(ParsedDiagram.Message::line)
-                .containsExactly(4, 5, 6);
+                .containsExactly(19, 20);
     }
 
     @Test
@@ -48,6 +59,33 @@ class PlantUmlDiagramParserTest {
                 .extracting(Finding::code)
                 .containsExactly("e2e.validation.diagram.not_sequence");
         assertThat(outcome.findings().get(0).level()).isEqualTo(Finding.Level.ERROR);
+    }
+
+    @Test
+    void treatsAnEmptyBlockAsAParsedDiagramWithNoParticipants() {
+        ParseOutcome outcome = parser.parse(fixture("empty_body.puml"));
+
+        assertThat(outcome.isParsed()).isTrue();
+        assertThat(outcome.diagram().participants()).isEmpty();
+        assertThat(outcome.diagram().messages()).isEmpty();
+    }
+
+    @Test
+    void treatsABlockHoldingOnlyCommentsAndBlankLinesAsEmpty() {
+        ParseOutcome outcome = parser.parse("@startuml\n\n' a line comment\n   \n/' a block\n comment '/\n@enduml\n");
+
+        assertThat(outcome.isParsed()).isTrue();
+        assertThat(outcome.diagram().participants()).isEmpty();
+    }
+
+    @Test
+    void stillRejectsANonEmptyBlockThatIsNotASequenceDiagram() {
+        ParseOutcome outcome = parser.parse("@startuml\ntitle Hello\n@enduml\n");
+
+        assertThat(outcome.isParsed()).isFalse();
+        assertThat(outcome.findings())
+                .extracting(Finding::code)
+                .containsExactly("e2e.validation.diagram.not_sequence");
     }
 
     @Test

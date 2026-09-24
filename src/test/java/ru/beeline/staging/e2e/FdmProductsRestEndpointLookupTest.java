@@ -1,15 +1,17 @@
 package ru.beeline.staging.e2e;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import ru.beeline.staging.client.ProductServiceClient;
-import ru.beeline.staging.product.dto.OperationEntry;
-import ru.beeline.staging.product.dto.OperationSearchResponse;
+import ru.beeline.staging.product.dto.search.MatchedArchOperation;
+import ru.beeline.staging.product.dto.search.OperationMatchCandidate;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class FdmProductsRestEndpointLookupTest {
@@ -18,59 +20,72 @@ class FdmProductsRestEndpointLookupTest {
     private final FdmProductsRestEndpointLookup lookup = new FdmProductsRestEndpointLookup(productServiceClient);
 
     @Test
-    void doesNotCountAMatchOwnedByAnotherSystem() {
-        when(productServiceClient.searchOperation(anyString(), anyString()))
-                .thenReturn(response(operation("/api/v1/order", "POST", "billing", null)));
+    void reportsAnEndpointThatTheLandscapeMatchingReturns() {
+        when(productServiceClient.searchMatchedOperations(anyList()))
+                .thenReturn(List.of(matched("/api/v1/product/{code}", "GET", "ext_product-api")));
 
-        assertThat(lookup.exists("crm", "POST", "/api/v1/order")).isFalse();
-        assertThat(lookup.exists("billing", "POST", "/api/v1/order")).isTrue();
+        assertThat(lookup.exists("fdmshowcaseapp", "GET", "/api/v1/product/{code}")).isTrue();
     }
 
     @Test
-    void matchesAContainerScopedEndpointByContainerCode() {
-        when(productServiceClient.searchOperation(anyString(), anyString()))
-                .thenReturn(response(operation("/api/v1/order", "POST", null, "order-container")));
+    void reportsNoEndpointWhenTheLandscapeMatchingFindsNothing() {
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of());
 
-        assertThat(lookup.exists("order-container", "POST", "/api/v1/order")).isTrue();
+        assertThat(lookup.exists("fdmshowcaseapp", "GET", "/api/v1/product/{cmdb}")).isFalse();
     }
 
     @Test
-    void matchesAPathTemplateAgainstAConcretePath() {
-        when(productServiceClient.searchOperation(anyString(), anyString()))
-                .thenReturn(response(operation("/api/v1/graph/{docId}", "GET", "arch-graph", null)));
+    void reportsNoEndpointWhenTheProductItselfIsUnknown() {
+        MatchedArchOperation notFound = new MatchedArchOperation();
+        notFound.setProductCode("ext_container_product");
+        notFound.setNotFound(true);
+        notFound.setError("Продукт с кодом ext_container_product не найден");
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of(notFound));
 
-        assertThat(lookup.exists("arch-graph", "GET", "/api/v1/graph/123")).isTrue();
+        assertThat(lookup.exists("ext_container_product", "GET", "/api/v1/product/{code}")).isFalse();
     }
 
     @Test
-    void doesNotMatchATemplateWithADifferentNumberOfSegments() {
-        when(productServiceClient.searchOperation(anyString(), anyString()))
-                .thenReturn(response(operation("/api/v1/graph/{docId}", "GET", "arch-graph", null)));
+    void reportsNoEndpointWhenTheMatchCarriesNoInterfaceCode() {
+        when(productServiceClient.searchMatchedOperations(anyList()))
+                .thenReturn(List.of(matched("/api/v1/product/{code}", "GET", null)));
 
-        assertThat(lookup.exists("arch-graph", "GET", "/api/v1/graph/123/extra")).isFalse();
+        assertThat(lookup.exists("fdmshowcaseapp", "GET", "/api/v1/product/{code}")).isFalse();
     }
 
-    private static OperationSearchResponse response(OperationEntry entry) {
-        OperationSearchResponse response = new OperationSearchResponse();
-        response.setArchOperations(List.of(entry));
-        response.setDiscoveredOperations(List.of());
-        return response;
+    @Test
+    void doesNotCallTheCatalogWhenTheParticipantHasNoProductAlias() {
+        assertThat(lookup.exists(null, "GET", "/api/v1/product/{code}")).isFalse();
+        assertThat(lookup.exists(" ", "GET", "/api/v1/product/{code}")).isFalse();
+
+        verifyNoInteractions(productServiceClient);
     }
 
-    private static OperationEntry operation(String path, String method, String productAlias, String containerCode) {
-        OperationEntry entry = new OperationEntry();
-        entry.setName(path);
-        entry.setType(method);
-        if (productAlias != null) {
-            OperationEntry.ProductRef product = new OperationEntry.ProductRef();
-            product.setAlias(productAlias);
-            entry.setProduct(product);
-        }
-        if (containerCode != null) {
-            OperationEntry.ContainerRef container = new OperationEntry.ContainerRef();
-            container.setCode(containerCode);
-            entry.setContainer(container);
-        }
-        return entry;
+    @Test
+    void sendsTheCallAsASingleCandidateWithoutRewritingThePath() {
+        when(productServiceClient.searchMatchedOperations(anyList())).thenReturn(List.of());
+
+        lookup.exists("fdmshowcaseapp", "PATCH", "/api/v1/product/{code}/workspace?force=true");
+
+        ArgumentCaptor<List<OperationMatchCandidate>> captor = ArgumentCaptor.forClass(List.class);
+        org.mockito.Mockito.verify(productServiceClient).searchMatchedOperations(captor.capture());
+        assertThat(captor.getValue()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.getProductCode()).isEqualTo("fdmshowcaseapp");
+            assertThat(candidate.getMethodType()).isEqualTo("PATCH");
+            assertThat(candidate.getMethodName()).isEqualTo("/api/v1/product/{code}/workspace?force=true");
+            assertThat(candidate.getProtocol()).isNull();
+        });
+    }
+
+    private static MatchedArchOperation matched(String name, String type, String interfaceCode) {
+        MatchedArchOperation match = new MatchedArchOperation();
+        match.setName(name);
+        match.setType(type);
+        match.setProductCode("fdmshowcaseapp");
+        MatchedArchOperation.Ref interfaceRef = new MatchedArchOperation.Ref();
+        interfaceRef.setCode(interfaceCode);
+        interfaceRef.setName("API получения информации о продуктах");
+        match.setInterfaceObj(interfaceRef);
+        return match;
     }
 }

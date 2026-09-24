@@ -1,5 +1,6 @@
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -20,22 +21,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-transform-spec.md
- * v2.1 — keep in sync with that spec (§4/§6 in particular). Extracts targets from panels[0] only
- * (Rule 1), parameterizes Grafana variables into the CM-07 placeholder set, and deduplicates by
- * (metric_code, datasource.type) (CM-03/CM-04).
- *
- * <p>Two documented rules are implemented as best-effort approximations, flagged inline, because the
- * spec doesn't give a concrete worked example to pin the exact behavior:
- * <ul>
- *   <li>${sparxMetadata.name} → {{artifact_name}} (§4.4): the table's variable syntax doesn't match
- *       Grafana's actual $VAR/${VAR} forms, so this is done as a literal substring replacement of
- *       the artifact's name wherever it appears verbatim in expr/query.</li>
- *   <li>{{time_range}} (CM-07-03, OpenSearch only): no field/placement example is given, so it is
- *       not emitted.</li>
- * </ul>
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -52,15 +37,12 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
             "A95", "latency_percentile",
             "E4xx", "client_error_rate");
 
-    // §4.4 variable patterns
     private static final Pattern MODIFIER_VAR = Pattern.compile("\\$\\{([A-Z_][A-Z0-9_]*):([^}]+)\\}");
     private static final Pattern BRACED_VAR   = Pattern.compile("\\$\\{([A-Z_][A-Z0-9_]*)\\}");
     private static final Pattern BARE_VAR     = Pattern.compile("(?<![/$])\\$([A-Z_][A-Z0-9_]*)");
 
-    // §4.5 Prometheus range vector, e.g. [5m]
     private static final Pattern RANGE_VECTOR = Pattern.compile("\\[(\\d+[smhdwy])]");
 
-    // §4.6 histogram_quantile(0.75, ...) / quantile_over_time(0.75, ...)
     private static final Pattern PERCENTILE_FUNC =
             Pattern.compile("(histogram_quantile|quantile_over_time)\\(\\s*(0?\\.\\d+|\\d+(?:\\.\\d+)?)\\s*,");
 
@@ -73,7 +55,7 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
     public String description() { return "Extracts panels[0] targets into a parameterized MetricQueriesObjectPublish snapshot"; }
 
     @Override
-    public TransformResult transform(String artifactUid, String rawContent) throws Exception {
+    public TransformResult transform(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         JsonNode sparxMetadata = root.path("sparxMetadata");
         JsonNode dashboard = root.path("grafanaDashboard").path("dashboard");
@@ -176,7 +158,6 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
         return new ArrayList<>(byKey.values());
     }
 
-    /** Rule 2 + CM-05-02: elasticsearch normalizes to opensearch; 'grafana' (annotations) is ignored. */
     private String resolvePanelDatasourceType(JsonNode panel0, String artifactUid, List<ArtifactNotice> notices) {
         String rawType = panel0.path("datasource").path("type").asText(null);
         if (rawType == null) {
@@ -191,7 +172,6 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
         return "grafana".equals(normalized) ? null : normalized;
     }
 
-    /** CM-05-01: on conflict between panel-level type and target structure, structure wins. */
     private String resolveTargetDatasourceType(JsonNode target, String panelType, String refId, int index,
                                                 String artifactUid, List<ArtifactNotice> notices) {
         boolean hasExpr = target.path("expr").isTextual() && !target.path("expr").asText().isBlank();
@@ -216,7 +196,6 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
         return null;
     }
 
-    /** Rule 3: junk fields, per panel-level (structure-resolved) datasource type. */
     private void applyJunkFieldRemoval(ObjectNode node, String effectiveType) {
         if ("prometheus".equals(effectiveType)) {
             node.remove(List.of("query", "bucketAggs", "metrics", "timeField"));
@@ -225,7 +204,6 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
         }
     }
 
-    /** CM-05-03: resolved UID for ${DATASOURCE}; falls back to the literal placeholder + warning. */
     private String resolveDatasourceUid(JsonNode resolvedDatasources, String refId, int index, String artifactUid,
                                          List<ArtifactNotice> notices) {
         String uid = resolvedDatasources.path("${DATASOURCE}").path("uid").asText(null);
@@ -308,7 +286,6 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
         return percentile;
     }
 
-    /** §4.4: $NAME / ${NAME} / ${NAME:modifier} → CM-07 placeholders; ${DATASOURCE} → resolved UID. */
     private String parameterizeVariables(String text, String datasourceUid, String artifactName) {
         if (text == null) return null;
         String result = replaceMatches(text, MODIFIER_VAR, datasourceUid);
@@ -338,11 +315,10 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
             case "URI" -> "{{uri}}";
             case "REGEX_URI" -> "{{uri_regex}}";
             case "DATASOURCE" -> datasourceUid;
-            default -> originalMatch; // CM-07-04: leave unrecognized variables as-is
+            default -> originalMatch;
         };
     }
 
-    /** 0.75 → 75.0, "75" → 75.0 (Prometheus fraction vs OpenSearch whole-number-string). */
     private double toPercent(String raw) {
         double value = Double.parseDouble(raw);
         return value <= 1.0 ? Math.round(value * 100.0) : value;
@@ -352,9 +328,6 @@ public class MetricQueriesTransformer implements ArtifactTransformer {
         return "/grafanaDashboard/dashboard/panels/0/targets/" + index;
     }
 
-    // ArtifactNoticeEntity only persists code/level/category (via notice_type) + details + context —
-    // message() is never written by ArtifactNoticeService, so the human-readable text has to live
-    // in details (matches E2ESequenceValidator's convention).
     private ArtifactNotice warning(String code, String message, String entityUid, String context) {
         return new ArtifactNotice(null, null, code, "warning", "transform",
                 null, null, entityUid, null, message, toDetailsJson(message), context, null, null, null);

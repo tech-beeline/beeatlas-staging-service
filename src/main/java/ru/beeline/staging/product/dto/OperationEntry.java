@@ -7,11 +7,6 @@ package ru.beeline.staging.product.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 
-/**
- * Shared shape of {@code archOperations[]} and {@code discoveredOperations[]} entries
- * returned by fdm-products {@code GET /api/v1/operation}. {@code name} holds the REST path,
- * {@code type} the HTTP method.
- */
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OperationEntry {

@@ -6,10 +6,6 @@ package ru.beeline.staging.e2e;
 
 import java.util.List;
 
-/**
- * Result of {@link PlantUmlDiagramParser#parse(String)}: either a structurally parsed Sequence
- * Diagram, or a list of blocking findings (invalid syntax / not a Sequence Diagram).
- */
 public record ParseOutcome(ParsedDiagram diagram, List<Finding> findings) {
 
     public static ParseOutcome ok(ParsedDiagram diagram) {

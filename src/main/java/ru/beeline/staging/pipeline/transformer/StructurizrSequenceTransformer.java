@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.transformer;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +29,7 @@ public class StructurizrSequenceTransformer implements ArtifactTransformer {
     public String description() { return "Maps a Structurizr workspace export (product/container/tc/interface/operation/dynamicView) onto the canonical model"; }
 
     @Override
-    public TransformResult transform(String artifactUid, String rawContent) throws Exception {
+    public TransformResult transform(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         StructurizrDynamicViewDecomposer.Result result = decomposer.decompose(root, artifactUid);
         StructurizrSequenceSnapshot snapshot = result.snapshot();

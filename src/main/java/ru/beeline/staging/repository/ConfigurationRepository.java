@@ -11,7 +11,6 @@ import java.util.List;
 
 public interface ConfigurationRepository extends JpaRepository<Configuration, Long> {
 
-    
     List<Configuration> findByIsActiveTrueAndScheduleIntervalSecondsIsNotNull();
 
     List<Configuration> findByArtifactTypeAndIsActiveTrue(String artifactType);

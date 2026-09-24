@@ -10,13 +10,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/**
- * Reads back the current ("actual") saved state of one e2e_scenario from the staging canonical model,
- * as it is published to fdm-products. Ported from
- * documentation/staging-service/queries/get-actual-e2e-scenario.sql — keep in sync with that file,
- * except for {@code interfaces[].parent_product_cmdb}: added for the fdm-products POST /api/v2/e2e
- * publish path, not present in the documented reference query.
- */
 @Repository
 public class ActualE2eScenarioRepository {
 
@@ -26,23 +19,25 @@ public class ActualE2eScenarioRepository {
                     a.ext_uid, a.last_loaded_ref_id AS ref_id
                 FROM staging.source_artifacts a
                 JOIN staging.source_artifact_types t ON t.id=a.source_artifact_type_id
+                JOIN staging.data_types dt ON dt.id=t.data_type_id
                 WHERE a.ext_uid=?
-                    AND t.name='e2e-sequence'
+                    AND dt.code=?
             ), cte_contexts AS (
                 SELECT 
                     *
                 FROM cte_artifacts a
                     JOIN staging.raw_data_contexts c ON c.raw_data_ref_id=a.ref_id
-            ), cte_e2e AS (
-                SELECT
-                    DISTINCT v.id as e2e_version_id,v.ext_uid, v.name,
+            )
+            , cte_e2e AS (
+                SELECT DISTINCT ON (v.ext_uid)
+                    v.id as e2e_version_id, v.ext_uid, v.name,
                         v.json_data ->> 'description' AS description, b.ext_uid as bi_step_code
                 FROM cte_contexts c
                     JOIN staging.e2e_scenario_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.bi_step_versions b ON b.id=v.bi_step_version_id
-                
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_operations AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*, i.ext_uid AS interface_code,
                     v.json_data ->> 'type' AS type,
                     (v.json_data ->> 'rps')::numeric AS rps,
@@ -51,22 +46,25 @@ public class ActualE2eScenarioRepository {
                 FROM cte_contexts c
                     JOIN staging.operation_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.interface_versions i ON i.id=v.interface_version_id
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_api AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*, cv.ext_uid as container_code, p.ext_uid as product_code,
                     v.json_data ->> 'protocol' AS protocol
                 FROM cte_contexts c
                     JOIN staging.interface_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.container_versions cv ON cv.id=v.container_version_id
                     LEFT JOIN staging.product_versions p ON p.id=cv.product_version_id
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_containers AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*, p.ext_uid as product_code
                 FROM cte_contexts c
                     JOIN staging.container_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.product_versions p ON p.id=v.product_version_id
+                ORDER BY v.ext_uid, v.id DESC
             ), cte_op_rel AS (
-                SELECT DISTINCT
+                SELECT DISTINCT ON (o.ext_uid, r.ext_uid, (v.json_data ->> 'call_order')::int)
                     v.operation_version_id,
                     v.related_operation_version_id,
                     (v.json_data ->> 'call_order')::int AS call_order,
@@ -76,11 +74,13 @@ public class ActualE2eScenarioRepository {
                     JOIN staging.operation_relation_versions v ON v.raw_data_context_id=c.id
                         LEFT JOIN staging.operation_versions o ON o.id=v.operation_version_id
                         LEFT JOIN staging.operation_versions r ON r.id=v.related_operation_version_id
+                ORDER BY o.ext_uid, r.ext_uid, (v.json_data ->> 'call_order')::int, v.id DESC
             ), cte_products AS (
-                SELECT
+                SELECT DISTINCT ON (v.ext_uid)
                     v.*
                 FROM cte_contexts c
                     JOIN staging.product_versions v ON v.raw_data_context_id=c.id
+                ORDER BY v.ext_uid, v.id DESC
             )
             SELECT 
                 jsonb_build_object(
@@ -122,6 +122,7 @@ public class ActualE2eScenarioRepository {
                                 'type', c.type,
                                 'uid', c.ext_uid,
                                 'interface_code', c.interface_code,
+                                'connection_operation_id', c.connection_operation_id,
                                 'sla', jsonb_build_object( 
                                     'rps',c.rps,
                                     'latency', c.latency,
@@ -145,13 +146,9 @@ public class ActualE2eScenarioRepository {
         this.stagingJdbcTemplate = stagingJdbcTemplate;
     }
 
-    /**
-     * @return the current saved state of the e2e scenario as JSON text, or {@code null} if no
-     * e2e_scenario_versions row exists yet for this artifact's latest raw_data_context (i.e. nothing to publish).
-     */
-    public String fetchActualScenarioRaw(String artifactUid) {
+    public String fetchActualScenarioRaw(String artifactUid, String artifactType) {
         List<String> rows = stagingJdbcTemplate.query(FETCH_ACTUAL_SCENARIO,
-                (rs, rowNum) -> rs.getString("result"), artifactUid);
+                (rs, rowNum) -> rs.getString("result"), artifactUid, artifactType);
         return rows.isEmpty() ? null : rows.get(0);
     }
 }

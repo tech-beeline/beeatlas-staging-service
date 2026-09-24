@@ -18,11 +18,6 @@ public record ValidationNotice(
     private static final String SOURCE_LINES_SEPARATOR = " || ";
     private static final String SOURCE_LINE_DELIMITER = " | ";
 
-    /**
-     * {@code sourceText} is the original PlantUML input the finding was raised against — its
-     * {@code lineFrom..lineTo} lines are appended (delimiter-joined) to {@code message}, so the
-     * frontend can show the actual offending source without a DTO change or a frontend change.
-     */
     public static ValidationNotice from(Finding finding, String sourceText) {
         return new ValidationNotice(
                 finding.code(),

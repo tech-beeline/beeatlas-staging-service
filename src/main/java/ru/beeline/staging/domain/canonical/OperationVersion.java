@@ -34,14 +34,12 @@ public class OperationVersion {
     @Column(name = "name", nullable = false)
     private String name;
 
-    /**
-     * Неосновные атрибуты операции в JSONB-колонке json_data (BLG-004/ADR-011, V0008).
-     * Ключи snake_case: type, rps, latency, error_rate, description, return_type.
-     * NULL/{} семантически равны пустому набору (FR-003-22, BR-18).
-     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "json_data", columnDefinition = "jsonb")
     private String jsonData;
+
+    @Column(name = "connection_operation_id")
+    private Integer connectionOperationId;
 
     @Column(name = "tech_capability_version_id")
     private Long techCapabilityVersionId;
@@ -54,4 +52,7 @@ public class OperationVersion {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "branch_name")
+    private String branchName;
 }

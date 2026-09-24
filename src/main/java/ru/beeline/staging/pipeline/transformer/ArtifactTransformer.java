@@ -5,6 +5,7 @@
 package ru.beeline.staging.pipeline.transformer;
 
 import ru.beeline.staging.dto.notice.TransformResult;
+import ru.beeline.staging.pipeline.StageContext;
 
 public interface ArtifactTransformer {
 
@@ -12,5 +13,5 @@ public interface ArtifactTransformer {
 
     String description();
 
-    TransformResult transform(String artifactUid, String rawContent) throws Exception;
+    TransformResult transform(String artifactUid, String rawContent, StageContext context) throws Exception;
 }

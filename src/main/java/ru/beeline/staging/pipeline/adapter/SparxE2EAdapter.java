@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.adapter;
 
+import ru.beeline.staging.pipeline.StageContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -32,7 +33,7 @@ public class SparxE2EAdapter implements ArtifactAdapter {
     public String description() { return "Downloads the full raw e2e scenario export directly from Sparx EA"; }
 
     @Override
-    public Map<String, Object> load(String artifactUid, String sourceId, Map<String, Object> metadata) throws Exception {
+    public Map<String, Object> load(String artifactUid, String sourceId, StageContext context) throws Exception {
         String rawJson = sparxE2ERepository.fetchScenarioRaw(artifactUid);
         if (rawJson == null || rawJson.isBlank()) {
             throw new IllegalStateException("Sparx EA returned empty response for uid=" + artifactUid);

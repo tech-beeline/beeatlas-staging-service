@@ -10,11 +10,6 @@ import ru.beeline.staging.dto.search.NoticeSearchResult;
 
 import java.util.List;
 
-/**
- * Ported from documentation/staging-service/api/rest/GET__api_v1_search_notices__runId_.md — keep in
- * sync with that spec. Table name is staging.raw_data_contexts (plural) — the actual name per
- * migration V0001, as noted in the spec.
- */
 @Repository
 public class NoticeSearchRepository {
 

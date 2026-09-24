@@ -11,8 +11,13 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
+import ru.beeline.staging.product.dto.e2e.E2eGetResponse;
 import ru.beeline.staging.product.dto.e2e.E2ePublishResponse;
 import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 @Slf4j
 @Repository
@@ -33,17 +38,9 @@ public class E2eProductsClient {
         this.retryDelayMs = retryDelayMs;
     }
 
-    /**
-     * POST /api/v2/e2e — Sparx-sourced e2e ingested directly into the product
-     * catalog
-     * (discovered_interface/discovered_operation), no containers layer. Retries on
-     * 5xx/connection
-     * failures up to retryCount; 409 is logged and swallowed (version conflicts are
-     * fdm-products'
-     * concern); any other 4xx is fatal.
-     */
-    public E2ePublishResponse upsertE2e(E2eV2PublishRequest request, Long relationId, Long pipelineRunId) {
-        String url = baseUrl + "/api/v2/e2e";
+    public E2ePublishResponse upsertE2e(E2eV2PublishRequest request, Long relationId, Long pipelineRunId,
+            String source) {
+        String url = buildUrl(source);
         String uid = request.getE2e() != null ? request.getE2e().getUid() : null;
 
         int attempt = 0;
@@ -74,6 +71,30 @@ public class E2eProductsClient {
                 sleep(retryDelayMs);
             }
         }
+    }
+
+    public Optional<E2eGetResponse> getE2eByCode(String code) {
+        String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v2/e2e/{code}")
+                .buildAndExpand(code)
+                .encode()
+                .toUriString();
+        try {
+            return Optional.ofNullable(restTemplate.getForObject(url, E2eGetResponse.class));
+        } catch (HttpClientErrorException.NotFound e) {
+            log.warn("fdm-products has no e2e with code={} (url={}) — nothing to read back", code, url);
+            return Optional.empty();
+        }
+    }
+
+    private String buildUrl(String source) {
+        String url = baseUrl + "/api/v2/e2e";
+        if (source == null || source.isBlank()) {
+            return url;
+        }
+        return UriComponentsBuilder.fromHttpUrl(url)
+                .queryParam("source", source.trim())
+                .encode(StandardCharsets.UTF_8)
+                .toUriString();
     }
 
     private void sleep(long millis) {

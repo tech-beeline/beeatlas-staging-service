@@ -10,6 +10,5 @@ import ru.beeline.staging.domain.RawDataContextEntity;
 import java.util.Optional;
 
 public interface RawDataContextRepository extends JpaRepository<RawDataContextEntity, Long> {
-
-    Optional<RawDataContextEntity> findByRawDataRefIdAndPosition(Long rawDataRefId, String position);
+    Optional<RawDataContextEntity> findFirstByRawDataRefIdAndPositionOrderByIdAsc(Long rawDataRefId, String position);
 }

@@ -1,0 +1,36 @@
+@startuml
+'Универсальная тестовая диаграмма: участники и REST-операции — реальные данные
+'dev-CMDB (проверено на живом стенде), плюс краевые случаи парсинга собраны в одном
+'файле вместо россыпи мелких синтетических .puml. Отдельно остаются только два файла,
+'которые физически не могут быть частью одной валидной диаграммы: syntax_error.puml
+'(сломанный синтаксис) и not_sequence.puml (не Sequence Diagram).
+
+title Универсальный тестовый сценарий (реальные данные CMDB + краевые случаи парсинга)
+
+actor Клиент as Client
+participant "b2c-digital-payments-bnpl" as BNPL
+participant antispam as Antispam
+participant "ai-tool" as AITool
+participant arfix as ARFix
+
+Client -> BNPL: POST /command/createApplication
+activate BNPL
+
+BNPL -> Antispam: GET /api/v1/calls/
+BNPL -> Antispam: POST /api/v1/calls/feedback
+
+BNPL <-- Antispam: 200 OK
+
+BNPL -> AITool: POST /chat/completions
+AITool --> BNPL: 200 OK
+
+BNPL -> BNPL: POST /command/completePayment
+
+BNPL -> ARFix: GET /api/v1/payment/12345/paymentItem
+ARFix --> BNPL: 200 OK
+
+BNPL -> ARFix: POST reconciliation-note
+
+BNPL -> Client: Результат оплаты
+deactivate BNPL
+@enduml

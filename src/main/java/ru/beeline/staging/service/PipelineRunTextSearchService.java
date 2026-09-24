@@ -22,11 +22,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Implements the "Алгоритм поиска" section of
- * documentation/staging-service/api/rest/GET__api_v1_pipeline-runs_search__artifactType___artifactUid_.md
- * — keep in sync with that spec.
- */
 @Service
 @RequiredArgsConstructor
 public class PipelineRunTextSearchService {
@@ -39,11 +34,6 @@ public class PipelineRunTextSearchService {
         return repository.existsRuns(artifactType, artifactUid);
     }
 
-    /**
-     * One query for the page of runs (raw_content joined in), one query for all occurrences' overlapping
-     * contexts across the whole page — regardless of how many rows are on the page. Per-row decompression
-     * and substring search still happen in the JVM (each row's raw_content differs), but no per-row SQL.
-     */
     public PipelineRunSearchPage search(String artifactType, String artifactUid, String text,
                                          String status, LocalDateTime dateFrom, LocalDateTime dateTo,
                                          int limit, int offset) {
@@ -84,7 +74,7 @@ public class PipelineRunTextSearchService {
             List<PipelineRunSearchHit> hits = new ArrayList<>(occurrences.size());
             for (int j = 0; j < occurrences.size(); j++) {
                 long[] occurrence = occurrences.get(j);
-                int globalOrdinal = base + j + 1; // matches the 1-based SQL ordinality of the flat arrays above
+                int globalOrdinal = base + j + 1;
                 hits.add(buildHit(content, occurrence[0], occurrence[1],
                         contextsByGlobalOrdinal.getOrDefault(globalOrdinal, List.of())));
             }
@@ -114,7 +104,6 @@ public class PipelineRunTextSearchService {
         return result;
     }
 
-    /** occurrenceIndex from the repository is the 1-based ordinal into the flat arrays passed to it. */
     private Map<Integer, List<ContextRow>> groupByOccurrence(
             List<PipelineRunTextSearchRepository.OverlapHit> overlapHits) {
         Map<Integer, List<ContextRow>> byOccurrence = new HashMap<>();
@@ -124,7 +113,6 @@ public class PipelineRunTextSearchService {
         return byOccurrence;
     }
 
-    /** contexts here are already overlap-filtered in SQL (findOverlappingContexts) — no re-checking needed. */
     private PipelineRunSearchHit buildHit(byte[] content, long startOffset, long endOffset, List<ContextRow> contexts) {
         List<PipelineRunSearchHitContext> matchedContexts = new ArrayList<>();
         for (ContextRow ctx : contexts) {
@@ -143,10 +131,6 @@ public class PipelineRunTextSearchService {
         return new PipelineRunSearchHit(startOffset, endOffset, matchedContexts, hitSnippet);
     }
 
-    /**
-     * Case-insensitive, non-overlapping substring search. Offsets are computed in UTF-8 bytes of
-     * the original (non-folded) content, since case folding can change a fragment's byte length.
-     */
     private List<long[]> findOccurrences(byte[] content, String text) {
         String original = new String(content, StandardCharsets.UTF_8);
         String haystack = original.toLowerCase(Locale.ROOT);

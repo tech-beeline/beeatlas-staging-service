@@ -13,10 +13,6 @@ import ru.beeline.staging.service.PipelineRunService;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-save-spec.md
- * — keep in sync with that spec.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -25,7 +21,6 @@ public class MetricQueriesSaver implements ArtifactSaver {
     public static final String MODULE_CODE = "metric-queries-saver";
 
     private final MetricQueryTemplateSnapshotSaver snapshotSaver;
-    private final DashboardServicePublishClient    publishClient;
     private final PipelineRunService               pipelineRunService;
     private final ObjectMapper                     objectMapper;
 
@@ -33,7 +28,7 @@ public class MetricQueriesSaver implements ArtifactSaver {
     public String moduleCode() { return MODULE_CODE; }
 
     @Override
-    public String description() { return "Persists the metric-queries canonical snapshot and publishes it to dashboard-service"; }
+    public String description() { return "Persists the metric-queries canonical snapshot"; }
 
     @Override
     public SaveResult save(String artifactUid, String artifactType, long rawDataRefId,
@@ -45,9 +40,6 @@ public class MetricQueriesSaver implements ArtifactSaver {
 
         MetricQueriesObjectPublish snapshot = objectMapper.readValue(canonicalSnapshotJson, MetricQueriesObjectPublish.class);
 
-        // Same idempotency guard as E2ECanonicalSaver: if a previous attempt already committed the
-        // canonical save and only failed later at publish, don't insert a second version — retry
-        // only the publish.
         Optional<ArtifactBatch> existingBatch = pipelineRunService.findExistingBatchForRef(artifactUid, artifactType, rawDataRefId);
         Long batchId;
         if (existingBatch.isPresent()) {
@@ -59,8 +51,8 @@ public class MetricQueriesSaver implements ArtifactSaver {
             log.info("Saved metric-queries snapshot for uid={}: batchId={}", artifactUid, batchId);
         }
 
-        boolean published = publishClient.publish(snapshot, rawDataRefId);
 
-        return SaveResult.of(Map.of("batchId", batchId != null ? batchId : -1L, "published", published));
+
+        return SaveResult.of(Map.of("batchId", batchId != null ? batchId : -1L));
     }
 }

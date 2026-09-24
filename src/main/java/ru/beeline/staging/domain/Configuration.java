@@ -32,7 +32,6 @@ public class Configuration {
     @Column(name = "source_system_id")
     private Long sourceSystemId;
 
-    
     @Column(name = "schedule_interval_seconds")
     private Long scheduleIntervalSeconds;
 

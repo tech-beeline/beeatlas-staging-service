@@ -4,6 +4,8 @@
 
 package ru.beeline.staging.pipeline.exec;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,9 +14,11 @@ import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.RawDataRef;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.dto.notice.ValidateResult;
+import ru.beeline.staging.pipeline.StageContext;
 import ru.beeline.staging.pipeline.validator.ArtifactValidator;
 import ru.beeline.staging.repository.PipelineRunRepository;
 import ru.beeline.staging.repository.RawDataRefRepository;
+import ru.beeline.staging.repository.SourceSystemRepository;
 import ru.beeline.staging.service.ModuleResolver;
 import ru.beeline.staging.service.PipelineRunService;
 
@@ -34,6 +38,8 @@ public class ValidatorStage implements ArtifactPipelineStage {
     private final PipelineRunRepository   pipelineRunRepository;
     private final ModuleResolver          moduleResolver;
     private final PipelineRunService      pipelineRunService;
+    private final SourceSystemRepository  sourceSystemRepository;
+    private final ObjectMapper            objectMapper;
 
     private Map<String, ArtifactValidator> registry;
 
@@ -57,11 +63,6 @@ public class ValidatorStage implements ArtifactPipelineStage {
 
         Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + run.getRawDataRefId());
         try {
-            // Unboxed here, inside the try: if the adapter stage completed without ever calling
-            // setRawDataRefId (e.g. an adapter's "content unchanged, nothing to load" success path),
-            // this must surface as a clean, retryable failure — not an NPE that escapes before
-            // failStage() runs and leaves the run silently stuck forever (see PipelineExecutionService
-            // #ensureRunMarkedFailed for the general safety net; this is the actual root cause it covers).
             if (run.getRawDataRefId() == null) {
                 throw new IllegalStateException("No rawDataRefId available for uid=" + uid
                         + " — adapter stage did not produce one");
@@ -87,14 +88,15 @@ public class ValidatorStage implements ArtifactPipelineStage {
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
-            // TEMP: gzip disabled for easier manual inspection while debugging — see GzipUtils/SparxE2EAdapter.
-            ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8));
+            ValidateResult result = validator.validate(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8),
+                    StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
 
             List<ArtifactNotice> saved = pipelineRunService.saveNotices(rawDataRefId, result.notices());
 
-            long errorCount = saved.stream().filter(n -> "error".equals(n.level())).count();
+            List<ArtifactNotice> errors = saved.stream().filter(n -> "error".equals(n.level())).toList();
+            long errorCount = errors.size();
             if (errorCount > 0) {
-                throw new IllegalStateException("Validation failed: " + errorCount + " error notice(s) for uid=" + uid);
+                throw new IllegalStateException("Валидация не пройдена (" + errorCount + "): " + reasonsOf(errors));
             }
 
             long warningCount = saved.stream().filter(n -> "warning".equals(n.level())).count();
@@ -109,6 +111,24 @@ public class ValidatorStage implements ArtifactPipelineStage {
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
             throw e;
+        }
+    }
+
+    private String reasonsOf(List<ArtifactNotice> errors) {
+        return errors.stream()
+                .map(this::reasonOf)
+                .filter(reason -> reason != null && !reason.isBlank())
+                .collect(Collectors.joining("; "));
+    }
+
+    private String reasonOf(ArtifactNotice notice) {
+        try {
+            JsonNode details = objectMapper.readTree(notice.details() == null ? "{}" : notice.details());
+            String reason = details.path("reason").asText(null);
+            String line = details.hasNonNull("line") ? " (строка " + details.get("line").asInt() + ")" : "";
+            return reason != null ? reason + line : notice.message();
+        } catch (Exception e) {
+            return notice.message();
         }
     }
 }

@@ -4,6 +4,7 @@
 
 package ru.beeline.staging.pipeline.validator;
 
+import ru.beeline.staging.pipeline.StageContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -16,11 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Structural validation of the raw Sparx EA scenario export. Semantic checks (missing references,
- * ambiguous diagram links, etc.) happen in ScenarioDecomposer/transform instead, where they can be
- * pinned to the exact fragment that failed.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -40,7 +36,7 @@ public class E2ESequenceValidator implements ArtifactValidator {
     public String description() { return "Structurally validates the raw Sparx EA scenario export"; }
 
     @Override
-    public ValidateResult validate(String artifactUid, String rawContent) throws Exception {
+    public ValidateResult validate(String artifactUid, String rawContent, StageContext context) throws Exception {
         JsonNode root = objectMapper.readTree(rawContent);
         List<ArtifactNotice> notices = new ArrayList<>();
 

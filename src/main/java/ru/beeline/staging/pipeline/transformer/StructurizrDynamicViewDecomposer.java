@@ -35,12 +35,6 @@ import static ru.beeline.staging.pipeline.structurizr.StructurizrParsingUtils.pa
 import static ru.beeline.staging.pipeline.structurizr.StructurizrParsingUtils.textOrNull;
 import static ru.beeline.staging.pipeline.structurizr.StructurizrParsingUtils.workspaceCmdb;
 
-/**
- * Decomposes a Structurizr workspace.json into a {@link StructurizrSequenceSnapshot}, following the
- * extraction order and field rules of structurizr-sequence-transform-rules.md: product -> containers
- * -> tech_capabilities -> interfaces -> operations -> sequences -> sequence_relations ->
- * operation_relations.
- */
 @Component
 @RequiredArgsConstructor
 public class StructurizrDynamicViewDecomposer {
@@ -90,8 +84,6 @@ public class StructurizrDynamicViewDecomposer {
         return new Result(snapshot, notices);
     }
 
-    // ---------------------------------------------------------------- product
-
     private ProductDraft extractProduct(JsonNode root, JsonNode targetSystem, String cmdb, List<ArtifactNotice> notices) {
         ProductDraft product = new ProductDraft();
         product.setUid(cmdb);
@@ -111,8 +103,6 @@ public class StructurizrDynamicViewDecomposer {
         product.setAuthor(author);
         return product;
     }
-
-    // ---------------------------------------------------------------- containers
 
     private void extractContainers(JsonNode targetSystem, String systemPointer, String cmdb, StructurizrSequenceSnapshot snapshot,
                                     Map<String, ContainerRef> containerRefsByUid, List<ArtifactNotice> notices) {
@@ -160,8 +150,6 @@ public class StructurizrDynamicViewDecomposer {
         }
     }
 
-    // ---------------------------------------------------------------- tech capabilities
-
     private void extractTechCapabilities(Map<String, ContainerRef> containerRefsByUid, String cmdb,
                                           StructurizrSequenceSnapshot snapshot, Map<String, TechCapabilityDraft> tcByUid,
                                           List<ArtifactNotice> notices) {
@@ -205,8 +193,6 @@ public class StructurizrDynamicViewDecomposer {
             notices.add(warning("extract.tc_missing", "No type=capability components found", "/model/softwareSystems"));
         }
     }
-
-    // ---------------------------------------------------------------- interfaces + operations
 
     private void extractInterfacesAndOperations(Map<String, ContainerRef> containerRefsByUid, String cmdb,
                                                  Map<String, TechCapabilityDraft> tcByUid,
@@ -343,8 +329,6 @@ public class StructurizrDynamicViewDecomposer {
         }
     }
 
-    // ---------------------------------------------------------------- sequences + relations
-
     private void extractSequences(JsonNode root, String targetSystemId, String cmdb,
                                    Map<String, TechCapabilityDraft> tcByUid, Map<String, String> operationUidByCanonicalKey,
                                    Map<String, RelationshipInfo> relationshipsById, StructurizrSequenceSnapshot snapshot,
@@ -469,8 +453,6 @@ public class StructurizrDynamicViewDecomposer {
         }
     }
 
-    // ---------------------------------------------------------------- model indexing (for relationship caller/callee resolution)
-
     private void indexModel(JsonNode model, Map<String, RelationshipInfo> relationshipsById) {
         for (JsonNode person : model.path("people")) {
             indexElement(person, relationshipsById);
@@ -524,8 +506,6 @@ public class StructurizrDynamicViewDecomposer {
             return 0;
         }
     }
-
-    // ---------------------------------------------------------------- notices
 
     private ArtifactNotice error(String code, String message, String pointer) {
         return notice(code, "error", message, pointer);

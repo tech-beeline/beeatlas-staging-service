@@ -10,10 +10,6 @@ import ru.beeline.staging.dto.search.ArtifactSearchResult;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Ported from documentation/staging-service/api/rest/GET__api_v1_artifacts.md — keep in sync with
- * that spec.
- */
 @Repository
 public class SourceArtefactSearchRepository {
 
@@ -108,13 +104,6 @@ public class SourceArtefactSearchRepository {
         return new ArtifactSearchPage(totalCount != null ? totalCount : 0, results);
     }
 
-    /**
-     * Ported from documentation/staging-service/api/rest/GET__api_v1_artifacts__artifactType___artifactUid_.md
-     * — keep in sync with that spec. Resolves an identity record by (data type code, ext_uid) enriched
-     * with source context (source_systems.code/name) and artifact type name (source_artifact_types.name).
-     * Implemented with JdbcTemplate (not Spring Data projection) because the result is a DTO record and
-     * Spring Data can't map a TupleBackedMap into a record for a native query.
-     */
     public boolean dataTypeExists(String artifactType) {
         Boolean exists = stagingJdbcTemplate.queryForObject(DATA_TYPE_EXISTS, Boolean.class, artifactType);
         return Boolean.TRUE.equals(exists);

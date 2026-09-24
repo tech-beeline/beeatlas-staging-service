@@ -1,0 +1,7 @@
+@startuml
+' SFDM-4149 / TC-14: контрольный прогон смежного контура e2e-plantuml.
+' Участники обязаны быть в CMDB — иначе валидатор e2e-plantuml отклонит диаграмму (SFDM-4160).
+participant "fdmshowcaseapp" as A
+participant "fdmshowcaseapp" as B
+A -> B: GET /api/v1/probe
+@enduml

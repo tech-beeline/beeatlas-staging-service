@@ -16,8 +16,6 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadPoolExecutor;
 
-// taskScheduler: without a bean here, all @Scheduled methods share Spring's single-threaded
-// default and serialize against each other.
 @Configuration
 @RequiredArgsConstructor
 public class PipelineExecutorConfig {
@@ -45,9 +43,6 @@ public class PipelineExecutorConfig {
         return new PipelineExecutors(scanExecutor, defaultArtifactExecutor, overrides);
     }
 
-    // CallerRunsPolicy: if the queue is ever full, whoever tried to submit (a scheduler tick, a
-    // scan fanning out its children) just runs the task itself instead of getting a
-    // RejectedExecutionException — natural backpressure, nothing is lost or silently dropped.
     private ThreadPoolTaskExecutor buildExecutor(String threadNamePrefix, int poolSize) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(poolSize);

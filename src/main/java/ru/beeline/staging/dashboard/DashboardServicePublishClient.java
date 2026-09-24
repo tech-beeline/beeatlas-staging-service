@@ -15,14 +15,6 @@ import ru.beeline.staging.service.ArtifactNoticeService;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-save-spec.md
- * §6 (ADR-012 HTTP push) — keep in sync with that spec. POST /api/v1/metric-query-templates
- * (UPSERT by uid+entity_type). Structurally mirrors E2eProductsClient (manual retry loop), but —
- * unlike E2eProductsPublisher, which rethrows on failure and fails the whole save stage — a publish
- * failure here is a warning/error notice only; the pipeline run stays 'completed' (save-spec §7 —
- * the staging snapshot is the source of truth, republished on the next successful run).
- */
 @Slf4j
 @Repository
 public class DashboardServicePublishClient {
@@ -48,7 +40,6 @@ public class DashboardServicePublishClient {
         this.retryDelayMs = retryDelayMs;
     }
 
-    /** @return true if the dashboard-service accepted the snapshot (HTTP 200/201). */
     public boolean publish(MetricQueriesObjectPublish snapshot, Long rawDataRefId) {
         String url = baseUrl + "/api/v1/metric-query-templates";
         String uid = snapshot.uid();
@@ -62,7 +53,6 @@ public class DashboardServicePublishClient {
                 saveNotice("metric_queries.saver.publish.success", "info", rawDataRefId, uid, "HTTP 200/201");
                 return true;
             } catch (HttpClientErrorException e) {
-                // 4xx (incl. 422 schema validation) — not retried, per save-spec §6.2.
                 log.error("dashboard-service rejected metric-queries publish: uid={} url={} status={} body={}",
                         uid, url, e.getStatusCode(), e.getResponseBodyAsString());
                 saveNotice("metric_queries.saver.publish.rejected", "error", rawDataRefId, uid,
@@ -95,8 +85,6 @@ public class DashboardServicePublishClient {
         }
     }
 
-    // ArtifactNoticeEntity only persists code/level/category (via notice_type) + details + context —
-    // message() is never written, so the human-readable text lives in details (JSON).
     private void saveNotice(String code, String level, Long rawDataRefId, String entityUid, String message) {
         if (rawDataRefId == null) return;
         String detailsJson;

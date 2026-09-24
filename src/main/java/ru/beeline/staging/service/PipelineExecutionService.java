@@ -16,6 +16,7 @@ import ru.beeline.staging.config.PipelineExecutors;
 import ru.beeline.staging.domain.Configuration;
 import ru.beeline.staging.domain.PipelineRun;
 import ru.beeline.staging.domain.PipelineStageLog;
+import ru.beeline.staging.exception.PipelineRunCancelledException;
 import ru.beeline.staging.pipeline.PipelineDefinitions;
 import ru.beeline.staging.pipeline.exec.ArtifactPipelineStage;
 import ru.beeline.staging.pipeline.exec.PreAdapterStage;
@@ -25,6 +26,7 @@ import ru.beeline.staging.repository.PipelineStageLogRepository;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,6 +48,9 @@ public class PipelineExecutionService {
     private final MeterRegistry               meterRegistry;
     private final PipelineExecutors            pipelineExecutors;
 
+    private static final int BLOCKED_SAMPLE_SIZE = 20;
+    private static final Set<String> PAUSED_STATUSES = Set.of("awaiting_review", "reviewing");
+
     @Value("${staging.executor.lease-duration-ms:300000}")
     private long leaseDurationMs;
 
@@ -60,7 +65,6 @@ public class PipelineExecutionService {
         log.info("PipelineExecutionService ownerId={}", ownerId);
     }
 
-
     public void submitScan(Configuration config) {
         dispatch(pipelineExecutors.scan(), "scan for configId=" + config.getId(), () -> runScan(config));
     }
@@ -73,7 +77,6 @@ public class PipelineExecutionService {
         dispatch(pipelineExecutors.artifact(configCode), "artifact chain runId=" + runId,
                 () -> runArtifactChain(runId, artifactType));
     }
-
 
     void runScan(Configuration config) {
         PipelineRun scan = createScanRun(config);
@@ -102,6 +105,10 @@ public class PipelineExecutionService {
         Set<String> completedStages = completedStagesOf(runId);
         for (String stageName : PipelineDefinitions.STAGE_ORDER) {
             if ("pre-adapter".equals(stageName) || completedStages.contains(stageName)) continue;
+            if (isPausedForReview(runId)) {
+                log.info("Run {} is paused for review — chain waits before stage {}", runId, stageName);
+                return;
+            }
             if (!executeStageWithMetrics(stageName, runId, artifactType)) return;
         }
     }
@@ -110,27 +117,66 @@ public class PipelineExecutionService {
         PreAdapterStage.ScanOutcome outcome = tryScan(scan, config);
         if (outcome == null) return;
 
-        List<ArtifactPreAdapter.FoundArtifact> found = outcome.found();
-        List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
-        List<PipelineRun> children = pipelineRunService.finishScanWithChildren(
-                scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
-                config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
+        try {
+            List<ArtifactPreAdapter.FoundArtifact> found = outcome.found();
+            List<String> uids = found.stream().map(ArtifactPreAdapter.FoundArtifact::uid).toList();
+            List<PipelineRunService.ChildOutcome> outcomes = pipelineRunService.finishScanWithChildren(
+                    scan.getId(), outcome.stageLogId(), String.join(",", uids), Map.of("foundCount", found.size()),
+                    config.getArtifactType(), config.getId(), scan.getBatchId(), uids);
 
-        // Freeze which runs belong to this scan right now — childStats computed from this list later
-        // won't be stolen by a newer scan of the same config the way the source_artifacts-based
-        // childStats is (see ScanRunRepository's child_stats vs child_stats_snapshot).
-        pipelineRunService.snapshotChildRunIds(scan.getId(), children.stream().map(PipelineRun::getId).toList());
+            pipelineRunService.snapshotChildRunIds(scan.getId(), outcomes.stream()
+                    .filter(PipelineRunService.ChildOutcome::ownedByThisScan)
+                    .map(o -> o.run().getId())
+                    .toList());
 
-        dispatchChildren(scan, config, found, children);
+            recordDispositions(scan, config, outcome.stageLogId(), outcomes);
+            dispatchChildren(scan, config, found, outcomes);
+        } catch (Throwable t) {
+            log.error("Scan runId={} failed after the pre-adapter stage for configId={}",
+                    scan.getId(), config.getId(), t);
+            pipelineRunService.failStage(outcome.stageLogId(), scan.getId(), preAdapterStage.stageName(),
+                    rootMessageOf(t));
+            ensureRunMarkedFailed(scan.getId(), preAdapterStage.stageName(), t);
+        }
     }
 
+    private void recordDispositions(PipelineRun scan, Configuration config, Long stageLogId,
+                                     List<PipelineRunService.ChildOutcome> outcomes) {
+        Map<PipelineRunService.Disposition, List<PipelineRunService.ChildOutcome>> byDisposition =
+                outcomes.stream().collect(Collectors.groupingBy(PipelineRunService.ChildOutcome::disposition));
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("foundCount", outcomes.size());
+        for (PipelineRunService.Disposition disposition : PipelineRunService.Disposition.values()) {
+            summary.put(disposition.name().toLowerCase() + "Count",
+                    byDisposition.getOrDefault(disposition, List.of()).size());
+        }
+
+        List<PipelineRunService.ChildOutcome> blocked =
+                byDisposition.getOrDefault(PipelineRunService.Disposition.BLOCKED, List.of());
+        if (!blocked.isEmpty()) {
+
+            List<Long> sample = blocked.stream().limit(BLOCKED_SAMPLE_SIZE).map(o -> o.run().getId()).toList();
+            summary.put("blockedRunIdsSample", sample);
+            log.warn("configId={} scanRunId={}: {} artifact(s) skipped — failed and out of auto-retries. "
+                            + "Full list: GET /admin/pipeline-runs/blocked?artifactType={}. First {}: {}",
+                    config.getId(), scan.getId(), blocked.size(), config.getArtifactType(), sample.size(),
+                    blocked.stream().limit(BLOCKED_SAMPLE_SIZE)
+                            .map(o -> o.artifactUid() + "(run=" + o.run().getId() + ")").toList());
+            meterRegistry.counter("staging_pipeline_artifacts_blocked_total",
+                    "artifact_type", config.getArtifactType()).increment(blocked.size());
+        }
+
+        pipelineRunService.updateStageSummary(stageLogId, summary);
+    }
 
     private void dispatch(Executor executor, String description, Runnable task) {
         executor.execute(() -> {
             try {
                 task.run();
-            } catch (Exception e) {
-                log.error("Unhandled exception running {}", description, e);
+            } catch (Throwable t) {
+ 
+                log.error("Unhandled throwable running {}", description, t);
             }
         });
     }
@@ -148,19 +194,31 @@ public class PipelineExecutionService {
     private PreAdapterStage.ScanOutcome tryScan(PipelineRun scan, Configuration config) {
         try {
             return preAdapterStage.scan(scan, config);
-        } catch (Exception e) {
-            log.warn("Scan failed for configId={}, scanRunId={}", config.getId(), scan.getId(), e);
+        } catch (Throwable t) {
+            log.warn("Scan failed for configId={}, scanRunId={}", config.getId(), scan.getId(), t);
+            ensureRunMarkedFailed(scan.getId(), preAdapterStage.stageName(), t);
             return null;
         }
     }
 
+    private static String rootMessageOf(Throwable t) {
+        Throwable cause = t;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getName();
+    }
+
     private void dispatchChildren(PipelineRun scan, Configuration config,
-                                   List<ArtifactPreAdapter.FoundArtifact> found, List<PipelineRun> children) {
+                                   List<ArtifactPreAdapter.FoundArtifact> found,
+                                   List<PipelineRunService.ChildOutcome> outcomes) {
         for (int i = 0; i < found.size(); i++) {
             ArtifactPreAdapter.FoundArtifact item = found.get(i);
-            PipelineRun child = children.get(i);
-            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), child.getId(), artifactNameOf(item));
-            submitArtifactChain(child.getId(), config.getArtifactType(), config.getCode());
+            PipelineRunService.ChildOutcome child = outcomes.get(i);
+            sourceArtefactService.recordSeen(config, item.uid(), scan.getId(), child.run().getId(), artifactNameOf(item));
+            if (child.ownedByThisScan()) {
+                submitArtifactChain(child.run().getId(), config.getArtifactType(), config.getCode());
+            }
         }
     }
 
@@ -178,11 +236,15 @@ public class PipelineExecutionService {
         try {
             stage.execute(runId);
             return true;
-        } catch (Exception e) {
+        } catch (PipelineRunCancelledException e) {
+            status = "cancelled";
+            log.info("Run {} is cancelled — chain stopped before stage {}", runId, stageName);
+            return false;
+        } catch (Throwable t) {
             status = "failed";
-            log.warn("Stage {} failed for runId={}", stageName, runId, e);
+            log.warn("Stage {} failed for runId={}", stageName, runId, t);
             meterRegistry.counter("staging_pipeline_errors_total", "stage", stageName, "artifact_type", artifactType).increment();
-            ensureRunMarkedFailed(runId, stageName, e);
+            ensureRunMarkedFailed(runId, stageName, t);
             return false;
         } finally {
             sample.stop(Timer.builder("staging_pipeline_stage_duration_seconds")
@@ -193,18 +255,18 @@ public class PipelineExecutionService {
         }
     }
 
-    // Each stage is expected to call PipelineRunService#failStage itself (records the stage_log
-    // entry and marks the run failed) before rethrowing. But some exceptions can escape before a
-    // stage even reaches its own try/catch (e.g. thrown while reading run fields, before
-    // startStage() is called) — that run then sits at its previous non-terminal status forever,
-    // gets reclaimed and re-throws identically on every lease cycle, and never shows up in the
-    // "failed" bucket. This is the exact "зависшие" symptom the architect flagged. Close that gap
-    // unconditionally here, regardless of where in the stage the exception originated.
-    private void ensureRunMarkedFailed(Long runId, String stageName, Exception e) {
+    private void ensureRunMarkedFailed(Long runId, String stageName, Throwable t) {
         PipelineRun run = pipelineRunRepository.findById(runId).orElse(null);
-        if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())) return;
-        pipelineRunRepository.markFailed(runId, e.getMessage(), stageName);
+        if (run == null || "failed".equals(run.getStatus()) || "completed".equals(run.getStatus())
+                || "cancelled".equals(run.getStatus())) return;
+        pipelineRunRepository.markFailed(runId, rootMessageOf(t), stageName);
         pipelineRunRepository.incrementRetryCount(runId);
+    }
+
+    private boolean isPausedForReview(Long runId) {
+        return pipelineRunRepository.findById(runId)
+                .map(run -> PAUSED_STATUSES.contains(run.getStatus()))
+                .orElse(false);
     }
 
     private boolean claim(Long runId) {

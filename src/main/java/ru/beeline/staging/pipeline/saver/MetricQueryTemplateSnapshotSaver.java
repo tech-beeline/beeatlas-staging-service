@@ -8,13 +8,6 @@ import ru.beeline.staging.domain.ArtifactBatch;
 import ru.beeline.staging.pipeline.transformer.MetricQueriesObjectPublish;
 import ru.beeline.staging.service.PipelineRunService;
 
-/**
- * Persists a MetricQueriesObjectPublish snapshot into the canonical identity+versions tables,
- * committed in its own transaction (a separate bean/method so Spring's @Transactional proxy
- * actually applies — see MetricQueriesSaver / E2ECanonicalSaver for the same pattern). Deliberately
- * NOT part of the same transaction as the dashboard-service publish call: a publish failure must not
- * roll back canonical data that was already correctly extracted and saved.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

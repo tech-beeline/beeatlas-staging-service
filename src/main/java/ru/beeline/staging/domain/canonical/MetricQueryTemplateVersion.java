@@ -24,7 +24,6 @@ public class MetricQueryTemplateVersion {
     @Column(name = "schema_version", nullable = false)
     private String schemaVersion;
 
-    /** Снимок metricTemplates: массив {metric_code, template} (может быть пустым, EC-007-03). */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "json_data", columnDefinition = "jsonb", nullable = false)
     private String jsonData;

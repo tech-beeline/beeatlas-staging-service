@@ -18,5 +18,6 @@ public record ChildPipelineRun(
         LocalDateTime processingStartedAt,
         LocalDateTime completedAt,
         String failureReason,
-        String failedStage
+        String failedStage,
+        LocalDateTime blockedAt
 ) {}

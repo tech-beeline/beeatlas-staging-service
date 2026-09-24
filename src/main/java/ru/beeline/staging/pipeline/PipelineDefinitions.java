@@ -10,50 +10,87 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 import ru.beeline.staging.pipeline.adapter.MetricQueriesAdapter;
+import ru.beeline.staging.pipeline.adapter.PlantUmlE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.SparxE2EAdapter;
 import ru.beeline.staging.pipeline.adapter.StructurizrSequenceAdapter;
+import ru.beeline.staging.pipeline.adapter.UseCaseAdapter;
+import ru.beeline.staging.pipeline.manual.ManualOperations;
 import ru.beeline.staging.pipeline.preadapter.MetricQueriesPreAdapter;
+import ru.beeline.staging.pipeline.publisher.E2ePublisher;
+import ru.beeline.staging.pipeline.publisher.MetricQueriesPublisher;
+import ru.beeline.staging.pipeline.publisher.NoopPublisher;
 import ru.beeline.staging.pipeline.preadapter.SparxE2EPreAdapter;
 import ru.beeline.staging.pipeline.preadapter.StructurizrSequencePreAdapter;
 import ru.beeline.staging.pipeline.saver.E2ECanonicalSaver;
 import ru.beeline.staging.pipeline.saver.MetricQueriesSaver;
 import ru.beeline.staging.pipeline.saver.StructurizrSequenceCanonicalSaver;
+import ru.beeline.staging.pipeline.saver.UseCaseSaver;
 import ru.beeline.staging.pipeline.transformer.E2ESequenceTransformer;
 import ru.beeline.staging.pipeline.transformer.MetricQueriesTransformer;
+import ru.beeline.staging.pipeline.transformer.PlantUmlE2ETransformer;
 import ru.beeline.staging.pipeline.transformer.StructurizrSequenceTransformer;
+import ru.beeline.staging.pipeline.transformer.UseCaseTransformer;
 import ru.beeline.staging.pipeline.validator.E2ESequenceValidator;
 import ru.beeline.staging.pipeline.validator.MetricQueriesValidator;
+import ru.beeline.staging.pipeline.validator.PlantUmlE2EValidator;
 import ru.beeline.staging.pipeline.validator.StructurizrSequenceValidator;
+import ru.beeline.staging.pipeline.validator.UseCaseValidator;
 
 @Component
 public class PipelineDefinitions {
 
         public static final List<String> STAGE_ORDER = List.of("pre-adapter", "adapter", "validator", "transformer",
-                        "saver");
+                        "saver", "manual", "publisher");
+
+        public static final String MANUAL_MODULE_CODE = ManualOperations.MODULE_CODE;
+
+        public static final String PAUSE_STATUS = "awaiting_review";
 
         private static final Map<String, Map<String, String>> DEFINITIONS = Map.of(
 
+                        "usecase", Map.of(
+                                        "adapter", UseCaseAdapter.MODULE_CODE,
+                                        "validator", UseCaseValidator.MODULE_CODE,
+                                        "transformer", UseCaseTransformer.MODULE_CODE,
+                                        "saver", UseCaseSaver.MODULE_CODE,
+                                        "manual", MANUAL_MODULE_CODE,
+                                        "publisher", NoopPublisher.MODULE_CODE),
+                        "e2e-plantuml", Map.of(
+                                        "adapter", PlantUmlE2EAdapter.MODULE_CODE,
+                                        "validator", PlantUmlE2EValidator.MODULE_CODE,
+                                        "transformer", PlantUmlE2ETransformer.MODULE_CODE,
+                                        "saver", E2ECanonicalSaver.MODULE_CODE,
+                                        "manual", MANUAL_MODULE_CODE,
+                                        "publisher", E2ePublisher.MODULE_CODE),
                         "e2e-sequence", Map.of(
                                         "pre-adapter", SparxE2EPreAdapter.MODULE_CODE,
                                         "adapter", SparxE2EAdapter.MODULE_CODE,
                                         "validator", E2ESequenceValidator.MODULE_CODE,
                                         "transformer", E2ESequenceTransformer.MODULE_CODE,
-                                        "saver", E2ECanonicalSaver.MODULE_CODE),
+                                        "saver", E2ECanonicalSaver.MODULE_CODE,
+                                        "publisher", E2ePublisher.MODULE_CODE),
                         "structurizr-sequence", Map.of(
                                         "pre-adapter", StructurizrSequencePreAdapter.MODULE_CODE,
                                         "adapter", StructurizrSequenceAdapter.MODULE_CODE,
                                         "validator", StructurizrSequenceValidator.MODULE_CODE,
                                         "transformer", StructurizrSequenceTransformer.MODULE_CODE,
-                                        "saver", StructurizrSequenceCanonicalSaver.MODULE_CODE),
+                                        "saver", StructurizrSequenceCanonicalSaver.MODULE_CODE,
+                                        "publisher", NoopPublisher.MODULE_CODE),
                         "metric-queries", Map.of(
                                         "pre-adapter", MetricQueriesPreAdapter.MODULE_CODE,
                                         "adapter", MetricQueriesAdapter.MODULE_CODE,
                                         "validator", MetricQueriesValidator.MODULE_CODE,
                                         "transformer", MetricQueriesTransformer.MODULE_CODE,
-                                        "saver", MetricQueriesSaver.MODULE_CODE));
+                                        "saver", MetricQueriesSaver.MODULE_CODE,
+                                        "publisher", MetricQueriesPublisher.MODULE_CODE));
 
         public Map<String, String> moduleMapFor(String artifactType) {
                 return DEFINITIONS.get(artifactType);
+        }
+
+        public boolean hasStage(String artifactType, String stageKey) {
+                Map<String, String> moduleMap = moduleMapFor(artifactType);
+                return moduleMap != null && moduleMap.containsKey(stageKey);
         }
 
         public Map<String, Map<String, String>> all() {

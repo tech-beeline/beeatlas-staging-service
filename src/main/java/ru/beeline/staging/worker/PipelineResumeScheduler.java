@@ -21,8 +21,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-// An abandoned run's lease just expires and findResumeCandidates picks it back up on the next
-// tick — no separate "unstick" step needed.
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -37,6 +35,9 @@ public class PipelineResumeScheduler {
 
     @Value("${staging.recovery.max-auto-retries:3}")
     private int maxAutoRetries;
+
+    @Value("${staging.recovery.max-resume-attempts:12}")
+    private int maxResumeAttempts;
 
     @Scheduled(fixedDelayString = "${staging.executor.resume-poll-interval-ms:5000}")
     public void resumeInterrupted() {
@@ -53,6 +54,20 @@ public class PipelineResumeScheduler {
                 pipelineExecutionService.submitResumeScan(run, config.get());
             } else {
                 pipelineExecutionService.submitArtifactChain(run.getId(), run.getArtifactType(), config.get().getCode());
+            }
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${staging.recovery.stall-check-interval-ms:60000}")
+    public void failStalledRuns() {
+        List<PipelineRun> stalled = pipelineRunRepository.findStalled(
+                maxResumeAttempts, LocalDateTime.now(), PageRequest.of(0, CANDIDATE_BATCH_SIZE));
+
+        for (PipelineRun run : stalled) {
+            try {
+                pipelineRunService.failStalledRun(run.getId(), run.getResumeCount(), maxAutoRetries);
+            } catch (Exception e) {
+                log.warn("Stall watchdog could not terminate pipelineRunId={}", run.getId(), e);
             }
         }
     }

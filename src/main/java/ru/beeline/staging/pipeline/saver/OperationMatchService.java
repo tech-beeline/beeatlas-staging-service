@@ -21,11 +21,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Find-or-create + versioning for the operation identity (BLG-004/ADR-011, CMP-03).
- * Non-primary attributes (type, rps, latency, error_rate, description, return_type) are serialized
- * into {@code json_data} via {@link JsonDataValidator} instead of individual column setters.
- */
 @Service
 @RequiredArgsConstructor
 public class OperationMatchService {
@@ -39,7 +34,8 @@ public class OperationMatchService {
                                            Double rps, Double latency, Double errorRate,
                                            String description, String returnType, Long techCapabilityVersionId,
                                            InterfaceVersion ifaceVersionOrNull, String jsonPointer,
-                                           Long rawDataRefId, Long batchId) {
+                                           Long rawDataRefId, Long batchId, String branch,
+                                           Integer connectionOperationId, Map<String, Object> matchedOperation) {
         boolean[] created = {false};
         OperationEntity entity = operationRepository.findByUid(uid).orElseGet(() -> {
             created[0] = true;
@@ -57,7 +53,6 @@ public class OperationMatchService {
         version.setInterfaceVersionId(ifaceVersionOrNull != null ? ifaceVersionOrNull.getId() : null);
         version.setExtUid(extUid);
         version.setName(name);
-        // CMP-03: serialize non-primary attributes into json_data instead of column setters
         Map<String, Object> attrs = new HashMap<>();
         if (type != null) attrs.put("type", type);
         BigDecimal rpsDec = toDecimal(rps);
@@ -68,6 +63,7 @@ public class OperationMatchService {
         if (errorRateDec != null) attrs.put("error_rate", errorRateDec);
         if (description != null) attrs.put("description", description);
         if (returnType != null) attrs.put("return_type", returnType);
+        if (matchedOperation != null && !matchedOperation.isEmpty()) attrs.put("matched_operation", matchedOperation);
         String jsonData = JsonDataValidator.toJsonData(attrs);
         JsonDataValidator.validate(jsonData);
         version.setJsonData(jsonData);
@@ -75,6 +71,8 @@ public class OperationMatchService {
         version.setCreatedAt(LocalDateTime.now());
         version.setMatchNoticeId(matchNotice != null ? matchNotice.id() : null);
         version.setRawDataContextId(matchNotice != null ? matchNotice.rawDataContextId() : null);
+        version.setBranchName(branch);
+        version.setConnectionOperationId(connectionOperationId);
         return operationVersionRepository.save(version);
     }
 

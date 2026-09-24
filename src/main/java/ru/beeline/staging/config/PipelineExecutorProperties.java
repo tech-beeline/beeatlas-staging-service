@@ -23,8 +23,5 @@ public class PipelineExecutorProperties {
     private int artifactPoolSize = 8;
     private int queueCapacity = 5000;
 
-    // configuration.code -> pool size, for the configs that need more (or fewer) artifact threads
-    // than artifactPoolSize. Example:
-    //   staging.executor.artifact-pool-overrides.sparx-e2e-prod: 20
     private Map<String, Integer> artifactPoolOverrides = new HashMap<>();
 }

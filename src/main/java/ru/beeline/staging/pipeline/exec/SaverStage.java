@@ -62,7 +62,6 @@ public class SaverStage implements ArtifactPipelineStage {
                 return;
             }
 
-            // See ValidatorStage for why this is checked here instead of unboxed before the try.
             if (run.getRawDataRefId() == null) {
                 throw new IllegalStateException("No rawDataRefId available for uid=" + uid
                         + " — adapter stage did not produce one");
@@ -72,7 +71,6 @@ public class SaverStage implements ArtifactPipelineStage {
             if (pipelineRunService.isAlreadyFullyProcessed(uid, type, rawDataRefId)) {
                 log.info("stage=saver, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping save", uid, rawDataRefId);
                 pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
-                pipelineRunService.completeRun(runId);
                 return;
             }
 
@@ -88,7 +86,6 @@ public class SaverStage implements ArtifactPipelineStage {
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
 
             SaveResult saverResult = saver.save(uid, type, rawDataRefId, runId, ref.getCanonicalSnapshotJson());
-            // match-notices are saved inside the saver's own transaction; saverResult.notices() is empty
 
             Map<String, Object> output = new HashMap<>(saverResult.summary() != null ? saverResult.summary() : Map.of());
             output.put("saved", true);
@@ -98,7 +95,6 @@ public class SaverStage implements ArtifactPipelineStage {
             Object batchId = output.get("batchId");
             String outputSummary = batchId != null ? "batchId=" + batchId : "saved=true";
             pipelineRunService.completeStage(stageLogId, outputSummary, StageSupport.buildSummary(output));
-            pipelineRunService.completeRun(runId);
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
             throw e;

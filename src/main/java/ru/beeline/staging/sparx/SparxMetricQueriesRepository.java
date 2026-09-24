@@ -10,11 +10,6 @@ import ru.beeline.staging.sparx.dto.MetricQueriesSourceMeta;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Ported from documentation/staging-service/source-artefacts/metric-queries/metric-queries-preadapter-spec.md
- * §5.3 — keep in sync with that spec. Objects in Sparx EA carrying property 'api-metric-template'
- * (a Grafana dashboard URL).
- */
 @Slf4j
 @Repository
 public class SparxMetricQueriesRepository {
@@ -52,12 +47,6 @@ public class SparxMetricQueriesRepository {
         return sparxJdbcTemplate.query(FIND_ALL, SparxMetricQueriesRepository::mapRow);
     }
 
-    /**
-     * Re-fetches a single object's metadata by uid. Used by {@code MetricQueriesAdapter}, since
-     * pre-adapter-provided metadata isn't currently threaded through to the adapter stage
-     * (AdapterStage calls {@code adapter.load(uid, sourceId, null)}) — same "re-fetch by uid"
-     * pattern as StructurizrSequenceAdapter uses for fdm-products.
-     */
     public Optional<MetricQueriesSourceMeta> findByUid(String uid) {
         if (sparxJdbcTemplate == null) {
             log.warn("Sparx datasource not configured (staging.sparx.datasource.url not set) — cannot fetch uid={}", uid);
