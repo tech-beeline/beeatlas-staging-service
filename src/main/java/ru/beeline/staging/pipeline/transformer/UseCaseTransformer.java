@@ -106,7 +106,8 @@ public class UseCaseTransformer implements ArtifactTransformer {
     }
 
     private record Call(ParsedDiagram.Message message, String partId, int seq, String scenarioType, String stepType,
-                        String method, String path, CmdbAliasLookup.ResolvedParticipant receiver) {
+                        String method, String path, String receiverKind,
+                        CmdbAliasLookup.ResolvedParticipant receiver) {
 
         String productCode() {
             return receiver == null ? null
@@ -118,6 +119,8 @@ public class UseCaseTransformer implements ArtifactTransformer {
                                     Map<String, CmdbAliasLookup.ResolvedParticipant> resolved,
                                     List<ArtifactNotice> notices) {
         String[] fragmentByLine = fragmentsByLine(rawContent);
+        Map<String, String> kindByAlias = new LinkedHashMap<>();
+        diagram.participants().forEach(p -> kindByAlias.put(p.alias(), p.declaredKind()));
         List<Call> calls = new ArrayList<>();
         int seq = 0;
         for (ParsedDiagram.Message message : diagram.messages()) {
@@ -139,10 +142,12 @@ public class UseCaseTransformer implements ArtifactTransformer {
                 receiver = null;
             } else if (receiver == null) {
                 notices.add(notice(RECEIVER_NOT_IN_CMDB, "warning", Map.of("partId", partId,
-                        "line", message.line(), "participant", message.toAlias(), "reason", "receiver_not_in_cmdb")));
+                        "line", message.line(), "participant", message.toAlias(),
+                        "reason", PlantUmlE2eDecomposer.isProduct(kindByAlias.get(message.toAlias()))
+                                ? "receiver_not_in_cmdb" : "receiver_is_not_a_product")));
             }
             calls.add(new Call(message, partId, seq, scenarioTypeOf(fragment), stepTypeOf(fragment),
-                    method, path, receiver));
+                    method, path, kindByAlias.get(message.toAlias()), receiver));
         }
         return calls;
     }
@@ -191,8 +196,12 @@ public class UseCaseTransformer implements ArtifactTransformer {
             snapshot.getSteps().add(step);
 
             if (call.receiver() == null) {
-                step.setReason("Участник '" + call.message().toAlias() + "' не найден в CMDB — "
-                        + "сторона вызова не определена");
+                step.setReason(PlantUmlE2eDecomposer.isProduct(call.receiverKind())
+                        ? "Участник '" + call.message().toAlias() + "' не найден в CMDB — "
+                                + "сторона вызова не определена"
+                        : "Участник '" + call.message().toAlias() + "' объявлен как "
+                                + String.valueOf(call.receiverKind()).toLowerCase(Locale.ROOT)
+                                + " — это не продукт ландшафта, вызов не выгружается");
                 activeOperationByLifeline.remove(call.message().toAlias());
                 continue;
             }

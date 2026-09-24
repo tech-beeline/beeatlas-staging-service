@@ -105,6 +105,9 @@ public class PlantUmlE2eDecomposer {
 
         List<E2ePlantUmlPauseContext.Participant> participants = new ArrayList<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
+            if (!isProduct(participant.declaredKind())) {
+                continue;
+            }
             CmdbAliasLookup.ResolvedParticipant match = resolved.get(participant.alias());
             boolean isResolved = match != null && !match.ambiguous();
             participants.add(new E2ePlantUmlPauseContext.Participant(
@@ -163,6 +166,8 @@ public class PlantUmlE2eDecomposer {
 
     private List<Call> collectCalls(ParsedDiagram diagram, Map<String, CmdbAliasLookup.ResolvedParticipant> resolved,
             List<ArtifactNotice> notices) {
+        Map<String, String> kindByAlias = new LinkedHashMap<>();
+        diagram.participants().forEach(p -> kindByAlias.put(p.alias(), p.declaredKind()));
         List<Call> calls = new ArrayList<>();
         for (ParsedDiagram.Message message : diagram.messages()) {
             String elementRef = message.fromAlias() + "->" + message.toAlias();
@@ -183,7 +188,8 @@ public class PlantUmlE2eDecomposer {
                 notices.add(excluded(elementRef, message.line(), "receiver_ambiguous"));
                 receiver = null;
             } else if (receiver == null) {
-                notices.add(excluded(elementRef, message.line(), "receiver_not_in_cmdb"));
+                notices.add(excluded(elementRef, message.line(), isProduct(kindByAlias.get(message.toAlias()))
+                        ? "receiver_not_in_cmdb" : "receiver_is_not_a_product"));
             }
             calls.add(new Call(message, method, path, receiver));
         }
@@ -384,6 +390,10 @@ public class PlantUmlE2eDecomposer {
         draft.setExtUid(biStepCode);
         draft.setName(biStepCode);
         return draft;
+    }
+
+    static boolean isProduct(String declaredKind) {
+        return declaredKind == null || "PARTICIPANT".equalsIgnoreCase(declaredKind);
     }
 
     static String interfaceCode(String method, String path) {

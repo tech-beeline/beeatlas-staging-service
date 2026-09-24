@@ -25,6 +25,16 @@ import static org.mockito.Mockito.when;
 
 class PlantUmlValidationEngineTest {
 
+    private static final String DIAGRAM_WITH_DATABASE = """
+            @startuml
+            actor "Пользователь" as User
+            participant "api_gateway" as GW
+            database "database" as DB
+            User -> GW: GET /api/v1/search
+            GW -> DB: SELECT * FROM capability
+            @enduml
+            """;
+
     private final PlantUmlDiagramParser parser = new PlantUmlDiagramParser();
 
     @Test
@@ -134,6 +144,23 @@ class PlantUmlValidationEngineTest {
         assertThat(result.unrecognizedParticipants()).isEmpty();
         assertThat(result.findings()).extracting(Finding::code)
                 .doesNotContain("e2e.validation.participant.unrecognized");
+    }
+
+    @Test
+    @DisplayName("Участник-БД не проверяется на продукт и не роняет валидацию")
+    void ignoresDatabaseParticipants() {
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
+                "api_gateway", new ResolvedParticipant("api_gateway", "API Gateway", Kind.SYSTEM, "api_gateway")));
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(DIAGRAM_WITH_DATABASE);
+
+        assertThat(result.unrecognizedParticipants()).extracting(UnrecognizedParticipant::alias)
+                .doesNotContain("DB");
+        assertThat(result.valid()).isTrue();
     }
 
     @Test

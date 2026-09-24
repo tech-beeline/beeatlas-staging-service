@@ -58,6 +58,34 @@ class PlantUmlE2eDecomposerTest {
     }
 
     @Test
+    @DisplayName("Вызов к участнику-БД не выгружается и помечается как не-продукт")
+    void skipsCallsToDatabaseParticipants() {
+        PlantUmlE2eDecomposer.Result result = decomposer.decompose("""
+                @startuml
+                actor "Пользователь" as User
+                participant "%s" as GW
+                database "database" as DB
+                User -> GW: GET /api/v1/calls/
+                GW -> DB: SELECT * FROM capability
+                @enduml
+                """.formatted(ANTISPAM), UID, "Поиск", null);
+
+        assertThat(result.snapshot().getProducts()).extracting(E2ESequenceSnapshot.ProductDraft::getUid)
+                .doesNotContain("DB");
+        assertThat(result.snapshot().getOperations()).extracting(E2ESequenceSnapshot.OperationDraft::getName)
+                .doesNotContain("SELECT * FROM capability");
+        assertThat(result.notices()).filteredOn(notice -> notice.details() != null
+                        && notice.details().contains("receiver_is_not_a_product"))
+                .isNotEmpty();
+        assertThat(result.pauseContext().requests()).extracting(request -> request.toAlias())
+                .doesNotContain("DB");
+        assertThat(result.pauseContext().participants())
+                .extracting(participant -> participant.alias())
+                .containsExactly("GW")
+                .doesNotContain("User", "DB");
+    }
+
+    @Test
     @DisplayName("Код интерфейса — всегда 8 hex-символов, ведущий ноль не теряется")
     void padsTheInterfaceCode() {
         assertThat(PlantUmlE2eDecomposer.interfaceCode("POST", "/api/v1/sequence")).isEqualTo("033d51b4");
