@@ -66,26 +66,18 @@ public class PlantUmlValidationEngine {
             return new EngineResult(List.of(), List.of(), List.of(), List.of(), findings);
         }
 
-        Map<String, CmdbAliasLookup.ResolvedParticipant> resolved = cmdbAliasLookup.resolveAll(collectLookupKeys(diagram));
+        Map<String, CmdbAliasLookup.ResolvedParticipant> resolved =
+                cmdbAliasLookup.resolveAll(ParticipantLookup.keysOf(diagram));
 
         List<RecognizedParticipant> recognizedParticipants = new ArrayList<>();
         List<UnrecognizedParticipant> unrecognizedParticipants = new ArrayList<>();
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias = new HashMap<>();
         Set<String> ambiguousAliases = new LinkedHashSet<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
-            if (!isProductParticipant(participant)) {
+            if (!ParticipantLookup.isProduct(participant.declaredKind())) {
                 continue;
             }
-            CmdbAliasLookup.ResolvedParticipant match = hasText(participant.name()) ? resolved.get(participant.name()) : null;
-            if (match == null) {
-                String prefix = mnemonicPrefix(participant.name());
-                if (prefix != null) {
-                    match = resolved.get(prefix);
-                }
-            }
-            if (match == null) {
-                match = resolved.get(participant.alias());
-            }
+            CmdbAliasLookup.ResolvedParticipant match = ParticipantLookup.resolve(resolved, participant);
             if (match != null && match.ambiguous()) {
                 ambiguousAliases.add(participant.alias());
                 unrecognizedParticipants.add(new UnrecognizedParticipant(participant.alias(), participant.line()));
@@ -176,33 +168,6 @@ public class PlantUmlValidationEngine {
                         + " целиком, включая имена path-параметров, а сама операция — лежать в ветке main.",
                 message.line(), message.line(), elementRef));
         unrecognizedCalls.add(new UnrecognizedCall(message.fromAlias(), message.toAlias(), message.label(), message.line()));
-    }
-
-    private static Set<String> collectLookupKeys(ParsedDiagram diagram) {
-        Set<String> keys = new LinkedHashSet<>();
-        for (ParsedDiagram.Participant participant : diagram.participants()) {
-            if (hasText(participant.name())) {
-                keys.add(participant.name());
-                String prefix = mnemonicPrefix(participant.name());
-                if (prefix != null) {
-                    keys.add(prefix);
-                }
-            }
-            keys.add(participant.alias());
-        }
-        return keys;
-    }
-
-    private static String mnemonicPrefix(String name) {
-        if (name == null) {
-            return null;
-        }
-        int dot = name.indexOf('.');
-        return dot > 0 ? name.substring(0, dot) : null;
-    }
-
-    private static boolean isProductParticipant(ParsedDiagram.Participant participant) {
-        return "PARTICIPANT".equalsIgnoreCase(participant.declaredKind());
     }
 
     private static boolean hasText(String value) {

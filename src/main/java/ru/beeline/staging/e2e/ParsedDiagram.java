@@ -10,5 +10,5 @@ public record ParsedDiagram(List<Participant> participants, List<Message> messag
 
     public record Participant(String alias, String name, String declaredKind, int line) {}
 
-    public record Message(String fromAlias, String toAlias, String label, int line) {}
+    public record Message(String fromAlias, String toAlias, String label, int line, boolean reply) {}
 }

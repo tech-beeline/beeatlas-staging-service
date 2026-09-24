@@ -293,8 +293,12 @@ class PlantUmlE2eDecomposerTest {
         assertThat(relations.subList(1, relations.size()))
                 .allMatch(relation -> relation.getCallerOperationExtUid() != null);
         assertThat(result.snapshot().getOperations())
-                .extracting(E2ESequenceSnapshot.OperationDraft::getType)
-                .contains("UNKNOWN");
+                .extracting(E2ESequenceSnapshot.OperationDraft::getName)
+                .doesNotContain("200 OK");
+        assertThat(result.notices())
+                .filteredOn(notice -> PlantUmlE2eDecomposer.EXCLUDE.equals(notice.code()))
+                .extracting(ArtifactNotice::details)
+                .anyMatch(details -> details.contains("reply"));
     }
 
     @Test

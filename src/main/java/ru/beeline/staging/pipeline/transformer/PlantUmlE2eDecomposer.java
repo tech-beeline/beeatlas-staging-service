@@ -13,6 +13,7 @@ import ru.beeline.staging.dto.e2e.E2ePlantUmlPauseContext;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.e2e.CmdbAliasLookup;
 import ru.beeline.staging.e2e.ParseOutcome;
+import ru.beeline.staging.e2e.ParticipantLookup;
 import ru.beeline.staging.e2e.ParsedDiagram;
 import ru.beeline.staging.e2e.PlantUmlDiagramParser;
 import ru.beeline.staging.product.dto.search.MatchedArchOperation;
@@ -129,34 +130,15 @@ public class PlantUmlE2eDecomposer {
     }
 
     private Map<String, CmdbAliasLookup.ResolvedParticipant> resolveParticipants(ParsedDiagram diagram) {
-        Set<String> keys = new LinkedHashSet<>();
-        for (ParsedDiagram.Participant participant : diagram.participants()) {
-            if (participant.name() != null && !participant.name().isBlank()) {
-                keys.add(participant.name());
-                int dot = participant.name().indexOf('.');
-                if (dot > 0) {
-                    keys.add(participant.name().substring(0, dot));
-                }
-            }
-            keys.add(participant.alias());
-        }
-        Map<String, CmdbAliasLookup.ResolvedParticipant> byLookupKey = cmdbAliasLookup.resolveAll(keys);
+        Map<String, CmdbAliasLookup.ResolvedParticipant> byLookupKey =
+                cmdbAliasLookup.resolveAll(ParticipantLookup.keysOf(diagram));
 
         Map<String, CmdbAliasLookup.ResolvedParticipant> byPlantUmlAlias = new LinkedHashMap<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
-            CmdbAliasLookup.ResolvedParticipant match = null;
-            if (participant.name() != null && !participant.name().isBlank()) {
-                match = byLookupKey.get(participant.name());
-                if (match == null) {
-                    int dot = participant.name().indexOf('.');
-                    if (dot > 0) {
-                        match = byLookupKey.get(participant.name().substring(0, dot));
-                    }
-                }
+            if (!ParticipantLookup.isProduct(participant.declaredKind())) {
+                continue;
             }
-            if (match == null) {
-                match = byLookupKey.get(participant.alias());
-            }
+            CmdbAliasLookup.ResolvedParticipant match = ParticipantLookup.resolve(byLookupKey, participant);
             if (match != null) {
                 byPlantUmlAlias.put(participant.alias(), match);
             }
@@ -171,6 +153,10 @@ public class PlantUmlE2eDecomposer {
         List<Call> calls = new ArrayList<>();
         for (ParsedDiagram.Message message : diagram.messages()) {
             String elementRef = message.fromAlias() + "->" + message.toAlias();
+            if (message.reply()) {
+                notices.add(excluded(elementRef, message.line(), "reply"));
+                continue;
+            }
             if (message.fromAlias().equals(message.toAlias())) {
                 notices.add(excluded(elementRef, message.line(), "self_call"));
                 continue;

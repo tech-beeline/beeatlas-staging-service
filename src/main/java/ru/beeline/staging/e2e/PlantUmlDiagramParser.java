@@ -126,7 +126,8 @@ public class PlantUmlDiagramParser {
                 String toAlias = message.getParticipant2().getCode();
                 int line = locator.findMessageLine(fromAlias, toAlias, cursorLine);
                 cursorLine = line + 1;
-                messages.add(new ParsedDiagram.Message(fromAlias, toAlias, joinDisplay(message.getLabel()), line));
+                boolean reply = message.getArrowConfiguration() != null && message.getArrowConfiguration().isDotted();
+                messages.add(new ParsedDiagram.Message(fromAlias, toAlias, joinDisplay(message.getLabel()), line, reply));
             }
         }
 
