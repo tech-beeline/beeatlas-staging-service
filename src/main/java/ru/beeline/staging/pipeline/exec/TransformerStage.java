@@ -68,12 +68,6 @@ public class TransformerStage implements ArtifactPipelineStage {
 
         Long stageLogId = pipelineRunService.startStage(runId, stageName(), "rawDataRefId=" + rawDataRefId);
         try {
-            if (pipelineRunService.isAlreadyFullyProcessed(uid, artifactType, rawDataRefId)) {
-                log.info("stage=transformer, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping transform", uid, rawDataRefId);
-                pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
-                return;
-            }
-
             String moduleCode = moduleResolver.resolve(artifactType, stageName());
             ArtifactTransformer transformer = registry.get(moduleCode);
             if (transformer == null) {
@@ -84,6 +78,13 @@ public class TransformerStage implements ArtifactPipelineStage {
 
             RawDataRef ref = rawDataRefRepository.findById(rawDataRefId)
                     .orElseThrow(() -> new NoSuchElementException("RawDataRef not found: " + rawDataRefId));
+
+            if (pipelineRunService.isAlreadyFullyProcessed(uid, artifactType, rawDataRefId)) {
+                log.info("stage=transformer, uid={} — content unchanged and previously completed (rawDataRefId={}), skipping transform", uid, rawDataRefId);
+                savePauseContext(run, ref, transformer, runId);
+                pipelineRunService.completeStage(stageLogId, "skipped: content unchanged", null);
+                return;
+            }
 
             TransformResult result = transformer.transform(uid, new String(ref.getRawContent(), StandardCharsets.UTF_8),
                     StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
@@ -113,6 +114,20 @@ public class TransformerStage implements ArtifactPipelineStage {
         } catch (Exception e) {
             pipelineRunService.failStage(stageLogId, runId, stageName(), e.getMessage());
             throw e;
+        }
+    }
+
+    private void savePauseContext(PipelineRun run, RawDataRef ref, ArtifactTransformer transformer, Long runId) {
+        try {
+            TransformResult result = transformer.transform(run.getArtifactUid(),
+                    new String(ref.getRawContent(), StandardCharsets.UTF_8),
+                    StageSupport.contextOf(run, objectMapper, sourceSystemRepository));
+            if (result.pauseContext() != null) {
+                pipelineRunRepository.saveDraftJson(runId, objectMapper.writeValueAsString(result.pauseContext()));
+            }
+        } catch (Exception e) {
+            log.warn("stage=transformer, uid={} — не удалось собрать контекст паузы для повторного импорта",
+                    run.getArtifactUid(), e);
         }
     }
 
