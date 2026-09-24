@@ -95,6 +95,27 @@ class UseCaseManualOperationsTest {
     }
 
     @Test
+    @DisplayName("Шаг без сохранённой операции подсказывает только planned")
+    void suggestsOnlyPlannedWithoutAnOperation() {
+        when(canonicalRepository.findSteps(USECASE_VERSION_ID)).thenReturn(List.of(matchedStep(), stepWithoutOperation()));
+
+        JsonNode context = manualOperations.pauseContext(RUN_ID);
+        JsonNode part = context.path("unmapped").get(0);
+
+        assertThat(part.path("partId").asText()).isEqualTo("P-02");
+        assertThat(part.path("target").path("operationVersionId").isMissingNode()).isTrue();
+        assertThat(part.path("suggestion").asText()).isEqualTo("planned");
+    }
+
+    @Test
+    @DisplayName("Шаг с операцией подсказывает оба варианта")
+    void suggestsBothWhenTheOperationIsSaved() {
+        JsonNode part = manualOperations.pauseContext(RUN_ID).path("unmapped").get(0);
+
+        assertThat(part.path("suggestion").asText()).isEqualTo("map_existing | planned");
+    }
+
+    @Test
     @DisplayName("Требуют решения — шаги без call_status")
     void listsUnmappedParts() {
         assertThat(manualOperations.unmappedParts(RUN_ID)).containsExactly("P-02");
@@ -220,6 +241,12 @@ class UseCaseManualOperationsTest {
                 "{\"operation_code\":\"/orders\"}", 101L, "/orders", "POST", 4242,
                 "{\"operationId\":4242,\"name\":\"/orders\",\"type\":\"POST\",\"interfaceCode\":\"orders_api\"}",
                 "iface-1", "BC-2", "BC-2");
+    }
+
+    private static StepRow stepWithoutOperation() {
+        return new StepRow(2L, "P-02", "уточняет у оператора", 2, "main", null, "action",
+                "{\"reason\":\"Участник 'Ghost' не найден в CMDB — сторона вызова не определена\"}",
+                null, null, null, null, null, null, null, null);
     }
 
     private static StepRow plannedStep() {

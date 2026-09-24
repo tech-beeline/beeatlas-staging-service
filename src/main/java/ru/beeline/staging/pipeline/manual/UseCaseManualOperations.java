@@ -45,7 +45,8 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
     private static final String DECISION_MAP_EXISTING = "usecase.saver.decision.map_existing";
     private static final String DECISION_PLANNED = "usecase.saver.decision.planned";
     private static final String DECISION_FAILED = "usecase.saver.decision.apply_failed";
-    private static final String SUGGESTION = "map_existing | planned";
+    private static final String SUGGESTION_BOTH = "map_existing | planned";
+    private static final String SUGGESTION_PLANNED = "planned";
 
     private final UseCaseCanonicalRepository canonicalRepository;
     private final OperationVersionRepository operationVersionRepository;
@@ -78,7 +79,7 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
                 unmapped.add(new UseCasePauseContext.Part(step.extUid(), step.seq(), step.scenarioType(),
                         step.stepType(), step.name(), null, target,
                         UseCasePauseContext.ConnectionOperation.EMPTY, text(attributes, "reason"),
-                        textOr(attributes, "suggestion", SUGGESTION)));
+                        suggestionFor(step)));
             } else {
                 mapped.add(new UseCasePauseContext.Part(step.extUid(), step.seq(), step.scenarioType(),
                         step.stepType(), step.name(), step.callStatus(), target,
@@ -211,6 +212,10 @@ public class UseCaseManualOperations implements ArtifactManualOperations {
         } catch (Exception e) {
             throw new IllegalStateException("Не удалось записать matched_operation", e);
         }
+    }
+
+    private static String suggestionFor(StepRow step) {
+        return step.calleeOperationVersionId() != null ? SUGGESTION_BOTH : SUGGESTION_PLANNED;
     }
 
     private UseCasePauseContext.ConnectionOperation connectionOf(StepRow step) {

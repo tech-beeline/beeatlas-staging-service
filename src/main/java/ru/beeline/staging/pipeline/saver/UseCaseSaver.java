@@ -39,7 +39,8 @@ public class UseCaseSaver implements ArtifactSaver {
     public static final String UNMAPPED_SIDE = "match.usecase_step.unmapped_side";
     public static final String CALL_STATUS_CONFIRMED = "confirmed";
 
-    private static final String SUGGESTION = "map_existing | planned";
+    private static final String SUGGESTION_BOTH = "map_existing | planned";
+    private static final String SUGGESTION_PLANNED = "planned";
 
     private final UseCaseCanonicalRepository canonicalRepository;
     private final UseCaseLandscapeRepository landscapeRepository;
@@ -107,8 +108,9 @@ public class UseCaseSaver implements ArtifactSaver {
             if (!matched) {
                 unmatched++;
                 attributes.put("reason", step.getReason());
-                attributes.put("suggestion", SUGGESTION);
-                notices.add(unmappedNotice(rawDataRefId, artifactUid, step.getPartId(), step.getReason()));
+                String suggestion = callee != null ? SUGGESTION_BOTH : SUGGESTION_PLANNED;
+                attributes.put("suggestion", suggestion);
+                notices.add(unmappedNotice(rawDataRefId, artifactUid, step.getPartId(), step.getReason(), suggestion));
             }
 
             canonicalRepository.insertStepVersion(new StepVersionRow(usecaseVersionId,
@@ -170,11 +172,12 @@ public class UseCaseSaver implements ArtifactSaver {
         return operationsByExtUid;
     }
 
-    private ArtifactNotice unmappedNotice(long rawDataRefId, String artifactUid, String partId, String reason) {
+    private ArtifactNotice unmappedNotice(long rawDataRefId, String artifactUid, String partId, String reason,
+                                          String suggestion) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("part_id", partId);
         details.put("reason", reason);
-        details.put("suggestion", SUGGESTION);
+        details.put("suggestion", suggestion);
         return new ArtifactNotice(null, null, UNMAPPED_SIDE, "warning", "match", rawDataRefId,
                 "usecase_step", partId, null, "Шаг не сопоставлен с архитектурной операцией — требуется решение",
                 json(details), null, null, artifactUid, null);
