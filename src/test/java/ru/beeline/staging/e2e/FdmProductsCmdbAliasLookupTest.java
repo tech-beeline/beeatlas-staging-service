@@ -48,7 +48,6 @@ class FdmProductsCmdbAliasLookupTest {
         Map<String, ResolvedParticipant> result = lookup.resolveAll(Set.of("crm"));
 
         assertThat(result.get("crm").kind()).isEqualTo(Kind.SYSTEM);
-        assertThat(result.get("crm").ambiguous()).isFalse();
     }
 
     @Test
@@ -66,7 +65,6 @@ class FdmProductsCmdbAliasLookupTest {
         Map<String, ResolvedParticipant> result = lookup.resolveAll(Set.of("dashboard"));
 
         ResolvedParticipant resolved = result.get("dashboard");
-        assertThat(resolved.ambiguous()).isFalse();
         assertThat(resolved.kind()).isEqualTo(Kind.SYSTEM);
         assertThat(resolved.productAlias()).isEqualTo("dashboard");
     }

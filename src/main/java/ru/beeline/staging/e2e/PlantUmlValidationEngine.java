@@ -72,23 +72,12 @@ public class PlantUmlValidationEngine {
         List<RecognizedParticipant> recognizedParticipants = new ArrayList<>();
         List<UnrecognizedParticipant> unrecognizedParticipants = new ArrayList<>();
         Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias = new HashMap<>();
-        Set<String> ambiguousAliases = new LinkedHashSet<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
             if (!ParticipantLookup.isProduct(participant.declaredKind())) {
                 continue;
             }
             CmdbAliasLookup.ResolvedParticipant match = ParticipantLookup.resolve(resolved, participant);
-            if (match != null && match.ambiguous()) {
-                ambiguousAliases.add(participant.alias());
-                unrecognizedParticipants.add(new UnrecognizedParticipant(participant.alias(), participant.line()));
-                findings.add(Finding.warning("e2e.validation.participant.ambiguous",
-                        "Мнемоника '" + participant.alias() + "' в CMDB неоднозначна: так называется и система '"
-                                + match.name() + "', и контейнер '" + match.competingWith().name() + "' системы '"
-                                + match.competingWith().productAlias() + "'. Пока неоднозначность не устранена,"
-                                + " участник не распознаётся и его вызовы не проверяются: переименуйте мнемонику"
-                                + " системы или код контейнера в CMDB.",
-                        participant.line(), participant.line(), participant.alias()));
-            } else if (match != null) {
+            if (match != null) {
                 resolvedByPlantUmlAlias.put(participant.alias(), match);
                 recognizedParticipants.add(new RecognizedParticipant(
                         participant.alias(), match.name(), match.kind().name().toLowerCase(Locale.ROOT), participant.line()));
@@ -110,14 +99,14 @@ public class PlantUmlValidationEngine {
             if (message.reply()) {
                 continue;
             }
-            classifyCall(message, resolvedByPlantUmlAlias, ambiguousAliases, recognizedCalls, unrecognizedCalls, findings);
+            classifyCall(message, resolvedByPlantUmlAlias, recognizedCalls, unrecognizedCalls, findings);
         }
 
         return new EngineResult(recognizedParticipants, unrecognizedParticipants, recognizedCalls, unrecognizedCalls, findings);
     }
 
     private void classifyCall(ParsedDiagram.Message message, Map<String, CmdbAliasLookup.ResolvedParticipant> resolvedByPlantUmlAlias,
-                               Set<String> ambiguousAliases, List<RecognizedCall> recognizedCalls,
+                               List<RecognizedCall> recognizedCalls,
                                List<UnrecognizedCall> unrecognizedCalls, List<Finding> findings) {
         String elementRef = message.fromAlias() + "->" + message.toAlias();
         Matcher matcher = REST_CALL.matcher(message.label());
@@ -136,11 +125,8 @@ public class PlantUmlValidationEngine {
 
         CmdbAliasLookup.ResolvedParticipant receiver = resolvedByPlantUmlAlias.get(message.toAlias());
         if (receiver == null) {
-            String reason = ambiguousAliases.contains(message.toAlias())
-                    ? "получатель '" + message.toAlias() + "' в CMDB неоднозначен — это и мнемоника системы,"
-                            + " и код контейнера (см. предупреждение выше)"
-                    : "получатель '" + message.toAlias() + "' не найден в CMDB. Сначала исправьте мнемонику участника '"
-                            + message.toAlias() + "' (см. предупреждение выше)";
+            String reason = "получатель '" + message.toAlias() + "' не найден среди продуктов."
+                    + " Сначала исправьте имя участника '" + message.toAlias() + "' (см. предупреждение выше)";
             findings.add(Finding.warning("e2e.validation.call.no_rest_endpoint",
                     "Не удалось проверить эндпоинт " + method + " " + path + ": " + reason
                             + " — тогда эндпоинт будет проверен.",

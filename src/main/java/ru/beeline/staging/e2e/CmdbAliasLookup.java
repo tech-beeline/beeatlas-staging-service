@@ -11,19 +11,10 @@ public interface CmdbAliasLookup {
 
     Map<String, ResolvedParticipant> resolveAll(Set<String> aliases);
 
-    record ResolvedParticipant(String alias, String name, Kind kind, String productAlias,
-                               ResolvedParticipant competingWith) {
+    record ResolvedParticipant(String alias, String name, Kind kind, String productAlias) {
 
         public ResolvedParticipant(String alias, String name, Kind kind) {
-            this(alias, name, kind, alias, null);
-        }
-
-        public ResolvedParticipant(String alias, String name, Kind kind, String productAlias) {
-            this(alias, name, kind, productAlias, null);
-        }
-
-        public boolean ambiguous() {
-            return competingWith != null;
+            this(alias, name, kind, alias);
         }
 
         public enum Kind { SYSTEM, CONTAINER }

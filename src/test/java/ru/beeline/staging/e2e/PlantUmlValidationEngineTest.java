@@ -363,33 +363,6 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
-    void doesNotSilentlyPickTheSystemWhenTheMnemonicIsAlsoAContainerCode() {
-        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
-        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "dashboard", new ResolvedParticipant("dashboard", "[REMOVED!]Dashboard API&UI", Kind.SYSTEM,
-                        "dashboard", new ResolvedParticipant("dashboard", "Dashboard", Kind.CONTAINER,
-                                "fdmshowcaseapp"))));
-        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
-        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
-
-        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
-        EngineResult result = engine.validate(AMBIGUOUS_MNEMONIC_PUML);
-
-        assertThat(result.recognizedParticipants()).isEmpty();
-        assertThat(result.unrecognizedParticipants())
-                .extracting(UnrecognizedParticipant::alias)
-                .contains("dashboard");
-        assertThat(result.recognizedCalls()).isEmpty();
-        assertThat(result.findings())
-                .extracting(Finding::code)
-                .contains("e2e.validation.participant.ambiguous");
-        assertThat(result.findings())
-                .extracting(Finding::message)
-                .anyMatch(message -> message.contains("[REMOVED!]Dashboard API&UI") && message.contains("fdmshowcaseapp"));
-        verifyNoInteractions(restEndpointLookup);
-    }
-
-    @Test
     void validationIsDeterministicForTheSameTextAndLookupState() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(realCmdbData());
@@ -413,14 +386,6 @@ class PlantUmlValidationEngineTest {
                 "ai-tool", new ResolvedParticipant("ai-tool", "AI Tool", Kind.SYSTEM),
                 "arfix", new ResolvedParticipant("arfix", "AR Collection", Kind.SYSTEM));
     }
-
-    private static final String AMBIGUOUS_MNEMONIC_PUML = """
-            @startuml
-            participant BLN
-            participant dashboard
-            BLN -> dashboard: GET /api/v4/e2e
-            @enduml
-            """;
 
     private static final String DOTTED_MNEMONIC_PUML = """
             @startuml

@@ -110,7 +110,7 @@ public class PlantUmlE2eDecomposer {
                 continue;
             }
             CmdbAliasLookup.ResolvedParticipant match = resolved.get(participant.alias());
-            boolean isResolved = match != null && !match.ambiguous();
+            boolean isResolved = match != null;
             participants.add(new E2ePlantUmlPauseContext.Participant(
                     participant.alias(),
                     isResolved,
@@ -166,10 +166,7 @@ public class PlantUmlE2eDecomposer {
                         "line", message.line(), "path", path)));
             }
             CmdbAliasLookup.ResolvedParticipant receiver = resolved.get(message.toAlias());
-            if (receiver != null && receiver.ambiguous()) {
-                notices.add(excluded(elementRef, message.line(), "receiver_ambiguous"));
-                receiver = null;
-            } else if (receiver == null) {
+            if (receiver == null) {
                 notices.add(excluded(elementRef, message.line(), isProduct(kindByAlias.get(message.toAlias()))
                         ? "receiver_not_in_cmdb" : "receiver_is_not_a_product"));
             }

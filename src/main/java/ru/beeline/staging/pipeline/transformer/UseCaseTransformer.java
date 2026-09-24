@@ -133,11 +133,7 @@ public class UseCaseTransformer implements ArtifactTransformer {
                         "line", message.line(), "path", path)));
             }
             CmdbAliasLookup.ResolvedParticipant receiver = resolved.get(message.toAlias());
-            if (receiver != null && receiver.ambiguous()) {
-                notices.add(notice(RECEIVER_NOT_IN_CMDB, "warning", Map.of("partId", partId,
-                        "line", message.line(), "participant", message.toAlias(), "reason", "receiver_ambiguous")));
-                receiver = null;
-            } else if (receiver == null) {
+            if (receiver == null) {
                 notices.add(notice(RECEIVER_NOT_IN_CMDB, "warning", Map.of("partId", partId,
                         "line", message.line(), "participant", message.toAlias(), "reason", "receiver_not_in_cmdb")));
             }

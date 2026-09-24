@@ -40,23 +40,19 @@ public class FdmProductsCmdbAliasLookup implements CmdbAliasLookup {
         Map<String, ContainerByCodeSummary> containersByLowerCode =
                 byLowerKey(productServiceClient.getContainersByCodes(keys), ContainerByCodeSummary::getCode);
 
-        int ambiguous = 0;
         for (String alias : aliases) {
             String key = alias.toLowerCase(Locale.ROOT);
             ProductAliasSummary product = productsByLowerAlias.get(key);
             ContainerByCodeSummary container = containersByLowerCode.get(key);
-            if (product != null && container != null) {
-                result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM));
-                ambiguous++;
-            } else if (product != null) {
+            if (product != null) {
                 result.put(alias, new ResolvedParticipant(alias, product.getName(), Kind.SYSTEM));
             } else if (container != null) {
                 result.put(alias, asParticipant(alias, container));
             }
         }
 
-        log.info("CMDB alias resolution: total={} recognized={} resolvedToProduct={} unrecognized={}",
-                aliases.size(), result.size(), ambiguous, aliases.size() - result.size());
+        log.info("CMDB alias resolution: total={} recognized={} unrecognized={}",
+                aliases.size(), result.size(), aliases.size() - result.size());
         return result;
     }
 
