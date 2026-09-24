@@ -51,7 +51,7 @@ class PlantUmlValidationEngineTest {
         assertThat(result.recognizedParticipants()).hasSize(4);
         assertThat(result.unrecognizedParticipants()).isEmpty();
         assertThat(result.recognizedCalls()).hasSize(7);
-        assertThat(result.unrecognizedCalls()).hasSize(4);
+        assertThat(result.unrecognizedCalls()).hasSize(1);
     }
 
     @Test
@@ -88,6 +88,53 @@ class PlantUmlValidationEngineTest {
                     assertThat(rp.alias()).isEqualTo("Short");
                     assertThat(rp.name()).isEqualTo("Example System");
                     assertThat(rp.kind()).isEqualTo("system");
+                });
+    }
+
+    @Test
+    @DisplayName("Ответы не проверяются как вызовы и не попадают в отчёт")
+    void ignoresRepliesInTheReport() {
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
+                "api_gateway", new ResolvedParticipant("api_gateway", "API Gateway", Kind.SYSTEM, "api_gateway"),
+                "capability", new ResolvedParticipant("capability", "Capability", Kind.SYSTEM, "capability")));
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate("""
+                @startuml
+                participant "api_gateway" as GW
+                participant "capability" as CAP
+                GW -> CAP: GET /api/v1/find
+                CAP --> GW: 200 OK
+                @enduml
+                """);
+
+        assertThat(result.unrecognizedCalls()).extracting(UnrecognizedCall::label)
+                .doesNotContain("200 OK");
+        assertThat(result.findings()).extracting(Finding::code)
+                .doesNotContain("e2e.validation.call.no_rest_endpoint");
+        assertThat(result.recognizedCalls()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Замечание о нераспознанном участнике описывает поиск по имени среди продуктов")
+    void explainsThatOnlyTheNameIsMatchedAgainstProducts() {
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of());
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(DIAGRAM_WITH_DATABASE);
+
+        assertThat(result.findings())
+                .filteredOn(finding -> "e2e.validation.participant.unrecognized".equals(finding.code()))
+                .isNotEmpty()
+                .allSatisfy(finding -> {
+                    assertThat(finding.message()).contains("api_gateway").contains("alias продукта");
+                    assertThat(finding.message()).doesNotContain("alias/кодом системы или контейнера");
                 });
     }
 
@@ -212,7 +259,7 @@ class PlantUmlValidationEngineTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.recognizedCalls()).isEmpty();
-        assertThat(result.unrecognizedCalls()).hasSize(11);
+        assertThat(result.unrecognizedCalls()).hasSize(8);
         assertThat(result.findings())
                 .extracting(Finding::code)
                 .contains("e2e.validation.call.no_rest_endpoint");

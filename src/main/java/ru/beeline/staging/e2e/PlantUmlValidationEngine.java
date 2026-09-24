@@ -95,9 +95,11 @@ public class PlantUmlValidationEngine {
             } else {
                 unrecognizedParticipants.add(new UnrecognizedParticipant(participant.alias(), participant.line()));
                 findings.add(Finding.error("e2e.validation.participant.unrecognized",
-                        "Участник '" + participant.alias() + "' не найден в CMDB. Проверьте мнемонику:"
-                                + " имя перед 'as' (или сам alias, если 'as' не используется) должно точно"
-                                + " совпадать с alias/кодом системы или контейнера в CMDB — сверьтесь с BeeAtlas.",
+                        "Участник '" + participant.name() + "' не найден среди продуктов. Проверяется только имя"
+                                + " участника (в 'participant \"api_gateway\" as GW' это api_gateway): оно должно"
+                                + " совпадать с alias продукта в fdm-products. Если в имени есть точка,"
+                                + " дополнительно проверяются подстроки до первой и после последней точки."
+                                + " Псевдоним и коды контейнеров не используются — сверьтесь с BeeAtlas.",
                         participant.line(), participant.line(), participant.alias()));
             }
         }
@@ -105,6 +107,9 @@ public class PlantUmlValidationEngine {
         List<RecognizedCall> recognizedCalls = new ArrayList<>();
         List<UnrecognizedCall> unrecognizedCalls = new ArrayList<>();
         for (ParsedDiagram.Message message : diagram.messages()) {
+            if (message.reply()) {
+                continue;
+            }
             classifyCall(message, resolvedByPlantUmlAlias, ambiguousAliases, recognizedCalls, unrecognizedCalls, findings);
         }
 
