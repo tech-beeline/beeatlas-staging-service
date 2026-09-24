@@ -14,7 +14,6 @@ import ru.beeline.staging.dto.notice.TransformResult;
 import ru.beeline.staging.e2e.CmdbAliasLookup;
 import ru.beeline.staging.e2e.ParseOutcome;
 import ru.beeline.staging.e2e.ParsedDiagram;
-import ru.beeline.staging.e2e.ParticipantLookup;
 import ru.beeline.staging.e2e.PlantUmlDiagramParser;
 import ru.beeline.staging.pipeline.StageContext;
 import ru.beeline.staging.product.dto.search.MatchedArchOperation;
@@ -107,8 +106,7 @@ public class UseCaseTransformer implements ArtifactTransformer {
     }
 
     private record Call(ParsedDiagram.Message message, String partId, int seq, String scenarioType, String stepType,
-                        String method, String path, String receiverKind,
-                        CmdbAliasLookup.ResolvedParticipant receiver) {
+                        String method, String path, CmdbAliasLookup.ResolvedParticipant receiver) {
 
         String productCode() {
             return receiver == null ? null
@@ -120,14 +118,9 @@ public class UseCaseTransformer implements ArtifactTransformer {
                                     Map<String, CmdbAliasLookup.ResolvedParticipant> resolved,
                                     List<ArtifactNotice> notices) {
         String[] fragmentByLine = fragmentsByLine(rawContent);
-        Map<String, String> kindByAlias = new LinkedHashMap<>();
-        diagram.participants().forEach(p -> kindByAlias.put(p.alias(), p.declaredKind()));
         List<Call> calls = new ArrayList<>();
         int seq = 0;
         for (ParsedDiagram.Message message : diagram.messages()) {
-            if (message.reply()) {
-                continue;
-            }
             seq++;
             String partId = String.format("P-%02d", seq);
             String fragment = fragmentAt(fragmentByLine, message.line());
@@ -146,12 +139,10 @@ public class UseCaseTransformer implements ArtifactTransformer {
                 receiver = null;
             } else if (receiver == null) {
                 notices.add(notice(RECEIVER_NOT_IN_CMDB, "warning", Map.of("partId", partId,
-                        "line", message.line(), "participant", message.toAlias(),
-                        "reason", ParticipantLookup.isProduct(kindByAlias.get(message.toAlias()))
-                                ? "receiver_not_in_cmdb" : "receiver_is_not_a_product")));
+                        "line", message.line(), "participant", message.toAlias(), "reason", "receiver_not_in_cmdb")));
             }
             calls.add(new Call(message, partId, seq, scenarioTypeOf(fragment), stepTypeOf(fragment),
-                    method, path, kindByAlias.get(message.toAlias()), receiver));
+                    method, path, receiver));
         }
         return calls;
     }
@@ -200,12 +191,8 @@ public class UseCaseTransformer implements ArtifactTransformer {
             snapshot.getSteps().add(step);
 
             if (call.receiver() == null) {
-                step.setReason(ParticipantLookup.isProduct(call.receiverKind())
-                        ? "Участник '" + call.message().toAlias() + "' не найден в CMDB — "
-                                + "сторона вызова не определена"
-                        : "Участник '" + call.message().toAlias() + "' объявлен как "
-                                + String.valueOf(call.receiverKind()).toLowerCase(Locale.ROOT)
-                                + " — это не продукт ландшафта, вызов не выгружается");
+                step.setReason("Участник '" + call.message().toAlias() + "' не найден в CMDB — "
+                        + "сторона вызова не определена");
                 activeOperationByLifeline.remove(call.message().toAlias());
                 continue;
             }
@@ -254,15 +241,34 @@ public class UseCaseTransformer implements ArtifactTransformer {
     }
 
     private Map<String, CmdbAliasLookup.ResolvedParticipant> resolveParticipants(ParsedDiagram diagram) {
-        Map<String, CmdbAliasLookup.ResolvedParticipant> byLookupKey =
-                cmdbAliasLookup.resolveAll(ParticipantLookup.keysOf(diagram));
+        Set<String> keys = new LinkedHashSet<>();
+        for (ParsedDiagram.Participant participant : diagram.participants()) {
+            if (participant.name() != null && !participant.name().isBlank()) {
+                keys.add(participant.name());
+                int dot = participant.name().indexOf('.');
+                if (dot > 0) {
+                    keys.add(participant.name().substring(0, dot));
+                }
+            }
+            keys.add(participant.alias());
+        }
+        Map<String, CmdbAliasLookup.ResolvedParticipant> byLookupKey = cmdbAliasLookup.resolveAll(keys);
 
         Map<String, CmdbAliasLookup.ResolvedParticipant> byPlantUmlAlias = new LinkedHashMap<>();
         for (ParsedDiagram.Participant participant : diagram.participants()) {
-            if (!ParticipantLookup.isProduct(participant.declaredKind())) {
-                continue;
+            CmdbAliasLookup.ResolvedParticipant match = null;
+            if (participant.name() != null && !participant.name().isBlank()) {
+                match = byLookupKey.get(participant.name());
+                if (match == null) {
+                    int dot = participant.name().indexOf('.');
+                    if (dot > 0) {
+                        match = byLookupKey.get(participant.name().substring(0, dot));
+                    }
+                }
             }
-            CmdbAliasLookup.ResolvedParticipant match = ParticipantLookup.resolve(byLookupKey, participant);
+            if (match == null) {
+                match = byLookupKey.get(participant.alias());
+            }
             if (match != null) {
                 byPlantUmlAlias.put(participant.alias(), match);
             }

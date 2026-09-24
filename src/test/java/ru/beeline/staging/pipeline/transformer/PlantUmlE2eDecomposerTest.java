@@ -163,12 +163,12 @@ class PlantUmlE2eDecomposerTest {
 
         assertThat(result.notices())
                 .filteredOn(notice -> PlantUmlE2eDecomposer.NOT_IN_LANDSCAPE.equals(notice.code()))
-                .hasSize(3)
+                .hasSize(4)
                 .allMatch(notice -> "warning".equals(notice.level()));
     }
 
     @Test
-    @DisplayName("Self-call и вызовы без эндпоинта исключаются с notice")
+    @DisplayName("Self-call выгружается как обычный вызов, ответы исключаются")
     void excludesUnusableCalls() {
         PlantUmlE2eDecomposer.Result result = decomposer.decompose(universalDiagram(), UID, "Оплата", null);
 
@@ -176,7 +176,8 @@ class PlantUmlE2eDecomposerTest {
                 .filter(notice -> PlantUmlE2eDecomposer.EXCLUDE.equals(notice.code()))
                 .map(ArtifactNotice::details)
                 .toList();
-        assertThat(reasons).anyMatch(details -> details.contains("self_call"));
+        assertThat(reasons).noneMatch(details -> details.contains("self_call"));
+        assertThat(reasons).anyMatch(details -> details.contains("reply"));
         assertThat(reasons).noneMatch(details -> details.contains("no_rest_endpoint"));
         assertThat(result.notices()).extracting(ArtifactNotice::code)
                 .contains(PlantUmlE2eDecomposer.UNKNOWN_REQUEST);
@@ -480,10 +481,11 @@ class PlantUmlE2eDecomposerTest {
         List<OperationMatchCandidate> candidates = captor.getValue();
         assertThat(candidates).extracting(OperationMatchCandidate::getMethodName)
                 .containsExactly("/command/createApplication", "/api/v1/calls/", "/api/v1/calls/feedback",
-                        "/chat/completions", "/api/v1/payment/12345/paymentItem", "reconciliation-note");
+                        "/chat/completions", "/command/completePayment", "/api/v1/payment/12345/paymentItem",
+                        "reconciliation-note");
         assertThat(candidates).allSatisfy(candidate -> assertThat(candidate.getProtocol()).isNull());
         assertThat(candidates).extracting(OperationMatchCandidate::getProductCode)
-                .containsExactly(BNPL, ANTISPAM, ANTISPAM, AI_TOOL, ARFIX, ARFIX);
+                .containsExactly(BNPL, ANTISPAM, ANTISPAM, AI_TOOL, BNPL, ARFIX, ARFIX);
     }
 
     private List<MatchedArchOperation> landscapeMatches() {

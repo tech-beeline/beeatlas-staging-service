@@ -157,10 +157,6 @@ public class PlantUmlE2eDecomposer {
                 notices.add(excluded(elementRef, message.line(), "reply"));
                 continue;
             }
-            if (message.fromAlias().equals(message.toAlias())) {
-                notices.add(excluded(elementRef, message.line(), "self_call"));
-                continue;
-            }
             Matcher matcher = REST_CALL.matcher(message.label());
             boolean parsed = matcher.find();
             String method = parsed ? matcher.group(1).toUpperCase(Locale.ROOT) : UNKNOWN_TYPE;

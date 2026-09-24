@@ -52,7 +52,7 @@ public final class ParticipantLookup {
 
         for (String key : keysOf(participant.name())) {
             CmdbAliasLookup.ResolvedParticipant match = resolved.get(key);
-            if (match != null) {
+            if (match != null && match.kind() == CmdbAliasLookup.ResolvedParticipant.Kind.SYSTEM) {
                 return match;
             }
         }

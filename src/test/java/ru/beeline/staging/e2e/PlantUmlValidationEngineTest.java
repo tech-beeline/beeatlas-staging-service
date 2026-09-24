@@ -72,10 +72,11 @@ class PlantUmlValidationEngineTest {
     }
 
     @Test
+    @DisplayName("Мнемоника до первой точки ищется среди alias продуктов")
     void resolvesAMnemonicByThePrefixBeforeTheFirstDotWhenTheFullNameIsntRegistered() {
         CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
         when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
-                "ext_Example", new ResolvedParticipant("ext_Example", "Example System", Kind.CONTAINER)));
+                "ext_Example", new ResolvedParticipant("ext_Example", "Example System", Kind.SYSTEM)));
         RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
         when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
 
@@ -86,8 +87,27 @@ class PlantUmlValidationEngineTest {
                 .anySatisfy(rp -> {
                     assertThat(rp.alias()).isEqualTo("Short");
                     assertThat(rp.name()).isEqualTo("Example System");
-                    assertThat(rp.kind()).isEqualTo("container");
+                    assertThat(rp.kind()).isEqualTo("system");
                 });
+    }
+
+    @Test
+    @DisplayName("Контейнер продуктом не считается — участник остаётся нераспознанным")
+    void doesNotResolveParticipantToAContainer() {
+        CmdbAliasLookup cmdbAliasLookup = mock(CmdbAliasLookup.class);
+        when(cmdbAliasLookup.resolveAll(any())).thenReturn(Map.of(
+                "ext_Example", new ResolvedParticipant("ext_Example", "Example Container", Kind.CONTAINER)));
+        RestEndpointLookup restEndpointLookup = mock(RestEndpointLookup.class);
+        when(restEndpointLookup.exists(anyString(), anyString(), anyString())).thenReturn(true);
+
+        PlantUmlValidationEngine engine = new PlantUmlValidationEngine(parser, cmdbAliasLookup, restEndpointLookup);
+        EngineResult result = engine.validate(DOTTED_MNEMONIC_PUML);
+
+        assertThat(result.recognizedParticipants()).extracting(RecognizedParticipant::alias)
+                .doesNotContain("Short");
+        assertThat(result.unrecognizedParticipants()).extracting(UnrecognizedParticipant::alias)
+                .contains("Short");
+        assertThat(result.valid()).isFalse();
     }
 
     @Test

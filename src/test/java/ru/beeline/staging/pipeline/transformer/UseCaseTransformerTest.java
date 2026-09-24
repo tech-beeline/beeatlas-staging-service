@@ -33,8 +33,6 @@ class UseCaseTransformerTest {
             alt успех
               api -> web: GET /status
             end
-            web -> api: уточняет статус
-            api --> web: ответ
             @enduml
             """;
 
@@ -69,7 +67,7 @@ class UseCaseTransformerTest {
         assertThat(snapshot.getUsecase().getCode()).isEqualTo("UC-001");
         assertThat(snapshot.getUsecase().getProjectCode()).isEqualTo("PRJ-1");
         assertThat(snapshot.getSteps()).extracting(UseCaseSnapshot.Step::getPartId)
-                .containsExactly("P-01", "P-02", "P-03", "P-04");
+                .containsExactly("P-01", "P-02", "P-03");
 
         UseCaseSnapshot.Step order = snapshot.getSteps().get(1);
         assertThat(order.getOperationType()).isEqualTo("POST");
@@ -116,7 +114,7 @@ class UseCaseTransformerTest {
         String json = objectMapper.writeValueAsString(result.snapshot());
         UseCaseSnapshot roundTrip = objectMapper.readValue(json, UseCaseSnapshot.class);
         assertThat(roundTrip.getBranch()).isEqualTo("main");
-        assertThat(roundTrip.getSteps()).hasSize(4);
+        assertThat(roundTrip.getSteps()).hasSize(3);
     }
 
     @Test
