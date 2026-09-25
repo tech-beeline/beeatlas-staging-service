@@ -12,12 +12,10 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
-import ru.beeline.staging.product.dto.e2e.E2eGetResponse;
 import ru.beeline.staging.product.dto.e2e.E2ePublishResponse;
 import ru.beeline.staging.product.dto.e2e.E2eV2PublishRequest;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Slf4j
 @Repository
@@ -70,19 +68,6 @@ public class E2eProductsClient {
                         uid, relationId, pipelineRunId, attempt, retryCount, retryDelayMs, e.getMessage());
                 sleep(retryDelayMs);
             }
-        }
-    }
-
-    public Optional<E2eGetResponse> getE2eByCode(String code) {
-        String url = UriComponentsBuilder.fromHttpUrl(baseUrl + "/api/v2/e2e/{code}")
-                .buildAndExpand(code)
-                .encode()
-                .toUriString();
-        try {
-            return Optional.ofNullable(restTemplate.getForObject(url, E2eGetResponse.class));
-        } catch (HttpClientErrorException.NotFound e) {
-            log.warn("fdm-products has no e2e with code={} (url={}) — nothing to read back", code, url);
-            return Optional.empty();
         }
     }
 

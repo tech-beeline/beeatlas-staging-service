@@ -167,7 +167,7 @@ public class UseCaseSaver implements ArtifactSaver {
                     draft.getExtUid(), draft.getExtUid(), draft.getName(), draft.getType(),
                     draft.getRps(), draft.getLatency(), draft.getErrorRate(), null, null, null,
                     iface, draft.getContext(), rawDataRefId, batchId, branch,
-                    draft.getConnectionOperationId(), draft.getMatchedOperation()));
+                    draft.getConnectionOperationId(), draft.getConnectionInterfaceId(), draft.getMatchedOperation()));
         }
         return operationsByExtUid;
     }

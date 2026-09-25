@@ -56,7 +56,7 @@ class UseCaseTransformerTest {
     }
 
     @Test
-    @DisplayName("Каждое сообщение даёт шаг со своей операцией; сопоставленная операция несёт connectionOperationId")
+    @DisplayName("Каждое сообщение даёт шаг со своей операцией; сопоставленная операция несёт connectionOperationId и connectionInterfaceId")
     void buildsStepsAndOperations() {
         when(productServiceClient.searchMatchedOperations(any())).thenReturn(List.of(match("BC-2", "/orders", "POST")));
 
@@ -87,6 +87,7 @@ class UseCaseTransformerTest {
                 .singleElement()
                 .satisfies(operation -> {
                     assertThat(operation.getConnectionOperationId()).isEqualTo(4242);
+                    assertThat(operation.getConnectionInterfaceId()).isEqualTo(7);
                     assertThat(operation.getMatchedOperation()).containsEntry("productAlias", "BC-2");
                 });
         assertThat(snapshot.getEntities().getProducts()).extracting(E2ESequenceSnapshot.ProductDraft::getUid)

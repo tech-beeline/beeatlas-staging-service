@@ -213,7 +213,8 @@ public class UseCaseTransformer implements ArtifactTransformer {
                             "productCode", call.productCode(), "method", call.method(), "path", call.path())));
                 }
                 return operation(uid, interfaceUid, call.path(), call.method(),
-                        matched ? match.getId() : null, matched ? matchedAttributes(match) : null);
+                        matched ? match.getId() : null, matched ? match.getInterfaceObj().getId() : null,
+                        matched ? matchedAttributes(match) : null);
             });
 
             step.setCalleeOperationExtUid(operationExtUid);
@@ -310,6 +311,7 @@ public class UseCaseTransformer implements ArtifactTransformer {
 
     private E2ESequenceSnapshot.OperationDraft operation(String extUid, String interfaceUid, String name, String type,
                                                         Integer connectionOperationId,
+                                                        Integer connectionInterfaceId,
                                                         Map<String, Object> matchedOperation) {
         E2ESequenceSnapshot.OperationDraft draft = new E2ESequenceSnapshot.OperationDraft();
         draft.setExtUid(extUid);
@@ -317,6 +319,7 @@ public class UseCaseTransformer implements ArtifactTransformer {
         draft.setName(name);
         draft.setType(type);
         draft.setConnectionOperationId(connectionOperationId);
+        draft.setConnectionInterfaceId(connectionInterfaceId);
         draft.setMatchedOperation(matchedOperation);
         return draft;
     }

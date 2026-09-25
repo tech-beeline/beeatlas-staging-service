@@ -41,6 +41,9 @@ public class OperationVersion {
     @Column(name = "connection_operation_id")
     private Integer connectionOperationId;
 
+    @Column(name = "connection_interface_id")
+    private Integer connectionInterfaceId;
+
     @Column(name = "tech_capability_version_id")
     private Long techCapabilityVersionId;
 

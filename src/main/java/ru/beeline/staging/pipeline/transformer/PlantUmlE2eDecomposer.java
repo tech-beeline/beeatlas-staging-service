@@ -234,14 +234,15 @@ public class PlantUmlE2eDecomposer {
 
             String productUid = call.productCode();
             String containerUid = productUid;
-            String interfaceUid = interfaceCode(call.method(), call.path());
-            String operationExtUid = operationUid(productUid, interfaceUid, call.method(), call.path());
+            String interfaceCode = interfaceCode(call.method(), call.path());
+            String interfaceUid = interfaceUid(containerUid, interfaceCode);
+            String operationExtUid = operationUid(productUid, interfaceCode, call.method(), call.path());
 
             products.computeIfAbsent(productUid, uid -> product(uid, productName(call, match)));
             containers.computeIfAbsent(containerUid, uid -> container(uid, productUid, null));
             interfaces.computeIfAbsent(interfaceUid, uid -> {
                 notices.add(implicitCast(uid, "interface", "protocol=UNKNOWN, source=null", "info"));
-                return anInterface(uid, containerUid, call.method() + " " + call.path());
+                return anInterface(uid, interfaceCode, containerUid, call.method() + " " + call.path());
             });
             operations.computeIfAbsent(operationExtUid, uid -> {
                 if (!matched && !UNKNOWN_TYPE.equals(call.method())) {
@@ -252,6 +253,7 @@ public class PlantUmlE2eDecomposer {
                 notices.add(implicitCast(uid, "operation", "sla=null", "warning"));
                 E2ESequenceSnapshot.OperationDraft draft = operation(uid, interfaceUid, call.path(), call.method(),
                         matched ? match.getId() : null);
+                draft.setConnectionInterfaceId(matched ? match.getInterfaceObj().getId() : null);
                 draft.setMatchedOperation(matched ? matchedAttributes(match) : null);
                 return draft;
             });
@@ -332,10 +334,10 @@ public class PlantUmlE2eDecomposer {
         return draft;
     }
 
-    private E2ESequenceSnapshot.InterfaceDraft anInterface(String uid, String containerUid, String name) {
+    private E2ESequenceSnapshot.InterfaceDraft anInterface(String uid, String code, String containerUid, String name) {
         E2ESequenceSnapshot.InterfaceDraft draft = new E2ESequenceSnapshot.InterfaceDraft();
         draft.setUid(uid);
-        draft.setExtUid(uid);
+        draft.setExtUid(code);
         draft.setContainerUid(containerUid);
         draft.setName(name != null ? name : uid);
         draft.setProtocol(DEFAULT_PROTOCOL);
@@ -379,6 +381,10 @@ public class PlantUmlE2eDecomposer {
         CRC32 crc32 = new CRC32();
         crc32.update((method + path).getBytes(StandardCharsets.UTF_8));
         return String.format("%08x", crc32.getValue());
+    }
+
+    static String interfaceUid(String containerUid, String interfaceCode) {
+        return interfaceCode + "." + containerUid;
     }
 
     static String truncate(String value) {
