@@ -7,8 +7,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import ru.beeline.staging.client.DocumentServiceClient;
-import ru.beeline.staging.dto.e2e.E2eValidateRequest;
 import ru.beeline.staging.e2e.CmdbAliasLookup;
+import ru.beeline.staging.e2e.E2ePlantUmlValidation;
 import ru.beeline.staging.e2e.PlantUmlDiagramParser;
 import ru.beeline.staging.e2e.PlantUmlValidationEngine;
 import ru.beeline.staging.e2e.RestEndpointLookup;
@@ -49,12 +49,14 @@ class E2eValidationControllerTest {
 
         documentServiceClient = mock(DocumentServiceClient.class);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new E2eValidationController(engine, documentServiceClient)).build();
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(new E2eValidationController(new E2ePlantUmlValidation(engine), documentServiceClient))
+                .build();
     }
 
     @Test
     void validatesTextInBody() throws Exception {
-        E2eValidateRequest request = new E2eValidateRequest(VALID_PUML, null, null, null);
+        Map<String, Object> request = Map.of("plantUml", VALID_PUML, "name", "Сценарий");
 
         mockMvc.perform(post("/api/v1/e2e/validate")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -65,7 +67,7 @@ class E2eValidationControllerTest {
 
     @Test
     void rejectsEmptyPlantUmlBody() throws Exception {
-        E2eValidateRequest request = new E2eValidateRequest("  ", null, null, null);
+        Map<String, Object> request = Map.of("plantUml", "  ");
 
         mockMvc.perform(post("/api/v1/e2e/validate")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -76,7 +78,7 @@ class E2eValidationControllerTest {
     @Test
     void bodyAndDocIdValidationProduceTheSameReportForTheSameText() throws Exception {
         when(documentServiceClient.fetchContent(42L)).thenReturn(VALID_PUML);
-        E2eValidateRequest request = new E2eValidateRequest(VALID_PUML, null, null, null);
+        Map<String, Object> request = Map.of("plantUml", VALID_PUML, "name", "Сценарий");
 
         String bodyResponse = mockMvc.perform(post("/api/v1/e2e/validate")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -84,11 +86,65 @@ class E2eValidationControllerTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
-        String docIdResponse = mockMvc.perform(post("/api/v1/e2e/validate/42"))
+        String docIdResponse = mockMvc.perform(post("/api/v1/e2e/validate/42")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("name", "Сценарий"))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
         org.assertj.core.api.Assertions.assertThat(docIdResponse).isEqualTo(bodyResponse);
+    }
+
+    @Test
+    void validatesDocumentWithoutBodyAsIfMetadataWasEmpty() throws Exception {
+        when(documentServiceClient.fetchContent(42L)).thenReturn(VALID_PUML);
+
+        mockMvc.perform(post("/api/v1/e2e/validate/42"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notices[?(@.code == 'e2e_plantuml.validation.metadata.empty_name')]").exists());
+    }
+
+    @Test
+    void appliesMetadataFromBodyWhenValidatingByDocId() throws Exception {
+        when(documentServiceClient.fetchContent(42L)).thenReturn(VALID_PUML);
+
+        mockMvc.perform(post("/api/v1/e2e/validate/42")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Сценарий\",\"biStepCode\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.notices[?(@.code == 'e2e_plantuml.validation.bi_step.invalid')].level")
+                        .value("error"));
+    }
+
+    @Test
+    void rejectsBlankBiStepCodeLikeTheLoaderDoes() throws Exception {
+        mockMvc.perform(post("/api/v1/e2e/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "plantUml", VALID_PUML, "name", "Сценарий", "biStepCode", " "))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notices[?(@.code == 'e2e_plantuml.validation.bi_step.invalid')]").exists());
+    }
+
+    @Test
+    void measuresTheSizeLimitInUtf8BytesLikeTheLoader() throws Exception {
+        String cyrillic = "@startuml\n' " + "ж".repeat(300_000) + "\n@enduml";
+
+        mockMvc.perform(post("/api/v1/e2e/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("plantUml", cyrillic, "name", "Сценарий"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage")
+                        .value("PlantUML text exceeds the maximum allowed size of 524288 bytes"));
+    }
+
+    @Test
+    void measuresTheSizeLimitOfADocumentInUtf8Bytes() throws Exception {
+        when(documentServiceClient.fetchContent(42L)).thenReturn("@startuml\n' " + "ж".repeat(300_000) + "\n@enduml");
+
+        mockMvc.perform(post("/api/v1/e2e/validate/42"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -125,8 +181,8 @@ class E2eValidationControllerTest {
         PlantUmlValidationEngine failingEngine =
                 new PlantUmlValidationEngine(new PlantUmlDiagramParser(), failingCmdbAliasLookup, restEndpointLookup);
         MockMvc failingMockMvc = MockMvcBuilders
-                .standaloneSetup(new E2eValidationController(failingEngine, documentServiceClient)).build();
-        E2eValidateRequest request = new E2eValidateRequest(VALID_PUML, null, null, null);
+                .standaloneSetup(new E2eValidationController(new E2ePlantUmlValidation(failingEngine), documentServiceClient)).build();
+        Map<String, Object> request = Map.of("plantUml", VALID_PUML, "name", "Сценарий");
 
         failingMockMvc.perform(post("/api/v1/e2e/validate")
                         .contentType(MediaType.APPLICATION_JSON)
