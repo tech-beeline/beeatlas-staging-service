@@ -76,10 +76,10 @@ class UseCaseSaverTest {
         when(interfaceMatchService.matchOrCreate(anyString(), any(), any(), any(), any(), any(), any(), any(), any(),
                 any(), anyLong(), any(), anyString())).thenReturn(new InterfaceVersion());
         when(operationMatchService.matchOrCreate(eq(MATCHED_UID), any(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), anyLong(), any(), anyString(), any(), any()))
+                any(), any(), any(), any(), anyLong(), any(), anyString(), any(), any(), any()))
                 .thenReturn(operationVersion(101L, 4242));
         when(operationMatchService.matchOrCreate(eq(UNMATCHED_UID), any(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), anyLong(), any(), anyString(), any(), any()))
+                any(), any(), any(), any(), anyLong(), any(), anyString(), any(), any(), any()))
                 .thenReturn(operationVersion(102L, null));
 
         saver = new UseCaseSaver(canonicalRepository, landscapeRepository, productMatchService, containerMatchService,
@@ -123,13 +123,13 @@ class UseCaseSaverTest {
     }
 
     @Test
-    @DisplayName("Операции снапшота уходят в канон вместе с connectionOperationId")
+    @DisplayName("Операции снапшота уходят в канон вместе с connectionOperationId и connectionInterfaceId")
     void savesOperationsWithArchLink() throws Exception {
         saver.save("UC-001", "usecase", RAW_DATA_REF_ID, RUN_ID, snapshot());
 
         verify(operationMatchService).matchOrCreate(eq(MATCHED_UID), eq(MATCHED_UID), eq("/orders"), eq("POST"),
                 any(), any(), any(), any(), any(), any(), any(), any(), eq(RAW_DATA_REF_ID), eq(15L), eq("design"),
-                eq(4242), any());
+                eq(4242), eq(7), any());
     }
 
     @Test
@@ -161,9 +161,9 @@ class UseCaseSaverTest {
         entities.getProducts().add(product("BC-2"));
         entities.getContainers().add(container("BC-2"));
         entities.getInterfaces().add(anInterface("iface-1", "BC-2"));
-        entities.getOperations().add(operation(MATCHED_UID, "iface-1", "/orders", "POST", 4242,
+        entities.getOperations().add(operation(MATCHED_UID, "iface-1", "/orders", "POST", 4242, 7,
                 Map.of("productAlias", "BC-2")));
-        entities.getOperations().add(operation(UNMATCHED_UID, "iface-1", "/status", "GET", null, null));
+        entities.getOperations().add(operation(UNMATCHED_UID, "iface-1", "/status", "GET", null, null, null));
 
         snapshot.getSteps().add(step("P-01", 1, MATCHED_UID, null, "POST", "/orders", null));
         snapshot.getSteps().add(step("P-02", 2, UNMATCHED_UID, MATCHED_UID, "GET", "/status",
@@ -200,6 +200,7 @@ class UseCaseSaverTest {
 
     private static E2ESequenceSnapshot.OperationDraft operation(String extUid, String interfaceUid, String name,
                                                                 String type, Integer connectionOperationId,
+                                                                Integer connectionInterfaceId,
                                                                 Map<String, Object> matched) {
         E2ESequenceSnapshot.OperationDraft draft = new E2ESequenceSnapshot.OperationDraft();
         draft.setExtUid(extUid);
@@ -207,6 +208,7 @@ class UseCaseSaverTest {
         draft.setName(name);
         draft.setType(type);
         draft.setConnectionOperationId(connectionOperationId);
+        draft.setConnectionInterfaceId(connectionInterfaceId);
         draft.setMatchedOperation(matched);
         return draft;
     }

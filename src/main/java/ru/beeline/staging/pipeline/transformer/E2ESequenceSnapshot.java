@@ -72,6 +72,7 @@ public class E2ESequenceSnapshot {
         private String c4MethodUid;
         private Integer c4MethodInterfaceId;
         private Integer connectionOperationId;
+        private Integer connectionInterfaceId;
         private Map<String, Object> matchedOperation;
 
         private String context;

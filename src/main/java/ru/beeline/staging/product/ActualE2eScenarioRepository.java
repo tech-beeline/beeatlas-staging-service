@@ -48,14 +48,14 @@ public class ActualE2eScenarioRepository {
                     LEFT JOIN staging.interface_versions i ON i.id=v.interface_version_id
                 ORDER BY v.ext_uid, v.id DESC
             ), cte_api AS (
-                SELECT DISTINCT ON (v.ext_uid)
+                SELECT DISTINCT ON (v.interface_id)
                     v.*, cv.ext_uid as container_code, p.ext_uid as product_code,
                     v.json_data ->> 'protocol' AS protocol
                 FROM cte_contexts c
                     JOIN staging.interface_versions v ON v.raw_data_context_id=c.id
                     LEFT JOIN staging.container_versions cv ON cv.id=v.container_version_id
                     LEFT JOIN staging.product_versions p ON p.id=cv.product_version_id
-                ORDER BY v.ext_uid, v.id DESC
+                ORDER BY v.interface_id, v.id DESC
             ), cte_containers AS (
                 SELECT DISTINCT ON (v.ext_uid)
                     v.*, p.ext_uid as product_code
@@ -123,6 +123,7 @@ public class ActualE2eScenarioRepository {
                                 'uid', c.ext_uid,
                                 'interface_code', c.interface_code,
                                 'connection_operation_id', c.connection_operation_id,
+                                'connection_interface_id', c.connection_interface_id,
                                 'sla', jsonb_build_object( 
                                     'rps',c.rps,
                                     'latency', c.latency,

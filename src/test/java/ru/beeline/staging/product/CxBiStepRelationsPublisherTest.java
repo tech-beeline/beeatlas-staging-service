@@ -66,7 +66,7 @@ class CxBiStepRelationsPublisherTest {
     @DisplayName("Сопоставленный корневой вызов уходит в CX с id метода архитектуры")
     void mappedRootCallSendsArchitectureOperationId() {
         publisher.publish(scenario("BI-STEP-1", """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":501}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501}]
                 """, """
                 [{"operation_uid":null,"related_operation_uid":"op-a","call_order":1,"stereotype":"sync"}]
                 """), UID, REF_ID, RUN_ID);
@@ -75,12 +75,53 @@ class CxBiStepRelationsPublisherTest {
     }
 
     @Test
+    @DisplayName("Интерфейс сопоставленной арх-операции уходит в CX как interfaceId")
+    void mappedRootCallSendsArchitectureInterfaceId() {
+        publisher.publish(scenario("BI-STEP-1", """
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501,
+                  "connection_interface_id":77}]
+                """, """
+                [{"operation_uid":null,"related_operation_uid":"op-a","call_order":1,"stereotype":"sync"}]
+                """), UID, REF_ID, RUN_ID);
+
+        assertThat(sentRelations()).containsExactly(new CxBiStepRelation(null, "sync", PRODUCT_ID, null, 501, 77));
+    }
+
+    @Test
+    @DisplayName("Продукт берётся у интерфейса своей операции, даже если код интерфейса совпадает у разных систем")
+    void resolvesProductByOperationInterfaceVersion() {
+        ProductAliasSummary umcs = new ProductAliasSummary();
+        umcs.setId(43);
+        umcs.setAlias("UMCS");
+        ProductAliasSummary crm = new ProductAliasSummary();
+        crm.setId(PRODUCT_ID);
+        crm.setAlias("CRM");
+        when(productServiceClient.getByAliases(anyList())).thenReturn(List.of(crm, umcs));
+
+        publisher.publish(json("""
+                {"e2e":{"uid":"E2E-001","bi_step_code":"BI-STEP-1"},
+                 "interfaces":[{"interface_version_id":11,"code":"033d51b4","parent_product_cmdb":"CRM"},
+                               {"interface_version_id":12,"code":"033d51b4","parent_product_cmdb":"UMCS"}],
+                 "operations":[{"uid":"op-a","interface_version_id":11,"interface_code":"033d51b4",
+                                "connection_operation_id":501},
+                               {"uid":"op-b","interface_version_id":12,"interface_code":"033d51b4",
+                                "connection_operation_id":502}],
+                 "operation_relations":[{"operation_uid":null,"related_operation_uid":"op-a","call_order":1},
+                                        {"operation_uid":null,"related_operation_uid":"op-b","call_order":2}]}
+                """), UID, REF_ID, RUN_ID);
+
+        assertThat(sentRelations()).extracting(CxBiStepRelation::getOperationId, CxBiStepRelation::getProductId)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(501, PRODUCT_ID),
+                        org.assertj.core.groups.Tuple.tuple(502, 43));
+    }
+
+    @Test
     @DisplayName("Несопоставленный корневой вызов в тело PUT не входит")
     void unmappedRootCallIsExcluded() {
         publisher.publish(scenario("BI-STEP-1", """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":501},
-                 {"uid":"op-b","interface_code":"crm-api","connection_operation_id":null},
-                 {"uid":"op-c","interface_code":"crm-api"}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501},
+                 {"uid":"op-b","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":null},
+                 {"uid":"op-c","interface_version_id":1,"interface_code":"crm-api"}]
                 """, """
                 [{"operation_uid":null,"related_operation_uid":"op-b","call_order":1},
                  {"operation_uid":null,"related_operation_uid":"op-a","call_order":2,"stereotype":"async"},
@@ -95,8 +136,8 @@ class CxBiStepRelationsPublisherTest {
     @DisplayName("Вложенный вызов в тело PUT не входит, даже если вызываемый метод сопоставлен")
     void nestedCallIsExcluded() {
         publisher.publish(scenario("BI-STEP-1", """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":501},
-                 {"uid":"op-b","interface_code":"crm-api","connection_operation_id":502}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501},
+                 {"uid":"op-b","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":502}]
                 """, """
                 [{"operation_uid":null,"related_operation_uid":"op-a","call_order":1},
                  {"operation_uid":"op-a","related_operation_uid":"op-b","call_order":2}]
@@ -109,8 +150,8 @@ class CxBiStepRelationsPublisherTest {
     @DisplayName("Все корневые вызовы без сопоставления — PUT в CX не вызывается")
     void allRootCallsUnmappedSkipsPut() {
         publisher.publish(scenario("BI-STEP-1", """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":null},
-                 {"uid":"op-b","interface_code":"crm-api","connection_operation_id":502}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":null},
+                 {"uid":"op-b","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":502}]
                 """, """
                 [{"operation_uid":null,"related_operation_uid":"op-a","call_order":1},
                  {"operation_uid":"op-a","related_operation_uid":"op-b","call_order":2}]
@@ -124,7 +165,7 @@ class CxBiStepRelationsPublisherTest {
     @DisplayName("Нет корневых вызовов — синк в CX не вызывается")
     void noRootCallsSkipsSync() {
         publisher.publish(scenario("BI-STEP-1", """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":501}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501}]
                 """, "[]"), UID, REF_ID, RUN_ID);
 
         verify(cxBackendClient, never()).findBiStepIdByCode(anyString());
@@ -135,7 +176,7 @@ class CxBiStepRelationsPublisherTest {
     @DisplayName("Нет bi_step_code — PUT в CX не вызывается")
     void noBiStepCodeSkipsSync() {
         publisher.publish(scenario(null, """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":501}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501}]
                 """, """
                 [{"operation_uid":null,"related_operation_uid":"op-a","call_order":1}]
                 """), UID, REF_ID, RUN_ID);
@@ -150,7 +191,7 @@ class CxBiStepRelationsPublisherTest {
                 .when(cxBackendClient).replaceBiStepRelations(anyInt(), anyList());
 
         assertThatCode(() -> publisher.publish(scenario("BI-STEP-1", """
-                [{"uid":"op-a","interface_code":"crm-api","connection_operation_id":501}]
+                [{"uid":"op-a","interface_version_id":1,"interface_code":"crm-api","connection_operation_id":501}]
                 """, """
                 [{"operation_uid":null,"related_operation_uid":"op-a","call_order":1}]
                 """), UID, REF_ID, RUN_ID)).doesNotThrowAnyException();
@@ -174,11 +215,19 @@ class CxBiStepRelationsPublisherTest {
         return captor.getValue();
     }
 
+    private JsonNode json(String value) {
+        try {
+            return objectMapper.readTree(value);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private JsonNode scenario(String biStepCode, String operations, String relations) {
         try {
             return objectMapper.readTree("""
                     {"e2e":{"uid":"E2E-001","bi_step_code":%s},
-                     "interfaces":[{"code":"crm-api","parent_product_cmdb":"CRM"}],
+                     "interfaces":[{"interface_version_id":1,"code":"crm-api","parent_product_cmdb":"CRM"}],
                      "operations":%s,
                      "operation_relations":%s}
                     """.formatted(biStepCode == null ? "null" : "\"" + biStepCode + "\"", operations, relations));

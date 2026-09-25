@@ -53,7 +53,7 @@ public class CxBiStepRelationsPublisher {
                         artifactUid, biStepCode);
                 return;
             }
-            Map<String, Integer> connectionOperationIdByUid = indexConnectionOperationIdByUid(root);
+            Map<String, Integer> connectionOperationIdByUid = connectionIdByUid(root, "connection_operation_id");
             List<JsonNode> mappedRootCalls = rootCalls.stream()
                     .filter(call -> connectionOperationIdByUid.containsKey(text(call, "related_operation_uid")))
                     .toList();
@@ -66,8 +66,8 @@ public class CxBiStepRelationsPublisher {
                     .orElseThrow(() -> new IllegalStateException(
                             "cx-backend has no bi_step with code=" + biStepCode));
 
-            cxBackendClient.replaceBiStepRelations(biStepId,
-                    buildRelations(root, mappedRootCalls, connectionOperationIdByUid));
+            cxBackendClient.replaceBiStepRelations(biStepId, buildRelations(root, mappedRootCalls,
+                    connectionOperationIdByUid, connectionIdByUid(root, "connection_interface_id")));
         } catch (RuntimeException e) {
             recordFailure(artifactUid, biStepCode, rawDataRefId, pipelineRunId, e);
         }
@@ -87,7 +87,7 @@ public class CxBiStepRelationsPublisher {
     }
 
     private List<CxBiStepRelation> buildRelations(JsonNode root, List<JsonNode> rootCalls,
-            Map<String, Integer> connectionOperationIdByUid) {
+            Map<String, Integer> connectionOperationIdByUid, Map<String, Integer> connectionInterfaceIdByUid) {
         Map<String, String> productCmdbByOperationUid = indexProductCmdbByOperationUid(root);
         Map<String, Integer> productIdByCmdb = resolveProductIds(rootCalls.stream()
                 .map(call -> productCmdbByOperationUid.get(text(call, "related_operation_uid")))
@@ -100,35 +100,36 @@ public class CxBiStepRelationsPublisher {
             CxBiStepRelation relation = new CxBiStepRelation();
             relation.setDescription(text(call, "stereotype"));
             relation.setOperationId(connectionOperationIdByUid.get(calleeUid));
+            relation.setInterfaceId(connectionInterfaceIdByUid.get(calleeUid));
             relation.setProductId(productIdByCmdb.get(productCmdbByOperationUid.get(calleeUid)));
             relations.add(relation);
         }
         return relations;
     }
 
-    private Map<String, Integer> indexConnectionOperationIdByUid(JsonNode root) {
+    private Map<String, Integer> connectionIdByUid(JsonNode root, String field) {
         Map<String, Integer> byUid = new HashMap<>();
         for (JsonNode operation : arrayOf(root, "operations")) {
             String uid = text(operation, "uid");
-            if (uid != null && operation.hasNonNull("connection_operation_id")) {
-                byUid.put(uid, operation.get("connection_operation_id").asInt());
+            if (uid != null && operation.hasNonNull(field)) {
+                byUid.put(uid, operation.get(field).asInt());
             }
         }
         return byUid;
     }
 
     private Map<String, String> indexProductCmdbByOperationUid(JsonNode root) {
-        Map<String, String> productCmdbByInterfaceCode = new HashMap<>();
+        Map<String, String> productCmdbByInterfaceVersionId = new HashMap<>();
         for (JsonNode iface : arrayOf(root, "interfaces")) {
-            String code = text(iface, "code");
-            if (code != null) {
-                productCmdbByInterfaceCode.put(code, text(iface, "parent_product_cmdb"));
+            String versionId = text(iface, "interface_version_id");
+            if (versionId != null) {
+                productCmdbByInterfaceVersionId.put(versionId, text(iface, "parent_product_cmdb"));
             }
         }
         Map<String, String> byOperationUid = new LinkedHashMap<>();
         for (JsonNode operation : arrayOf(root, "operations")) {
             String uid = text(operation, "uid");
-            String cmdb = productCmdbByInterfaceCode.get(text(operation, "interface_code"));
+            String cmdb = productCmdbByInterfaceVersionId.get(text(operation, "interface_version_id"));
             if (uid != null && cmdb != null) {
                 byOperationUid.put(uid, cmdb);
             }

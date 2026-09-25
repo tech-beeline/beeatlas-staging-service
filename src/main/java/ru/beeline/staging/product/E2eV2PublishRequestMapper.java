@@ -24,9 +24,9 @@ public class E2eV2PublishRequestMapper {
         E2eV2PublishRequest request = new E2eV2PublishRequest();
         request.setE2e(mapInfo(root.path("e2e")));
         request.setProducts(mapList(root.path("products"), this::mapProduct));
-        Map<String, String> compoundCodeByRawCode = indexCompoundInterfaceCodes(root.path("interfaces"));
+        Map<String, String> compoundCodeByVersionId = indexCompoundInterfaceCodes(root.path("interfaces"));
         request.setInterfaces(mapList(root.path("interfaces"), this::mapInterface));
-        request.setOperations(mapList(root.path("operations"), node -> mapOperation(node, compoundCodeByRawCode)));
+        request.setOperations(mapList(root.path("operations"), node -> mapOperation(node, compoundCodeByVersionId)));
         request.setOperationsRelations(mapList(root.path("operation_relations"), this::mapOperationRelation));
         return request;
     }
@@ -37,11 +37,12 @@ public class E2eV2PublishRequestMapper {
             return index;
         }
         for (JsonNode node : interfacesNode) {
+            String versionId = text(node, "interface_version_id");
             String rawCode = text(node, "code");
-            if (rawCode == null) {
+            if (versionId == null || rawCode == null) {
                 continue;
             }
-            index.put(rawCode, compoundInterfaceCode(rawCode, text(node, "parent_container_code")));
+            index.put(versionId, compoundInterfaceCode(rawCode, text(node, "parent_container_code")));
         }
         return index;
     }
@@ -79,13 +80,13 @@ public class E2eV2PublishRequestMapper {
         return interfaceCode + "." + containerCode;
     }
 
-    private E2eV2OperationDto mapOperation(JsonNode node, Map<String, String> compoundCodeByRawCode) {
+    private E2eV2OperationDto mapOperation(JsonNode node, Map<String, String> compoundCodeByVersionId) {
         E2eV2OperationDto dto = new E2eV2OperationDto();
         dto.setUid(text(node, "uid"));
         dto.setName(text(node, "name"));
         dto.setType(text(node, "type"));
-        String rawInterfaceCode = text(node, "interface_code");
-        dto.setParentInterfaceCode(compoundCodeByRawCode.getOrDefault(rawInterfaceCode, rawInterfaceCode));
+        dto.setParentInterfaceCode(compoundCodeByVersionId.getOrDefault(text(node, "interface_version_id"),
+                text(node, "interface_code")));
         dto.setSla(mapSla(node.path("sla")));
         dto.setConnectionOperationId(node.hasNonNull("connection_operation_id")
                 ? node.get("connection_operation_id").asInt()
