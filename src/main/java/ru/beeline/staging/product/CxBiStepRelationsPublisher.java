@@ -10,13 +10,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.beeline.staging.client.CxBackendClient;
-import ru.beeline.staging.client.E2eProductsClient;
 import ru.beeline.staging.client.ProductServiceClient;
 import ru.beeline.staging.dto.notice.ArtifactNotice;
 import ru.beeline.staging.product.dto.ProductAliasSummary;
 import ru.beeline.staging.product.dto.cx.CxBiStepRelation;
-import ru.beeline.staging.product.dto.e2e.E2eGetResponse;
-import ru.beeline.staging.product.dto.e2e.E2eRelationTreeNode;
 import ru.beeline.staging.service.ArtifactNoticeService;
 
 import java.util.ArrayList;
@@ -26,7 +23,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 @Slf4j
 @Component
@@ -36,12 +32,11 @@ public class CxBiStepRelationsPublisher {
     private static final String NOTICE_CODE = "publish.cx.failed";
 
     private final CxBackendClient cxBackendClient;
-    private final E2eProductsClient e2eProductsClient;
     private final ProductServiceClient productServiceClient;
     private final ArtifactNoticeService artifactNoticeService;
     private final ObjectMapper objectMapper;
 
-    public void publish(JsonNode root, String e2eCode, String artifactUid, Long rawDataRefId, Long pipelineRunId) {
+    public void publish(JsonNode root, String artifactUid, Long rawDataRefId, Long pipelineRunId) {
         if (!cxBackendClient.isConfigured()) {
             log.debug("cx-backend base url is not configured — skipping bi step relations sync for uid={}", artifactUid);
             return;
@@ -58,11 +53,21 @@ public class CxBiStepRelationsPublisher {
                         artifactUid, biStepCode);
                 return;
             }
+            Map<String, Integer> connectionOperationIdByUid = indexConnectionOperationIdByUid(root);
+            List<JsonNode> mappedRootCalls = rootCalls.stream()
+                    .filter(call -> connectionOperationIdByUid.containsKey(text(call, "related_operation_uid")))
+                    .toList();
+            if (mappedRootCalls.isEmpty()) {
+                log.info("Scenario uid={} has no root calls mapped to architecture operations — "
+                        + "skipping cx-backend sync for biStepCode={}", artifactUid, biStepCode);
+                return;
+            }
             Integer biStepId = cxBackendClient.findBiStepIdByCode(biStepCode)
                     .orElseThrow(() -> new IllegalStateException(
                             "cx-backend has no bi_step with code=" + biStepCode));
 
-            cxBackendClient.replaceBiStepRelations(biStepId, buildRelations(root, rootCalls, e2eCode));
+            cxBackendClient.replaceBiStepRelations(biStepId,
+                    buildRelations(root, mappedRootCalls, connectionOperationIdByUid));
         } catch (RuntimeException e) {
             recordFailure(artifactUid, biStepCode, rawDataRefId, pipelineRunId, e);
         }
@@ -81,40 +86,35 @@ public class CxBiStepRelationsPublisher {
         return roots;
     }
 
-    private List<CxBiStepRelation> buildRelations(JsonNode root, List<JsonNode> rootCalls, String e2eCode) {
-        Map<Integer, Integer> operationIdByOrder = readBackRootOperationIds(e2eCode);
+    private List<CxBiStepRelation> buildRelations(JsonNode root, List<JsonNode> rootCalls,
+            Map<String, Integer> connectionOperationIdByUid) {
         Map<String, String> productCmdbByOperationUid = indexProductCmdbByOperationUid(root);
-        Map<String, Integer> productIdByCmdb = resolveProductIds(productCmdbByOperationUid.values());
+        Map<String, Integer> productIdByCmdb = resolveProductIds(rootCalls.stream()
+                .map(call -> productCmdbByOperationUid.get(text(call, "related_operation_uid")))
+                .toList());
 
         List<CxBiStepRelation> relations = new ArrayList<>(rootCalls.size());
         for (JsonNode call : rootCalls) {
-            Integer callOrder = call.hasNonNull("call_order") ? call.get("call_order").asInt() : null;
-            String productCmdb = productCmdbByOperationUid.get(text(call, "related_operation_uid"));
+            String calleeUid = text(call, "related_operation_uid");
 
             CxBiStepRelation relation = new CxBiStepRelation();
             relation.setDescription(text(call, "stereotype"));
-            relation.setOperationId(callOrder != null ? operationIdByOrder.get(callOrder) : null);
-            relation.setProductId(productIdByCmdb.get(productCmdb));
+            relation.setOperationId(connectionOperationIdByUid.get(calleeUid));
+            relation.setProductId(productIdByCmdb.get(productCmdbByOperationUid.get(calleeUid)));
             relations.add(relation);
         }
         return relations;
     }
 
-    private Map<Integer, Integer> readBackRootOperationIds(String e2eCode) {
-        if (e2eCode == null || e2eCode.isBlank()) {
-            return Map.of();
-        }
-        Optional<E2eGetResponse> response = e2eProductsClient.getE2eByCode(e2eCode);
-        if (response.isEmpty()) {
-            return Map.of();
-        }
-        Map<Integer, Integer> byOrder = new HashMap<>();
-        for (E2eRelationTreeNode node : response.get().getOperationsRelations()) {
-            if (node.getOrder() != null && node.getRelatedOperationId() != null) {
-                byOrder.put(node.getOrder(), node.getRelatedOperationId());
+    private Map<String, Integer> indexConnectionOperationIdByUid(JsonNode root) {
+        Map<String, Integer> byUid = new HashMap<>();
+        for (JsonNode operation : arrayOf(root, "operations")) {
+            String uid = text(operation, "uid");
+            if (uid != null && operation.hasNonNull("connection_operation_id")) {
+                byUid.put(uid, operation.get("connection_operation_id").asInt());
             }
         }
-        return byOrder;
+        return byUid;
     }
 
     private Map<String, String> indexProductCmdbByOperationUid(JsonNode root) {
